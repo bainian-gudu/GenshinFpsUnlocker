@@ -25,6 +25,8 @@ internal sealed partial class MainForm : Form
     private bool _syncingUi;
     private bool _webReady;
     private bool _suppressResizeHide;
+    /// <summary>正在执行最小化→托盘，防止 Resize 重入导致闪烁/连弹。</summary>
+    private bool _hidingToTray;
 
     public MainForm(AppConfig config, UnlockService service)
     {
@@ -41,7 +43,7 @@ internal sealed partial class MainForm : Form
         MaximizeBox = true;
         MinimizeBox = true;
         ShowInTaskbar = true;
-        BackColor = Color.FromArgb(0x12, 0x13, 0x19);
+        BackColor = UiStyle.IsUiDark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
         try
         {
             var ico = AppIcon.LoadClone();
@@ -172,10 +174,11 @@ internal sealed partial class MainForm : Form
             }
         };
 
-        // 标题栏最小化 → 托盘（始终，便于后台驻留）
+        // 标题栏最小化 → 托盘（始终）。优先 WndProc 拦截 SC_MINIMIZE，避免系统最小化动画闪烁；
+        // Resize 仅作兜底（例如任务栏「最小化所有窗口」等路径）。
         Resize += (_, _) =>
         {
-            if (_suppressResizeHide || _reallyExit) return;
+            if (_suppressResizeHide || _hidingToTray || _reallyExit || _inTray) return;
             if (WindowState == FormWindowState.Minimized)
                 HideToTrayPublic(showTip: true, fromStartup: false);
         };
@@ -382,21 +385,40 @@ internal sealed partial class MainForm : Form
     public void HideToTrayPublic(bool showTip = false, bool fromStartup = false)
     {
         if (_reallyExit || IsDisposed) return;
+        // 已在托盘则不再走一遍（避免连点最小化多次闪/多次气泡逻辑）
+        if (_inTray && !Visible && !ShowInTaskbar) return;
 
         void work()
         {
+            if (_reallyExit || IsDisposed) return;
+            if (_hidingToTray) return;
+            if (_inTray && !Visible && !ShowInTaskbar) return;
+
+            _hidingToTray = true;
             _suppressResizeHide = true;
             try
             {
                 _inTray = true;
+
+                // 先从任务栏摘掉，再隐藏。切勿在可见时 Minimized→Normal（会整窗弹回再消失 = 闪烁）。
                 ShowInTaskbar = false;
-                if (WindowState == FormWindowState.Minimized)
-                    WindowState = FormWindowState.Normal;
+
+                // 若已是最小化：保持最小化状态直接 Hide，不在屏幕上还原
+                var wasMin = WindowState == FormWindowState.Minimized;
+                try { Opacity = 0; } catch { /* ignore */ }
+
                 Hide();
+
+                // 已隐藏后再恢复 Normal，供下次 Show；用户看不到这一步
+                if (wasMin || WindowState == FormWindowState.Minimized)
+                {
+                    try { WindowState = FormWindowState.Normal; } catch { /* ignore */ }
+                }
+
+                try { Opacity = 1; } catch { /* ignore */ }
 
                 UpdateTrayTip();
 
-                // 确保托盘图标仍可见（Hide 窗体后部分 shell 会吞掉 NotifyIcon）
                 try
                 {
                     if (_tray is not null)
@@ -407,7 +429,6 @@ internal sealed partial class MainForm : Form
                 }
                 catch { /* ignore */ }
 
-                // 启动进托盘 / 用户关窗：给一次气泡；Win11 图标常在「显示隐藏的图标」里
                 if (showTip && !_trayTipShownThisSession)
                 {
                     _trayTipShownThisSession = true;
@@ -424,6 +445,7 @@ internal sealed partial class MainForm : Form
             finally
             {
                 _suppressResizeHide = false;
+                _hidingToTray = false;
             }
         }
 
@@ -437,17 +459,23 @@ internal sealed partial class MainForm : Form
 
         void work()
         {
+            if (_reallyExit || IsDisposed) return;
             _suppressResizeHide = true;
+            _hidingToTray = false;
             try
             {
                 _inTray = false;
-                Show();
-                ShowInTaskbar = true;
+                try { Opacity = 1; } catch { /* ignore */ }
                 if (WindowState == FormWindowState.Minimized)
                     WindowState = FormWindowState.Normal;
+                ShowInTaskbar = true;
+                Show();
                 Activate();
                 BringToFront();
                 try { NativeActivate(); } catch { /* ignore */ }
+
+                // 恢复后重新刷一次标题栏配色（部分 GPU/DWM 在 Hide 后会丢自定义 caption）
+                try { UiStyle.ApplyTitleBarChrome(this, UiStyle.IsUiDark); } catch { /* ignore */ }
 
                 SyncTrayFromConfig();
                 if (_webReady) _bridge.PushState();
@@ -482,6 +510,28 @@ internal sealed partial class MainForm : Form
     {
         _reallyExit = true;
         Close();
+    }
+
+    /// <summary>Web UI 主题变化时同步窗体底色与 WebView 默认背景。</summary>
+    public void ApplyWebChromeTheme(bool dark)
+    {
+        void work()
+        {
+            try
+            {
+                BackColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+                try
+                {
+                    _webView.DefaultBackgroundColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+                }
+                catch { /* ignore */ }
+                UiStyle.ApplyTitleBarChrome(this, dark);
+            }
+            catch (Exception ex) { AppLog.Debug("ApplyWebChromeTheme: " + ex.Message); }
+        }
+        if (IsDisposed) return;
+        if (InvokeRequired) BeginInvoke(work);
+        else work();
     }
 
     /// <summary>

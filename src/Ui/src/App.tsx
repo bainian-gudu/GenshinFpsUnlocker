@@ -163,7 +163,11 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#121319' : '#f5f5f8');
     try { localStorage.setItem('genshin-fps-unlocker.theme', theme); } catch { /* ignore */ }
-  }, [theme]);
+    // 桌面宿主：标题栏 / 窗体底色与 UI 深浅一致（Win11 caption color）
+    if (native) {
+      void nativeInvoke('setUiTheme', { theme }).catch(() => undefined);
+    }
+  }, [theme, native]);
 
   useEffect(() => {
     document.title = `${PAGE_NAMES[page]} | Genshin FPS Unlocker`;

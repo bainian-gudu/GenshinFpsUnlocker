@@ -4,19 +4,20 @@ using Microsoft.Win32;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 界面跟随系统：字体用 SystemFonts，主题用 .NET 9 SystemColorMode + 系统色。
-/// 深色/浅色切换时通过 UserPreferenceChanged 尽量刷新已打开窗体。
+/// 界面跟随系统：字体用 SystemFonts；主窗标题栏跟随 Web UI 深/浅色（与 #121319 / #f5f5f8 一致）。
 /// </summary>
 internal static class UiStyle
 {
     private static bool _hooked;
+
+    /// <summary>当前主 UI 主题（由 WebView 同步；默认深色与设计稿一致）。</summary>
+    private static bool _uiDark = true;
 
     /// <summary>在创建任何窗体之前调用。</summary>
     public static void ApplyApplicationTheme()
     {
         try
         {
-            // .NET 9+：WinForms 控件随系统浅色/深色（实验 API，需抑制 WFO5001）
 #pragma warning disable WFO5001
             Application.SetColorMode(SystemColorMode.System);
 #pragma warning restore WFO5001
@@ -37,12 +38,17 @@ internal static class UiStyle
             AppLog.Debug("SetDefaultFont: " + ex.Message);
         }
 
+        // 启动时先按系统 Apps 主题猜一次，Web UI 加载后会再同步
+        _uiDark = IsAppsDarkMode();
+
         if (!_hooked)
         {
             _hooked = true;
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         }
     }
+
+    public static bool IsUiDark => _uiDark;
 
     /// <summary>正文/界面默认字体（跟随系统）。</summary>
     public static Font UiFont =>
@@ -109,7 +115,18 @@ internal static class UiStyle
     public static Color StatusError =>
         IsAppsDarkMode() ? Color.FromArgb(255, 120, 120) : Color.DarkRed;
 
-    /// <summary>窗体加载时：系统字体 + 标题栏深色模式。</summary>
+    /// <summary>设计稿深色背景 #121319。</summary>
+    public static Color UiDarkBg => Color.FromArgb(0x12, 0x13, 0x19);
+
+    /// <summary>设计稿浅色背景 #f5f5f8。</summary>
+    public static Color UiLightBg => Color.FromArgb(0xF5, 0xF5, 0xF8);
+
+    public static Color UiDarkText => Color.FromArgb(0xED, 0xEC, 0xF3);
+    public static Color UiLightText => Color.FromArgb(0x1A, 0x1A, 0x22);
+    public static Color UiDarkBorder => Color.FromArgb(0x27, 0x29, 0x34);
+    public static Color UiLightBorder => Color.FromArgb(0xE4, 0xE2, 0xEC);
+
+    /// <summary>窗体加载时：系统字体 + 标题栏配色。</summary>
     public static void ApplyToForm(Form form)
     {
         try
@@ -118,8 +135,43 @@ internal static class UiStyle
         }
         catch { /* ignore */ }
 
-        TrySetTitleBarDarkMode(form, IsAppsDarkMode());
-        form.HandleCreated += (_, _) => TrySetTitleBarDarkMode(form, IsAppsDarkMode());
+        ApplyTitleBarChrome(form, _uiDark);
+        form.HandleCreated += (_, _) => ApplyTitleBarChrome(form, _uiDark);
+    }
+
+    /// <summary>
+    /// Web UI 切换深/浅后调用：同步所有窗体标题栏与主窗客户区底色。
+    /// </summary>
+    public static void SetUiTheme(bool dark)
+    {
+        _uiDark = dark;
+        AppLog.Debug("UiStyle.SetUiTheme dark=" + dark);
+        foreach (Form f in Application.OpenForms)
+        {
+            try
+            {
+                void apply()
+                {
+                    try
+                    {
+                        ApplyTitleBarChrome(f, dark);
+                        // 主窗客户区与 WebView 默认底对齐，避免露白/露黑边
+                        if (f is MainForm)
+                        {
+                            f.BackColor = dark ? UiDarkBg : UiLightBg;
+                        }
+                        f.Invalidate(true);
+                    }
+                    catch { /* ignore */ }
+                }
+
+                if (f.IsHandleCreated && f.InvokeRequired)
+                    f.BeginInvoke(apply);
+                else
+                    apply();
+            }
+            catch { /* ignore */ }
+        }
     }
 
     private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -129,19 +181,19 @@ internal static class UiStyle
 
         try
         {
-            // 重新声明跟随系统（用户改主题后）
 #pragma warning disable WFO5001
             Application.SetColorMode(SystemColorMode.System);
 #pragma warning restore WFO5001
         }
         catch { /* ignore */ }
 
+        // 系统主题变化时：若用户未强制，仍保持 Web 已选主题的标题栏（不覆盖 _uiDark）
         foreach (Form f in Application.OpenForms)
         {
             try
             {
                 if (f.IsHandleCreated)
-                    TrySetTitleBarDarkMode(f, IsAppsDarkMode());
+                    ApplyTitleBarChrome(f, _uiDark);
                 f.BeginInvoke(() =>
                 {
                     try
@@ -159,20 +211,42 @@ internal static class UiStyle
 
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+    private const int DWMWA_BORDER_COLOR = 34;
+    private const int DWMWA_CAPTION_COLOR = 35;
+    private const int DWMWA_TEXT_COLOR = 36;
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
-    /// <summary>标题栏随系统深色（Win10 1809+ / Win11）。</summary>
-    public static void TrySetTitleBarDarkMode(Form form, bool dark)
+    /// <summary>RGB → COLORREF (0x00BBGGRR)。</summary>
+    private static int ToColorRef(Color c) => c.R | (c.G << 8) | (c.B << 16);
+
+    /// <summary>
+    /// 标题栏配色与设计稿一致：深色 #121319 / 浅色 #f5f5f8（Win11 caption/text/border；旧系统 immersive dark）。
+    /// </summary>
+    public static void ApplyTitleBarChrome(Form form, bool dark)
     {
         try
         {
             if (!form.IsHandleCreated) return;
-            var v = dark ? 1 : 0;
-            if (DwmSetWindowAttribute(form.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref v, sizeof(int)) != 0)
-                DwmSetWindowAttribute(form.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref v, sizeof(int));
+            var hwnd = form.Handle;
+
+            var immersive = dark ? 1 : 0;
+            if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref immersive, sizeof(int)) != 0)
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref immersive, sizeof(int));
+
+            var caption = ToColorRef(dark ? UiDarkBg : UiLightBg);
+            var text = ToColorRef(dark ? UiDarkText : UiLightText);
+            var border = ToColorRef(dark ? UiDarkBorder : UiLightBorder);
+            // Win11 22H2+：自定义标题栏颜色，与 UI topbar 一致
+            _ = DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref caption, sizeof(int));
+            _ = DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, ref text, sizeof(int));
+            _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref border, sizeof(int));
         }
         catch { /* ignore */ }
     }
+
+    /// <summary>兼容旧调用名。</summary>
+    public static void TrySetTitleBarDarkMode(Form form, bool dark) =>
+        ApplyTitleBarChrome(form, dark);
 }

@@ -321,6 +321,23 @@ internal sealed class UiBridge : IDisposable
                 });
             }
 
+            case "setUiTheme":
+            {
+                // Web UI 深/浅色 → 同步 Win11 标题栏与窗体底色，与设计稿一致
+                var theme = p["theme"]?.GetValue<string>()?.Trim().ToLowerInvariant() ?? "dark";
+                var dark = theme is not ("light" or "day");
+                _form.BeginInvoke(() =>
+                {
+                    try
+                    {
+                        UiStyle.SetUiTheme(dark);
+                        _form.ApplyWebChromeTheme(dark);
+                    }
+                    catch (Exception ex) { AppLog.Debug("setUiTheme: " + ex.Message); }
+                });
+                return Task.FromResult<object?>(new { ok = true, theme = dark ? "dark" : "light" });
+            }
+
             default:
                 throw new InvalidOperationException("未知方法: " + method);
         }
