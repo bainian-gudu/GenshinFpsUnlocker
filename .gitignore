@@ -1,4 +1,4 @@
-# Build outputs
+# Build outputs (cmake / intermediate; capital Build\ holds tracked MicaSetup config)
 build/
 dist/
 bin/
@@ -33,3 +33,14 @@ Thumbs.db
 docs/
 *.md
 !README.md
+
+# MicaSetup local tools / intermediate (CI downloads makemica)
+Build/makemica.exe
+Build/makemica.pdb
+Build/template/
+Build/publish.7z
+Build/dist/
+Build/LICENSE
+Build/MicaSetup.Tools/
+Build/*.7z
+# keep: Build/micasetup.json, Build/setup_build.cmd, Build/micasetup/*

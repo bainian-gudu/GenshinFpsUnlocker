@@ -30,6 +30,9 @@ internal static partial class InstallUninstall
         "FpsUnlockerStub.dll",
         "FpsUnlockerStub.pdb",
         "Uninstall.cmd",
+        "Uninst.exe",
+        "unins000.exe",
+        "unins000.dat",
         InstallMarkerFileName,
         "config.example.json",
         "README.md",
@@ -88,14 +91,20 @@ internal static partial class InstallUninstall
             if (key is null) return;
 
             var exe = AppPaths.ExePath;
-            var uninstallCmd = $"\"{exe}\" --uninstall";
+            var uninst = FindExternalUninstaller();
+            var uninstallCmd = uninst is not null
+                ? $"\"{uninst}\""
+                : $"\"{exe}\" --uninstall";
+            var quietUninstall = uninst is not null
+                ? $"\"{uninst}\" /S"
+                : $"\"{exe}\" --uninstall --quiet";
 
             key.SetValue("DisplayName", AppPaths.ProductDisplayName);
             key.SetValue("DisplayIcon", exe);
             key.SetValue("Publisher", AppPaths.Publisher);
             key.SetValue("InstallLocation", AppPaths.ExeDirectory);
             key.SetValue("UninstallString", uninstallCmd);
-            key.SetValue("QuietUninstallString", $"\"{exe}\" --uninstall --quiet");
+            key.SetValue("QuietUninstallString", quietUninstall);
             key.SetValue("NoModify", 1, RegistryValueKind.DWord);
             key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
             key.SetValue("EstimatedSize", EstimateSizeKb(), RegistryValueKind.DWord);
@@ -115,12 +124,25 @@ internal static partial class InstallUninstall
         try
         {
             var cmd = AppPaths.UninstallCmdPath;
-            var content =
-                "@echo off\r\n" +
-                "chcp 65001 >nul\r\n" +
-                "rem 由程序生成 — 启动内置卸载逻辑\r\n" +
-                $"\"{AppPaths.ExePath}\" --uninstall\r\n";
-            File.WriteAllText(cmd, content, new UTF8Encoding(true));
+            var uninst = FindExternalUninstaller();
+            string body;
+            if (uninst is not null)
+            {
+                body =
+                    "@echo off\r\n" +
+                    "chcp 65001 >nul\r\n" +
+                    "rem 启动安装器配套卸载程序\r\n" +
+                    $"start \"\" \"{uninst}\"\r\n";
+            }
+            else
+            {
+                body =
+                    "@echo off\r\n" +
+                    "chcp 65001 >nul\r\n" +
+                    "rem 由程序生成 — 启动内置卸载逻辑\r\n" +
+                    $"\"{AppPaths.ExePath}\" --uninstall\r\n";
+            }
+            File.WriteAllText(cmd, body, new UTF8Encoding(true));
         }
         catch
         {
@@ -129,11 +151,33 @@ internal static partial class InstallUninstall
     }
 
     /// <summary>
-    /// UI / 托盘入口：若未提权则 runas 重启为 --uninstall，当前进程应退出。
-    /// 已提权则直接执行 <see cref="RunUninstall"/>。
+    /// 安装器生成的卸载程序路径（MicaSetup: Uninst.exe）。
+    /// 官方安装布局优先走外部卸载器；便携/开发目录回退内置安全清理。
+    /// </summary>
+    public static string? FindExternalUninstaller()
+    {
+        try
+        {
+            var dir = AppPaths.ExeDirectory;
+            foreach (var name in new[] { "Uninst.exe", "uninst.exe", "Uninstall.exe" })
+            {
+                var p = Path.Combine(dir, name);
+                if (PathUtil.ExistsFile(p))
+                    return PathUtil.Normalize(p);
+            }
+        }
+        catch { /* ignore */ }
+        return null;
+    }
+
+    /// <summary>
+    /// UI / 托盘入口：优先启动安装目录 Uninst.exe；否则提权后走内置清理。
     /// </summary>
     public static void RunUninstallInteractive(bool quiet)
     {
+        if (TryLaunchExternalUninstaller(quiet))
+            return;
+
         if (!Elevation.IsAdministrator())
         {
             var args = quiet ? "--uninstall --quiet" : "--uninstall";
@@ -150,12 +194,59 @@ internal static partial class InstallUninstall
         RunUninstall(quiet);
     }
 
+    /// <summary>若存在 Uninst.exe 则启动并结束当前进程。</summary>
+    public static bool TryLaunchExternalUninstaller(bool quiet)
+    {
+        var uninst = FindExternalUninstaller();
+        if (uninst is null) return false;
+
+        try
+        {
+            AppLog.Info("launch external uninstaller: " + uninst);
+            // 先尽量清理本软件用户数据/自启（Uninst 主要负责安装目录 + ARP）
+            try { Autostart.SetEnabled(false); } catch { /* ignore */ }
+            try
+            {
+                if (TryGetSafeDataDirectory(out var data) && PathUtil.ExistsDir(data))
+                {
+                    AppLog.Info("pre-uninst data cleanup: " + data);
+                    DeleteDirectorySafe(data);
+                }
+            }
+            catch (Exception ex) { AppLog.Warn("pre-uninst data: " + ex.Message); }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = uninst,
+                WorkingDirectory = Path.GetDirectoryName(uninst) ?? AppPaths.ExeDirectory,
+                UseShellExecute = true,
+                Verb = "runas",
+            };
+            if (quiet)
+                psi.Arguments = "/S";
+
+            Process.Start(psi);
+            try { Application.Exit(); } catch { /* ignore */ }
+            Environment.Exit(0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("external uninstaller failed, fallback built-in: " + ex.Message);
+            return false;
+        }
+    }
+
     /// <summary>
     /// 完整卸载：多层安全校验，绝不删除无关路径。
-    /// 顺序：自启 → 用户数据 → 便携配置 → ARP → 快捷方式 → 安装目录（延迟删除）。
+    /// 顺序：外部 Uninst（若有）→ 自启 → 用户数据 → 便携配置 → ARP → 快捷方式 → 安装目录。
     /// </summary>
     public static void RunUninstall(bool quiet)
     {
+        // 安装器布局：优先外部卸载程序（与安装包配套）
+        if (TryLaunchExternalUninstaller(quiet))
+            return;
+
         if (!quiet)
         {
             var r = MessageBox.Show(
@@ -171,7 +262,7 @@ internal static partial class InstallUninstall
             if (r != DialogResult.Yes) return;
         }
 
-        AppLog.Info("uninstall confirmed — starting safe cleanup");
+        AppLog.Info("uninstall confirmed — starting safe cleanup (built-in)");
 
         // 1) 开机自启（仅删除本产品精确值名）
         try { Autostart.SetEnabled(false); AppLog.Info("autostart removed"); }
@@ -229,9 +320,7 @@ internal static partial class InstallUninstall
         if (safeToDelete)
         {
             AppLog.Info("install dir validated for delete: " + safeDir);
-            // 先删已知文件，目录在进程退出后再删（避免锁文件）
             try { DeleteKnownInstallFiles(safeDir); } catch (Exception ex) { AppLog.Warn("file wipe: " + ex.Message); }
-
             ScheduleDirectoryDeleteAfterExit(safeDir);
         }
         else

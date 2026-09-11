@@ -13,7 +13,7 @@ on:
           - Release
           - Debug
       host_mode:
-        description: "Host publish mode (setup always self-contained)"
+        description: "Host publish mode"
         required: true
         default: "framework-dependent"
         type: choice
@@ -26,7 +26,7 @@ env:
 
 jobs:
   build-windows:
-    name: Windows x64 (host FDD + setup SC)
+    name: Windows x64 (host + MicaSetup)
     runs-on: windows-latest
     permissions:
       contents: read
@@ -45,23 +45,21 @@ jobs:
         with:
           arch: x64
 
-      - name: Build (stub + host + setup)
+      - name: Build stub + host
         shell: pwsh
         env:
           CONFIGURATION: ${{ inputs.configuration }}
           HOST_MODE: ${{ inputs.host_mode }}
         run: |
           $ErrorActionPreference = "Stop"
-          $args = @("-Configuration", $env:CONFIGURATION)
+          $args = @("-Configuration", $env:CONFIGURATION, "-SkipSetup")
           if ($env:HOST_MODE -eq "self-contained") {
             $args += "-SelfContained"
           }
           .\build.ps1 @args
           if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "Host exe missing" }
           if (-not (Test-Path "dist\FpsUnlockerStub.dll")) { throw "Stub dll missing" }
-          if (-not (Test-Path "dist\Setup\GenshinFpsUnlocker.Setup.exe")) { throw "Setup exe missing" }
 
-          # 默认 FDD：不应带 coreclr；SC 模式应带
           $hasCore = (Test-Path "dist\coreclr.dll") -or (Test-Path "dist\hostfxr.dll")
           if ($env:HOST_MODE -eq "self-contained") {
             if (-not $hasCore) { Write-Warning "SC host missing coreclr/hostfxr" }
@@ -69,37 +67,87 @@ jobs:
             if ($hasCore) { Write-Warning "FDD host unexpectedly contains coreclr/hostfxr" }
             else { Write-Host "FDD host OK (no bundled runtime)" }
           }
-          # Setup 始终 SC
-          if (-not (Test-Path "dist\Setup\coreclr.dll") -and -not (Test-Path "dist\Setup\hostfxr.dll")) {
-            Write-Warning "Setup missing coreclr/hostfxr — verify self-contained setup"
-          }
-          Get-ChildItem dist -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
 
-      - name: Pack zip artifacts
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $raw = Get-Content "src\Host\GenshinFpsUnlocker.Host.csproj" -Raw
+          if ($raw -match "<Version>([^<]+)</Version>") {
+            "version=$($Matches[1].Trim())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "version=1.0.0" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Pack publish.7z
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $out = "artifacts"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-
-          $portableDir = Join-Path $out "GenshinFpsUnlocker-portable-win-x64"
+          $ver = "${{ steps.ver.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          if (Test-Path publish.7z) { Remove-Item publish.7z -Force }
+          # 载荷 = dist 全部应用文件
+          7z a -t7z "publish.7z" ".\dist\*" -mx=5 -mf=BCJ2 -r -y
+          Copy-Item publish.7z "artifacts\GenshinFpsUnlocker_v$ver.7z" -Force
+          # 便携 zip（便于无 7z 用户）
+          $portableDir = "artifacts\GenshinFpsUnlocker-portable-win-x64"
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-          Get-ChildItem dist -Force | Where-Object { $_.Name -ne "Setup" } | ForEach-Object {
-            Copy-Item $_.FullName $portableDir -Recurse -Force
+          Copy-Item "dist\*" $portableDir -Recurse -Force
+          Compress-Archive -Path $portableDir -DestinationPath "artifacts\GenshinFpsUnlocker-portable-win-x64.zip" -Force
+
+      - name: Download MicaSetup
+        uses: robinraju/release-downloader@v1.8
+        with:
+          repository: "lemutec/MicaSetup"
+          latest: true
+          fileName: "MicaSetup_v*.7z"
+
+      - name: Build MicaSetup installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ver = "${{ steps.ver.outputs.version }}"
+
+          $archiveFiles = Get-ChildItem -Path . -Filter "MicaSetup_v*.7z"
+          if (-not $archiveFiles) { throw "MicaSetup archive not downloaded" }
+          foreach ($archive in $archiveFiles) {
+            & 7z x $archive.FullName -y
           }
-          Compress-Archive -Path $portableDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-portable-win-x64.zip") -Force
+          if (-not (Test-Path "makemica.exe")) { throw "makemica.exe missing after extract" }
 
-          $setupDir = Join-Path $out "GenshinFpsUnlocker-setup-win-x64"
-          New-Item -ItemType Directory -Force -Path $setupDir | Out-Null
-          Copy-Item "dist\Setup\*" $setupDir -Recurse -Force
-          Compress-Archive -Path $setupDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-setup-win-x64.zip") -Force
+          # makemica 读取相对路径：Package=./publish.7z，图标 ./micasetup/...
+          Copy-Item -Path "Build\micasetup.json" -Destination ".\micasetup.json" -Force
+          if (Test-Path ".\micasetup") { Remove-Item ".\micasetup" -Recurse -Force }
+          Copy-Item -Path "Build\micasetup" -Destination ".\micasetup" -Recurse -Force
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" ".\LICENSE" -Force }
 
-          Get-ChildItem $out | Format-Table Name, Length
+          # publish.7z 已在仓库根（上一步）
+          if (-not (Test-Path "publish.7z")) { throw "publish.7z missing" }
+
+          .\makemica.exe micasetup.json
+          if ($LASTEXITCODE -ne 0) { throw "makemica failed" }
+
+          $setup = "GenshinFpsUnlocker_Setup.exe"
+          if (-not (Test-Path $setup)) {
+            $setup = Get-ChildItem -Filter "*Setup*.exe" -File |
+              Where-Object { $_.Name -notmatch "makemica|MicaSetup" } |
+              Select-Object -First 1 -ExpandProperty Name
+          }
+          if (-not $setup -or -not (Test-Path $setup)) { throw "Setup exe not produced" }
+
+          $outName = "GenshinFpsUnlocker_Setup_v$ver.exe"
+          Move-Item -Path $setup -Destination "artifacts\$outName" -Force
+          Write-Host "Produced artifacts\$outName"
+          Get-ChildItem artifacts | Format-Table Name, Length
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: GenshinFpsUnlocker-win-x64
-          path: artifacts/*.zip
+          path: |
+            artifacts/*.zip
+            artifacts/*.7z
+            artifacts/*_Setup_v*.exe
           if-no-files-found: error
           retention-days: 30

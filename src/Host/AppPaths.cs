@@ -4,7 +4,8 @@ namespace GenshinFpsUnlocker.Host;
 /// 标准目录布局约定：
 ///   安装目录：C:\Program Files\GenshinFpsUnlocker\   （应用二进制，专用子目录）
 ///   数据目录：%LocalAppData%\GenshinFpsUnlocker\     （config.json、logs）
-///   运行库：安装器下载官方 .exe 静默安装；无 Node/Python 等语言依赖
+///   安装包：MicaSetup 生成 Setup.exe + 安装目录 Uninst.exe
+///   运行库：首次运行检测 .NET Desktop；无 Node/Python 等语言依赖
 /// 所有路径访问尽量经 <see cref="PathUtil"/> 规范化，兼容中文目录。
 /// </summary>
 internal static class AppPaths
@@ -49,8 +50,11 @@ internal static class AppPaths
     /// <summary>与 Host 同目录的注入 Stub DLL。</summary>
     public static string StubDllPath => Path.Combine(ExeDirectory, "FpsUnlockerStub.dll");
 
-    /// <summary>安装目录下的卸载脚本垫片（双击即可卸载）。</summary>
+    /// <summary>安装目录下的卸载脚本垫片（双击即可卸载；便携/内置回退）。</summary>
     public static string UninstallCmdPath => Path.Combine(ExeDirectory, "Uninstall.cmd");
+
+    /// <summary>MicaSetup 写入的卸载程序（若存在则优先）。</summary>
+    public static string UninstExePath => Path.Combine(ExeDirectory, "Uninst.exe");
 
 
     private static string? _dataDirectory;

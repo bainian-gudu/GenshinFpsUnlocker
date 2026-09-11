@@ -54,12 +54,26 @@ internal static class ShortcutHelper
             workDir,
             description: AppPaths.ProductDisplayName);
 
-        CreateShortcut(
-            Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"),
-            exePath,
-            arguments: "--uninstall",
-            workDir,
-            description: "卸载并清理全部数据");
+        // 优先指向安装器生成的 Uninst.exe；否则回退主程序 --uninstall
+        var uninstExe = Path.Combine(workDir, "Uninst.exe");
+        if (File.Exists(uninstExe))
+        {
+            CreateShortcut(
+                Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"),
+                uninstExe,
+                arguments: null,
+                workDir,
+                description: "卸载并清理安装文件");
+        }
+        else
+        {
+            CreateShortcut(
+                Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"),
+                exePath,
+                arguments: "--uninstall",
+                workDir,
+                description: "卸载并清理全部数据");
+        }
 
         CreateShortcut(
             Path.Combine(dir, "打开日志目录.lnk"),
