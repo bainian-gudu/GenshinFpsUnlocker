@@ -5,16 +5,26 @@ using System.Text;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 通过 Shell Link COM 创建开始菜单与桌面快捷方式（无需额外 NuGet）。
-/// 卸载时仅删除本产品名称相关的 .lnk / 开始菜单子文件夹。
+/// 开始菜单 / 桌面快捷方式。
+/// 统一显示名为 <see cref="AppPaths.ProductDisplayName"/>（中文），并清理 Kachina 等
+/// 以英文 <see cref="AppPaths.ProductName"/> 创建的重复项，避免「一个英文无图标 + 一个中文有图标」。
 /// </summary>
 internal static class ShortcutHelper
 {
-    /// <summary>创建/刷新开始菜单 + 桌面全部快捷方式。</summary>
+    /// <summary>创建/刷新开始菜单 + 桌面；先清重复再写规范项。</summary>
     public static void CreateAll(string? exePath = null, string? workDir = null)
     {
         exePath ??= AppPaths.ExePath;
         workDir ??= AppPaths.ExeDirectory;
+
+        try
+        {
+            CleanupDuplicateShortcuts(exePath);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("清理重复快捷方式: " + ex.Message);
+        }
 
         try
         {
@@ -38,8 +48,8 @@ internal static class ShortcutHelper
     }
 
     /// <summary>
-    /// 开始菜单：主程序、卸载、打开日志目录。
-    /// 提权时优先写 All Users；否则写当前用户。
+    /// 开始菜单：仅「原神帧率解锁」主项 + 卸载。
+    /// 文件夹名仍用 ProductName（与安装目录/注册表一致）；.lnk 文件名为中文显示名。
     /// </summary>
     public static void CreateStartMenuShortcuts(string exePath, string workDir)
     {
@@ -47,14 +57,23 @@ internal static class ShortcutHelper
         var dir = Path.Combine(programsRoot, AppPaths.ProductName);
         Directory.CreateDirectory(dir);
 
+        // 清同目录下英文主快捷方式 / 错误命名
+        TryDelete(Path.Combine(dir, AppPaths.ProductName + ".lnk"));
+        TryDelete(Path.Combine(dir, AppPaths.ProductName + ".exe.lnk"));
+        TryDelete(Path.Combine(dir, "卸载" + AppPaths.ProductName + ".lnk"));
+        TryDelete(Path.Combine(dir, "卸载 " + AppPaths.ProductName + ".lnk"));
+        TryDelete(Path.Combine(dir, "打开日志目录.lnk"));
+
+        var icon = ResolveIconPath(exePath, workDir);
+
         CreateShortcut(
             Path.Combine(dir, AppPaths.ProductDisplayName + ".lnk"),
             exePath,
             arguments: null,
             workDir,
-            description: AppPaths.ProductDisplayName);
+            description: AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
+            iconPath: icon);
 
-        // 优先指向 Kachina uninst；否则回退主程序 --uninstall
         var uninstExe = AppPaths.UninstExePath;
         if (!File.Exists(uninstExe))
         {
@@ -62,6 +81,7 @@ internal static class ShortcutHelper
             if (File.Exists(legacy)) uninstExe = legacy;
             else uninstExe = null;
         }
+
         if (uninstExe is not null && File.Exists(uninstExe))
         {
             CreateShortcut(
@@ -69,7 +89,8 @@ internal static class ShortcutHelper
                 uninstExe,
                 arguments: null,
                 workDir,
-                description: "卸载并清理安装文件");
+                description: "卸载 " + AppPaths.ProductDisplayName,
+                iconPath: uninstExe);
         }
         else
         {
@@ -78,35 +99,72 @@ internal static class ShortcutHelper
                 exePath,
                 arguments: "--uninstall",
                 workDir,
-                description: "卸载并清理全部数据");
+                description: "卸载 " + AppPaths.ProductDisplayName,
+                iconPath: icon);
         }
-
-        CreateShortcut(
-            Path.Combine(dir, "打开日志目录.lnk"),
-            "explorer.exe",
-            arguments: $"\"{AppPaths.LogDirectory}\"",
-            workDir: AppPaths.LogDirectory,
-            description: "打开调试日志目录");
     }
 
-    /// <summary>在公共桌面（失败则用户桌面）创建主程序快捷方式。</summary>
+    /// <summary>桌面仅保留一个中文主快捷方式（有图标）。</summary>
     public static void CreateDesktopShortcut(string exePath, string workDir)
     {
-        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop))
-            desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var icon = ResolveIconPath(exePath, workDir);
+        var written = false;
+        // 优先公共桌面（安装器常写这里），失败再写用户桌面；避免同一用户桌面出现多个
+        foreach (var desktop in DesktopRoots())
+        {
+            if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop)) continue;
 
-        CreateShortcut(
-            Path.Combine(desktop, AppPaths.ProductDisplayName + ".lnk"),
-            exePath,
-            arguments: null,
-            workDir,
-            description: AppPaths.ProductDisplayName);
+            TryDelete(Path.Combine(desktop, AppPaths.ProductName + ".lnk"));
+            TryDelete(Path.Combine(desktop, AppPaths.ProductName + ".exe.lnk"));
+            TryDelete(Path.Combine(desktop, "Genshin FPS Unlocker.lnk"));
+
+            var dest = Path.Combine(desktop, AppPaths.ProductDisplayName + ".lnk");
+            try
+            {
+                CreateShortcut(
+                    dest,
+                    exePath,
+                    arguments: null,
+                    workDir,
+                    description: AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
+                    iconPath: icon);
+                written = true;
+                AppLog.Info("桌面快捷方式 → " + dest);
+                // 已成功写公共桌面时，仍清理用户桌面上的英文重复，但不再强制再写第二份中文
+                // 若公共与用户都需要一份中文（多用户），仅当尚未成功时继续
+                if (desktop == Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory))
+                {
+                    // 清理用户桌面英文，并同步一份中文（覆盖），保证当前用户可见
+                    var userDesk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                    if (!string.IsNullOrEmpty(userDesk) && Directory.Exists(userDesk)
+                        && !string.Equals(userDesk, desktop, StringComparison.OrdinalIgnoreCase))
+                    {
+                        TryDelete(Path.Combine(userDesk, AppPaths.ProductName + ".lnk"));
+                        TryDelete(Path.Combine(userDesk, AppPaths.ProductName + ".exe.lnk"));
+                        try
+                        {
+                            CreateShortcut(
+                                Path.Combine(userDesk, AppPaths.ProductDisplayName + ".lnk"),
+                                exePath, null, workDir,
+                                AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
+                                icon);
+                        }
+                        catch (Exception ex) { AppLog.Debug("user desktop lnk: " + ex.Message); }
+                    }
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("写桌面快捷方式失败 " + desktop + ": " + ex.Message);
+            }
+        }
+        if (!written)
+            throw new IOException("无法写入任何桌面目录的快捷方式");
     }
 
     /// <summary>
-    /// 卸载时清理：仅删除名为产品名的开始菜单文件夹，
-    /// 以及桌面上「原神帧率解锁.lnk」。
+    /// 卸载：删除产品开始菜单文件夹，以及桌面上中英文相关 .lnk。
     /// </summary>
     public static void RemoveCreatedShortcuts()
     {
@@ -120,7 +178,6 @@ internal static class ShortcutHelper
             {
                 if (string.IsNullOrEmpty(root)) continue;
                 var dir = Path.Combine(root, AppPaths.ProductName);
-                // 叶名已由 ProductName 限定，避免误删其它开始菜单项
                 if (Directory.Exists(dir))
                     Directory.Delete(dir, recursive: true);
             }
@@ -129,21 +186,123 @@ internal static class ShortcutHelper
 
         try
         {
-            foreach (var desk in new[]
-                     {
-                         Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
-                         Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                     })
+            foreach (var desk in DesktopRoots())
             {
                 if (string.IsNullOrEmpty(desk)) continue;
-                var lnk = Path.Combine(desk, AppPaths.ProductDisplayName + ".lnk");
-                if (File.Exists(lnk)) File.Delete(lnk);
+                foreach (var name in ShortcutNameAliases())
+                    TryDelete(Path.Combine(desk, name));
             }
         }
         catch (Exception ex) { AppLog.Warn("移除桌面快捷方式: " + ex.Message); }
     }
 
-    /// <summary>优先返回可写的公共开始菜单根；否则当前用户。</summary>
+    /// <summary>
+    /// 清理桌面/开始菜单中指向本 exe 的重复项，以及英文命名的 Kachina 默认快捷方式。
+    /// </summary>
+    public static void CleanupDuplicateShortcuts(string? exePath = null)
+    {
+        exePath ??= AppPaths.ExePath;
+        var exeFull = PathUtil.Normalize(exePath);
+
+        foreach (var desk in DesktopRoots())
+        {
+            if (string.IsNullOrEmpty(desk) || !Directory.Exists(desk)) continue;
+            // 明确删英文名
+            foreach (var name in new[]
+                     {
+                         AppPaths.ProductName + ".lnk",
+                         AppPaths.ProductName + ".exe.lnk",
+                         "Genshin FPS Unlocker.lnk",
+                     })
+                TryDelete(Path.Combine(desk, name));
+
+            // 同目录其它 .lnk 若指向本 exe 且文件名不是中文标准名 → 删除
+            try
+            {
+                foreach (var lnk in Directory.EnumerateFiles(desk, "*.lnk"))
+                {
+                    var leaf = Path.GetFileName(lnk);
+                    if (leaf.Equals(AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (ShortcutTargetsExe(lnk, exeFull))
+                    {
+                        TryDelete(lnk);
+                        AppLog.Info("移除重复桌面快捷方式: " + leaf);
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Debug("scan desktop lnk: " + ex.Message); }
+        }
+
+        foreach (var root in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
+                     Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                 })
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            var dir = Path.Combine(root, AppPaths.ProductName);
+            if (!Directory.Exists(dir)) continue;
+            try
+            {
+                foreach (var lnk in Directory.EnumerateFiles(dir, "*.lnk"))
+                {
+                    var leaf = Path.GetFileName(lnk);
+                    // 保留规范中文名
+                    if (leaf.Equals(AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (leaf.Equals("卸载 " + AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    // 英文主项 / 旧卸载 / 日志
+                    if (leaf.Equals(AppPaths.ProductName + ".lnk", StringComparison.OrdinalIgnoreCase)
+                        || leaf.StartsWith("卸载", StringComparison.OrdinalIgnoreCase)
+                        || leaf.Contains("日志", StringComparison.Ordinal)
+                        || ShortcutTargetsExe(lnk, exeFull))
+                    {
+                        // 卸载项若是英文也删，后面会重建中文卸载
+                        TryDelete(lnk);
+                        AppLog.Info("移除开始菜单重复项: " + leaf);
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Debug("scan start menu lnk: " + ex.Message); }
+        }
+    }
+
+    private static IEnumerable<string> DesktopRoots()
+    {
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+    }
+
+    private static IEnumerable<string> ShortcutNameAliases()
+    {
+        yield return AppPaths.ProductDisplayName + ".lnk";
+        yield return AppPaths.ProductName + ".lnk";
+        yield return AppPaths.ProductName + ".exe.lnk";
+        yield return "Genshin FPS Unlocker.lnk";
+    }
+
+    /// <summary>优先 exe 旁 app.ico（完整多尺寸），否则 exe 自身。</summary>
+    private static string ResolveIconPath(string exePath, string workDir)
+    {
+        foreach (var c in new[]
+                 {
+                     Path.Combine(workDir, "app.ico"),
+                     Path.Combine(AppPaths.ExeDirectory, "app.ico"),
+                     Path.Combine(workDir, "Assets", "app.ico"),
+                     exePath,
+                 })
+        {
+            try
+            {
+                if (File.Exists(c)) return PathUtil.Normalize(c);
+            }
+            catch { /* ignore */ }
+        }
+        return PathUtil.Normalize(exePath);
+    }
+
     private static string GetProgramsRoot()
     {
         try
@@ -164,8 +323,44 @@ internal static class ShortcutHelper
         return Environment.GetFolderPath(Environment.SpecialFolder.Programs);
     }
 
-    /// <summary>创建单个 .lnk（IShellLinkW + IPersistFile）。</summary>
-    private static void CreateShortcut(string lnkPath, string targetPath, string? arguments, string workDir, string description)
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug("delete lnk " + path + ": " + ex.Message);
+        }
+    }
+
+    private static bool ShortcutTargetsExe(string lnkPath, string exeFull)
+    {
+        try
+        {
+            var link = (IShellLinkW)new ShellLink();
+            var file = (IPersistFile)link;
+            file.Load(lnkPath, 0);
+            var sb = new StringBuilder(260);
+            link.GetPath(sb, sb.Capacity, IntPtr.Zero, 0);
+            var target = PathUtil.Normalize(sb.ToString());
+            return !string.IsNullOrEmpty(target)
+                   && target.Equals(exeFull, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void CreateShortcut(
+        string lnkPath,
+        string targetPath,
+        string? arguments,
+        string workDir,
+        string description,
+        string? iconPath = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(lnkPath)!);
 
@@ -175,19 +370,24 @@ internal static class ShortcutHelper
             link.SetArguments(arguments);
         link.SetWorkingDirectory(workDir);
         link.SetDescription(description);
-        try { link.SetIconLocation(targetPath, 0); } catch { /* ignore */ }
+
+        var icon = string.IsNullOrEmpty(iconPath) ? targetPath : iconPath;
+        try { link.SetIconLocation(icon, 0); }
+        catch
+        {
+            try { link.SetIconLocation(targetPath, 0); } catch { /* ignore */ }
+        }
 
         var file = (IPersistFile)link;
         file.Save(lnkPath, true);
 
-        AppLog.Debug($"shortcut: {lnkPath} -> {targetPath} {arguments}");
+        AppLog.Debug($"shortcut: {lnkPath} -> {targetPath} icon={icon}");
     }
 
     [ComImport]
     [Guid("00021401-0000-0000-C000-000000000046")]
     private class ShellLink;
 
-    /// <summary>IShellLinkW 最小子集（Unicode）。</summary>
     [ComImport]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     [Guid("000214F9-0000-0000-C000-000000000046")]

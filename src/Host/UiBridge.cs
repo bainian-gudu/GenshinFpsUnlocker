@@ -366,11 +366,34 @@ internal sealed class UiBridge : IDisposable
             if (p["createDesktopShortcut"] is JsonNode desk)
             {
                 _config.CreateDesktopShortcut = desk.GetValue<bool>();
-                if (_config.CreateDesktopShortcut)
+                try
                 {
-                    try { ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory); }
-                    catch (Exception ex) { AppLog.Warn(ex.Message); }
+                    ShortcutHelper.CleanupDuplicateShortcuts();
+                    if (_config.CreateDesktopShortcut)
+                        ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory);
+                    else
+                    {
+                        // 关闭维护：移除桌面中英文快捷方式，保留开始菜单
+                        foreach (var desk in new[]
+                                 {
+                                     Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
+                                     Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                                 })
+                        {
+                            if (string.IsNullOrEmpty(desk)) continue;
+                            foreach (var n in new[]
+                                     {
+                                         AppPaths.ProductDisplayName + ".lnk",
+                                         AppPaths.ProductName + ".lnk",
+                                     })
+                            {
+                                var f = Path.Combine(desk, n);
+                                if (File.Exists(f)) File.Delete(f);
+                            }
+                        }
+                    }
                 }
+                catch (Exception ex) { AppLog.Warn(ex.Message); }
             }
             if (p["debugLogging"] is JsonNode dbg)
             {

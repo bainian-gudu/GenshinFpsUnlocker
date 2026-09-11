@@ -260,13 +260,15 @@ internal static class Program
             try { InstallUninstall.WriteInstallMarker(); } catch { /* PF 无写权限 */ }
             try { InstallUninstall.RegisterUninstallInfo(); } catch { /* HKLM */ }
             try { InstallUninstall.WriteUninstallCmdShim(); } catch { /* ignore */ }
-            try { ShortcutHelper.CreateStartMenuShortcuts(AppPaths.ExePath, AppPaths.ExeDirectory); }
-            catch (Exception ex) { AppLog.Warn("刷新开始菜单: " + ex.Message); }
-            if (config.CreateDesktopShortcut)
+            // 统一中文快捷方式 + 清理 Kachina 英文重复（GenshinFpsUnlocker.lnk）
+            try
             {
-                try { ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory); }
-                catch (Exception ex) { AppLog.Warn("刷新桌面快捷方式: " + ex.Message); }
+                ShortcutHelper.CleanupDuplicateShortcuts();
+                ShortcutHelper.CreateStartMenuShortcuts(AppPaths.ExePath, AppPaths.ExeDirectory);
+                if (config.CreateDesktopShortcut)
+                    ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory);
             }
+            catch (Exception ex) { AppLog.Warn("刷新快捷方式: " + ex.Message); }
         }
 
         if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
