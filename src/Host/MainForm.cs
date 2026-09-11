@@ -183,6 +183,25 @@ internal sealed partial class MainForm : Form
                 HideToTrayPublic(showTip: true, fromStartup: false);
         };
 
+        // 任务栏/托盘激活时兜底：禁止残留 Opacity=0 的「幽灵窗」
+        Activated += (_, _) =>
+        {
+            try
+            {
+                if (_reallyExit || _hidingToTray) return;
+                if (Opacity < 0.99)
+                {
+                    Opacity = 1;
+                    AppLog.Warn("Activated: forced Opacity=1 (was transparent)");
+                }
+                if (!Visible && !_inTray)
+                {
+                    Visible = true;
+                }
+            }
+            catch { /* ignore */ }
+        };
+
         // 关窗（×）：进托盘继续后台解锁；托盘「退出」才真正结束
         FormClosing += (_, e) =>
         {
@@ -380,19 +399,19 @@ internal sealed partial class MainForm : Form
     }
 
     /// <summary>
-    /// 隐藏到托盘：任务栏不占位；恢复前窗口状态保持 Normal，避免再次最小化异常。
+    /// 隐藏到托盘：不占任务栏。禁止用 Opacity=0（恢复后易残留透明 → 任务栏有图标、桌面无窗）。
     /// </summary>
     public void HideToTrayPublic(bool showTip = false, bool fromStartup = false)
     {
         if (_reallyExit || IsDisposed) return;
-        // 已在托盘则不再走一遍（避免连点最小化多次闪/多次气泡逻辑）
-        if (_inTray && !Visible && !ShowInTaskbar) return;
+        // 已在托盘则不再走一遍
+        if (_inTray && !Visible) return;
 
         void work()
         {
             if (_reallyExit || IsDisposed) return;
             if (_hidingToTray) return;
-            if (_inTray && !Visible && !ShowInTaskbar) return;
+            if (_inTray && !Visible) return;
 
             _hidingToTray = true;
             _suppressResizeHide = true;
@@ -400,22 +419,20 @@ internal sealed partial class MainForm : Form
             {
                 _inTray = true;
 
-                // 先从任务栏摘掉，再隐藏。切勿在可见时 Minimized→Normal（会整窗弹回再消失 = 闪烁）。
+                // 保证不残留透明（历史路径 / 异常）
+                try { Opacity = 1; } catch { /* ignore */ }
+
+                // 先摘任务栏再 Hide，避免最小化动画闪烁
                 ShowInTaskbar = false;
-
-                // 若已是最小化：保持最小化状态直接 Hide，不在屏幕上还原
-                var wasMin = WindowState == FormWindowState.Minimized;
-                try { Opacity = 0; } catch { /* ignore */ }
-
                 Hide();
 
-                // 已隐藏后再恢复 Normal，供下次 Show；用户看不到这一步
-                if (wasMin || WindowState == FormWindowState.Minimized)
+                // 隐藏后再把状态改回 Normal，下次 Show 直接正常窗（用户看不到）
+                try
                 {
-                    try { WindowState = FormWindowState.Normal; } catch { /* ignore */ }
+                    if (WindowState != FormWindowState.Normal)
+                        WindowState = FormWindowState.Normal;
                 }
-
-                try { Opacity = 1; } catch { /* ignore */ }
+                catch { /* ignore */ }
 
                 UpdateTrayTip();
 
@@ -453,6 +470,9 @@ internal sealed partial class MainForm : Form
         else work();
     }
 
+    /// <summary>
+    /// 从托盘恢复主窗口：强制可见、不透明、Normal、前台。
+    /// </summary>
     public void RestoreFromTrayPublic()
     {
         if (_reallyExit || IsDisposed) return;
@@ -465,21 +485,61 @@ internal sealed partial class MainForm : Form
             try
             {
                 _inTray = false;
+
+                // 1) 彻底取消透明 / 最小化残留
                 try { Opacity = 1; } catch { /* ignore */ }
-                if (WindowState == FormWindowState.Minimized)
-                    WindowState = FormWindowState.Normal;
+                try
+                {
+                    if (WindowState != FormWindowState.Normal)
+                        WindowState = FormWindowState.Normal;
+                }
+                catch { /* ignore */ }
+
+                // 2) 任务栏 + 显示
                 ShowInTaskbar = true;
+                if (!IsHandleCreated)
+                {
+                    try { _ = Handle; } catch { /* ignore */ }
+                }
                 Show();
+                Visible = true;
+
+                // 3) 再次确保状态（部分 shell 在 Show 后仍保持 Minimized）
+                try
+                {
+                    if (WindowState != FormWindowState.Normal)
+                        WindowState = FormWindowState.Normal;
+                }
+                catch { /* ignore */ }
+                try { Opacity = 1; } catch { /* ignore */ }
+
+                // 4) 尺寸/位置异常时回退到屏幕中央
+                try { EnsureOnScreen(); } catch { /* ignore */ }
+
                 Activate();
                 BringToFront();
                 try { NativeActivate(); } catch { /* ignore */ }
 
-                // 恢复后重新刷一次标题栏配色（部分 GPU/DWM 在 Hide 后会丢自定义 caption）
                 try { UiStyle.ApplyTitleBarChrome(this, UiStyle.IsUiDark); } catch { /* ignore */ }
 
                 SyncTrayFromConfig();
                 if (_webReady) _bridge.PushState();
-                AppLog.Debug("tray → window");
+                AppLog.Info(
+                    $"tray → window visible={Visible} state={WindowState} " +
+                    $"opacity={Opacity:0.##} taskbar={ShowInTaskbar} bounds={Bounds}");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "RestoreFromTrayPublic");
+                try
+                {
+                    Opacity = 1;
+                    ShowInTaskbar = true;
+                    WindowState = FormWindowState.Normal;
+                    Show();
+                    Visible = true;
+                }
+                catch { /* ignore */ }
             }
             finally
             {
@@ -491,13 +551,55 @@ internal sealed partial class MainForm : Form
         else work();
     }
 
+    /// <summary>若窗口完全离开工作区，重置为居中正常大小。</summary>
+    private void EnsureOnScreen()
+    {
+        var screen = Screen.FromControl(this) ?? Screen.PrimaryScreen;
+        if (screen is null) return;
+        var wa = screen.WorkingArea;
+        // 完全在屏幕外，或宽高异常
+        var on =
+            Bounds.Right > wa.Left + 40 &&
+            Bounds.Bottom > wa.Top + 40 &&
+            Bounds.Left < wa.Right - 40 &&
+            Bounds.Top < wa.Bottom - 40 &&
+            Width >= MinimumSize.Width / 2 &&
+            Height >= MinimumSize.Height / 2;
+        if (on) return;
+
+        Width = Math.Min(1180, wa.Width - 40);
+        Height = Math.Min(760, wa.Height - 40);
+        Left = wa.Left + Math.Max(0, (wa.Width - Width) / 2);
+        Top = wa.Top + Math.Max(0, (wa.Height - Height) / 2);
+        AppLog.Warn($"EnsureOnScreen reset bounds → {Bounds}");
+    }
+
     private void NativeActivate()
     {
-        // 轻微置前，避免托盘恢复后窗口仍在后台
         var h = Handle;
         if (h == IntPtr.Zero) return;
-        ShowWindow(h, 9); // SW_RESTORE
-        SetForegroundWindow(h);
+
+        // SW_SHOWNA=8 / SW_RESTORE=9 / SW_SHOW=5
+        ShowWindow(h, 5);  // SW_SHOW
+        ShowWindow(h, 9);  // SW_RESTORE
+
+        // 允许 SetForegroundWindow：短暂附着前台线程
+        var fg = GetForegroundWindow();
+        var fgTid = GetWindowThreadProcessId(fg, out _);
+        var curTid = GetCurrentThreadId();
+        var attached = false;
+        if (fgTid != 0 && fgTid != curTid)
+            attached = AttachThreadInput(fgTid, curTid, true);
+        try
+        {
+            BringWindowToTop(h);
+            SetForegroundWindow(h);
+        }
+        finally
+        {
+            if (attached)
+                AttachThreadInput(fgTid, curTid, false);
+        }
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -505,6 +607,21 @@ internal sealed partial class MainForm : Form
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
     public void RequestExit()
     {

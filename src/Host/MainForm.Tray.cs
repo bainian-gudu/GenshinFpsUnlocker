@@ -273,12 +273,22 @@ internal sealed partial class MainForm
         menu.Opening += (_, _) => SyncTrayFromConfig();
 
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => RestoreFromTrayPublic();
+        _tray.DoubleClick += (_, _) =>
+        {
+            try { RestoreFromTrayPublic(); }
+            catch (Exception ex) { AppLog.Error(ex, "tray DoubleClick restore"); }
+        };
         _tray.MouseClick += (_, e) =>
         {
-            // 左键单击也恢复主窗口（与常见设计稿桌面工具一致）
-            if (e.Button == MouseButtons.Left)
-                RestoreFromTrayPublic();
+            // 左键单击恢复主窗口
+            if (e.Button != MouseButtons.Left) return;
+            try { RestoreFromTrayPublic(); }
+            catch (Exception ex) { AppLog.Error(ex, "tray MouseClick restore"); }
+        };
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            try { RestoreFromTrayPublic(); }
+            catch (Exception ex) { AppLog.Error(ex, "tray BalloonTipClicked restore"); }
         };
 
         _service.StateChanged += OnServiceStateForTray;
