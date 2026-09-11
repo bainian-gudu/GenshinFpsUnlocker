@@ -31,6 +31,12 @@ internal static class RuntimePrerequisite
     public const string VcRedistX64Url =
         "https://aka.ms/vs/17/release/vc_redist.x64.exe";
 
+    public const string WebView2RuntimeUrl =
+        "https://developer.microsoft.com/microsoft-edge/webview2/";
+
+    public const string WebView2RuntimeDirectX64 =
+        "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
+
     /// <summary>执行完整检测并返回结构化结果。</summary>
     public static RuntimeCheckResult Check()
     {
@@ -72,6 +78,22 @@ internal static class RuntimePrerequisite
                     DotnetDesktopRuntimeDirectX64,
                     true);
             }
+        }
+
+        // 主界面依赖 Edge WebView2 Runtime
+        if (!IsWebView2RuntimeInstalled(out var wvDetail))
+        {
+            return new RuntimeCheckResult(
+                false,
+                "缺少 WebView2 运行时",
+                "未检测到 Microsoft Edge WebView2 Runtime。\n\n" +
+                "主界面需要 WebView2 才能显示。Windows 10/11 通常已预装；\n" +
+                "若被卸载或企业环境缺失，请安装官方 Evergreen Runtime 后重试。\n\n" +
+                $"检测详情：{wvDetail}\n\n" +
+                $"下载页：{WebView2RuntimeUrl}\n" +
+                $"安装包(x64)：{WebView2RuntimeDirectX64}",
+                WebView2RuntimeDirectX64,
+                fdd);
         }
 
         // Stub 已静态链接 CRT（/MT），一般不再需要单独 VC++ 红包。
@@ -329,6 +351,62 @@ internal static class RuntimePrerequisite
         }
         catch { /* ignore */ }
 
+        return false;
+    }
+
+    /// <summary>
+    /// 检测 Evergreen WebView2 Runtime（注册表 pv 或安装路径）。
+    /// </summary>
+    public static bool IsWebView2RuntimeInstalled(out string detail)
+    {
+        var notes = new List<string>();
+        try
+        {
+            foreach (var root in new[] { Registry.LocalMachine, Registry.CurrentUser })
+            {
+                foreach (var path in new[]
+                         {
+                             @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+                             @"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+                         })
+                {
+                    try
+                    {
+                        using var key = root.OpenSubKey(path);
+                        var pv = key?.GetValue("pv") as string;
+                        if (!string.IsNullOrWhiteSpace(pv) && pv != "0.0.0.0")
+                        {
+                            detail = $"registry pv={pv}";
+                            return true;
+                        }
+                        if (pv is not null) notes.Add($"pv={pv}");
+                    }
+                    catch (Exception ex) { notes.Add(ex.Message); }
+                }
+            }
+        }
+        catch (Exception ex) { notes.Add(ex.Message); }
+
+        try
+        {
+            var pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            var pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            foreach (var c in new[]
+                     {
+                         Path.Combine(pf86, "Microsoft", "EdgeWebView", "Application", "msedgewebview2.exe"),
+                         Path.Combine(pf, "Microsoft", "EdgeWebView", "Application", "msedgewebview2.exe"),
+                     })
+            {
+                if (File.Exists(c))
+                {
+                    detail = "found " + c;
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex) { notes.Add(ex.Message); }
+
+        detail = notes.Count == 0 ? "WebView2 runtime not found" : string.Join("; ", notes);
         return false;
     }
 

@@ -451,8 +451,8 @@ export default function App() {
                 <div className="overview-tip"><ShieldCheck size={16} strokeWidth={1.6} /><p><span>冒险小贴士</span>请先关闭游戏内垂直同步（V-Sync）。第三方工具存在使用风险，使用前请阅读<button onClick={() => setModal('safety')}>安全声明<ArrowUpRight size={12} /></button></p><button className="icon-button tip-help" onClick={() => navigate('guide')} aria-label="查看使用帮助"><CircleHelp size={16} /></button></div>
               </>}
               {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching'} isNative={native} />}
-              {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} />}
-              {page === 'guide' && <GuidePage navigate={navigate} onSafety={() => setModal('safety')} />}
+              {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} onOpenFolder={native ? () => { void nativeInvoke('openLogFolder').catch(() => undefined); } : undefined} />}
+              {page === 'guide' && <GuidePage navigate={navigate} onSafety={() => setModal('safety')} isNative={native} />}
               {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} isNative={native} onUninstall={native ? () => setModal('uninstall') : undefined} />}
             </motion.main>
           </AnimatePresence>
