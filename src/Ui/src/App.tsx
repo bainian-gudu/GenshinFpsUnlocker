@@ -468,6 +468,13 @@ export default function App() {
                 {saveState === 'saving' ? <LoaderCircle size={12} className="spin" /> : saveState === 'saved' ? <Check size={12} /> : <Info size={12} />}
                 {saveState === 'saving' ? '正在保存...' : saveState === 'saved' ? '所有更改已保存' : '保存失败'}
               </span>
+              {native && <>
+                <span className="status-bar-separator" />
+                <button type="button" className="status-tray-btn" title="最小化到系统托盘（关闭窗口同样驻留后台）"
+                  onClick={() => { void nativeInvoke('minimizeToTray').catch(() => undefined); }}>
+                  <PanelBottomClose size={13} />驻留托盘
+                </button>
+              </>}
             </div>
           </footer>
         </div>

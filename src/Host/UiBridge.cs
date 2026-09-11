@@ -291,7 +291,7 @@ internal sealed class UiBridge : IDisposable
                 return Task.FromResult<object?>(true);
 
             case "minimizeToTray":
-                _form.BeginInvoke(() => _form.HideToTrayPublic());
+                _form.BeginInvoke(() => _form.HideToTrayPublic(showTip: true, fromStartup: false));
                 return Task.FromResult<object?>(true);
 
             case "exitApp":
