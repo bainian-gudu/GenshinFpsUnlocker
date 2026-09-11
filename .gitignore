@@ -47,3 +47,4 @@ Build/*.7z
 src/Ui/node_modules/
 src/Ui/dist/
 
+assets-gen/
