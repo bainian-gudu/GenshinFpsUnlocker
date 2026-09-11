@@ -59,11 +59,13 @@ GenshinFpsUnlocker.Setup.exe --quiet [--dir 路径] [--no-run] [--no-desktop] [-
 
 ## CI
 
-推送 `main` / PR 时 GitHub Actions 在 `windows-latest` 构建，并上传：
+GitHub Actions **仅手动运行**（Actions → Build → Run workflow），不会在 push/PR 时自动执行。
+
+产物：
 
 - `GenshinFpsUnlocker-portable-win-x64.zip`
 - `GenshinFpsUnlocker-setup-win-x64.zip`
-- （main/release）`GenshinFpsUnlocker-setup-sc-win-x64.zip` 自包含安装包
+- （可选）`GenshinFpsUnlocker-setup-sc-win-x64.zip` 自包含安装包
 
 ## 安全说明
 
