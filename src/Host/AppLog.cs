@@ -31,7 +31,7 @@ internal static class AppLog
     private static LogLevel _minLevel = LogLevel.Debug;
     private static string? _filePath;
     private static int _sessionId;
-    private static Timer? _flushTimer;
+    private static System.Threading.Timer? _flushTimer;
     private static int _pendingCount;
 
     /// <summary>当前日志文件完整路径（可能为 null）。</summary>
@@ -65,7 +65,7 @@ internal static class AppLog
         _initialized = true;
 
         if (_flushTimer is null)
-            _flushTimer = new Timer(_ => FlushPending(), null, 1000, 1000);
+            _flushTimer = new System.Threading.Timer(_ => FlushPending(), null, 1000, 1000);
 
         if (!first)
         {
