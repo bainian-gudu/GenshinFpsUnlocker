@@ -126,11 +126,7 @@ GitHub Actions **仅手动运行**（Actions → Build → Run workflow），不
 本工具属于第三方注入类软件，适用《米哈游用户协议》第十条第二款相关表述，**使用风险由您自行承担**。
 请关闭游戏 V-Sync 后使用自定义帧率。
 
-Kachina 安装界面含「我已阅读并同意用户协议」勾选（须勾选后才能安装）。
-
-- 安装窗口副标题区域滚动展示完整用户协议（`Build/kachina.config.json` → `description` + `Build/installer-eula.css`）
-- 「用户协议」链接为 Kachina 内置文案（上游未提供点击打开逻辑；样式提示全文见上方滚动区）
-- 安装完成后完整副本仍在安装目录 `USER_AGREEMENT.txt`
+Kachina 安装界面自带「我已阅读并同意用户协议」勾选（上游内置，无法去掉）。**安装器内不展示协议全文**；完整协议见仓库 [`USER_AGREEMENT.txt`](USER_AGREEMENT.txt)，安装后亦释放到安装目录，并在首次运行的程序内「用户协议与安全声明」中展示。
 
 ## License
 
