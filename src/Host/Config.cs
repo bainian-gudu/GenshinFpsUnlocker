@@ -21,6 +21,18 @@ internal sealed class AppConfig
     public bool AutoWatch { get; set; } = true;
 
     /// <summary>
+    /// 反角色虚化注入功能（迁移自 Snap.Hutao.Remastered）：开启后镜头拉近时角色不再透明化。
+    /// 默认关闭；联机/UGC 玩法中请勿开启。
+    /// </summary>
+    public bool AntiBlurPerspective { get; set; } = false;
+
+    /// <summary>
+    /// 移除水下马赛克注入功能（迁移自 Snap.Hutao.Remastered）：开启后角色入水不再显示马赛克虚化。
+    /// 默认关闭；联机/UGC 玩法中请勿开启。
+    /// </summary>
+    public bool AntiBlurDiveMosaic { get; set; } = false;
+
+    /// <summary>
     /// 启动时是否最小化到系统托盘。
     /// 默认 false：打开软件显示主窗口；关窗/点最小化仍进托盘后台。
     /// 勾选后：下次启动直接进托盘。

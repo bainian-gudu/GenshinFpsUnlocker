@@ -115,7 +115,7 @@ internal sealed partial class UnlockService
 
                 // 注入前重置 Stub 状态字段，并推送最新 Host 配置（勿整块乱序写）
                 _config.Sanitize();
-                _ipc.ResetForNewInject(_config.TargetFps, _config.EffectiveUnlockEnabled);
+                _ipc.ResetForNewInject(_config.TargetFps, _config.EffectiveUnlockEnabled, _config.AntiBlurPerspective, _config.AntiBlurDiveMosaic);
                 _lastPushedFps = _config.TargetFps;
                 _lastPushedEnabled = _config.EffectiveUnlockEnabled ? 1 : 0;
                 _lastIpcPushUtc = DateTime.UtcNow;

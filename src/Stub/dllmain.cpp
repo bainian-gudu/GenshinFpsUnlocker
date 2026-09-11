@@ -6,6 +6,10 @@
 //   2) Hook getter，使游戏内画质菜单仍显示合法档位（30/45/60）
 //   3) 周期性调用 setter 写入 Host 下发的目标 FPS
 //
+// 反虚化注入模块（AntiBlur.cpp，迁移自 Snap.Hutao.Remastered.UnlockerIsland）：
+//   4) 反角色虚化：Hook 虚化函数，开启时跳过
+//   5) 移除水下马赛克：开启时把马赛克调用的 call 原地 Patch 为 mov eax,0
+//
 // 与 Host 通过命名共享内存通信（见 Common/IpcData.h）。
 // =============================================================================
 
@@ -19,6 +23,7 @@
 
 #include "MinHook.h"
 #include "Scanner.h"
+#include "AntiBlur.h"
 #include "../Common/IpcData.h"
 
 #pragma comment(lib, "Psapi.lib")
@@ -95,7 +100,7 @@ namespace
         g_mapHandle = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kIpcMappingName);
         if (!g_mapHandle)
         {
-            g_mapHandle = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, L"GenshinFpsUnlocker.Shared.v1");
+            g_mapHandle = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, L"GenshinFpsUnlocker.Shared.v2");
         }
         if (!g_mapHandle)
         {
@@ -234,13 +239,28 @@ namespace
 
         g_ipc->Status = IpcStatus::Waiting;
 
-        // 游戏模块可能尚未完全加载，重试扫描
+        // 游戏模块可能尚未完全加载，重试扫描。
+        // FPS 函数必须解析成功；反虚化特征（游戏版本更新可能失效）仅在有限
+        // 窗口内尝试，解析不到则跳过该功能，不阻塞帧率解锁。
         bool resolved = false;
+        bool antiBlurGaveUp = false;
         for (int i = 0; i < 120 && g_running.load(std::memory_order_relaxed); ++i)
         {
-            if (ResolveFpsFunctions())
+            if (!resolved)
             {
-                resolved = true;
+                resolved = ResolveFpsFunctions();
+            }
+            else if (!antiBlurGaveUp)
+            {
+                // 反虚化解析：两个功能均就绪即完成；扫描窗口用尽后放弃。
+                if (AntiBlur::Initialize(g_gameModule, g_ipc) || i >= 40)
+                {
+                    antiBlurGaveUp = true;
+                }
+            }
+
+            if (resolved && antiBlurGaveUp)
+            {
                 break;
             }
             Sleep(500);
@@ -275,6 +295,8 @@ namespace
             try
             {
                 ApplyTargetFps();
+                // 反虚化：按共享内存开关应用/还原水下马赛克字节 Patch
+                AntiBlur::Tick(g_ipc);
             }
             catch (...)
             {
@@ -284,6 +306,7 @@ namespace
             Sleep(250);
         }
 
+        AntiBlur::Shutdown(g_ipc);
         MH_DisableHook(MH_ALL_HOOKS);
         if (g_ipc)
         {

@@ -19,6 +19,8 @@ set(MINHOOK_SOURCES
 add_library(FpsUnlockerStub SHARED
     dllmain.cpp
     Scanner.cpp
+    Patch.cpp
+    AntiBlur.cpp
     FpsUnlockerStub.def
     ${MINHOOK_SOURCES}
 )

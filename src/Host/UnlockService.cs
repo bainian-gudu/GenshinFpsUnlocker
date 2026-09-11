@@ -41,6 +41,9 @@ internal sealed partial class UnlockService : IDisposable
     public int AttachedPid => Volatile.Read(ref _attachedPid);
     public IpcStatus StubStatus => _ipc.Read().Status;
     public int CurrentFpsFeedback => _ipc.Read().CurrentFps;
+
+    /// <summary>Stub 上报的反虚化就绪状态掩码（bit0 虚化 / bit1 马赛克 / bit2 马赛克已生效）。</summary>
+    public int AntiBlurStateFeedback => _ipc.Read().AntiBlurState;
     public AppConfig Config => _config;
 
     public UnlockService(AppConfig config)
@@ -91,7 +94,7 @@ internal sealed partial class UnlockService : IDisposable
             return;
         }
 
-        _ipc.UpdateHostFields(fps, en != 0);
+        _ipc.UpdateHostFields(fps, en != 0, _config.AntiBlurPerspective, _config.AntiBlurDiveMosaic);
         _lastPushedFps = fps;
         _lastPushedEnabled = en;
         _lastIpcPushUtc = now;
@@ -135,6 +138,22 @@ internal sealed partial class UnlockService : IDisposable
         _config.AutoWatch = enabled;
         _config.TrySave(out _);
         Raise(forceUi: true);
+    }
+
+    /// <summary>反角色虚化注入开关（迁移自 Snap.Hutao.Remastered）：保存并推送 IPC。</summary>
+    public void SetAntiBlurPerspective(bool enabled)
+    {
+        _config.AntiBlurPerspective = enabled;
+        _config.TrySave(out _);
+        PushConfigToIpc(force: true);
+    }
+
+    /// <summary>移除水下马赛克注入开关（迁移自 Snap.Hutao.Remastered）：保存并推送 IPC。</summary>
+    public void SetAntiBlurDiveMosaic(bool enabled)
+    {
+        _config.AntiBlurDiveMosaic = enabled;
+        _config.TrySave(out _);
+        PushConfigToIpc(force: true);
     }
 
     /// <summary>开机自启动开关（同步注册表）。</summary>

@@ -11,6 +11,8 @@ export interface UnlockerConfig {
   enabled: boolean;
   masterEnabled: boolean;
   autoWatch: boolean;
+  antiBlurPerspective: boolean;
+  antiBlurDiveMosaic: boolean;
   startMinimized: boolean;
   autoStartWithWindows: boolean;
   pollIntervalMs: number;
@@ -39,6 +41,8 @@ export const DEFAULT_CONFIG: UnlockerConfig = {
   enabled: true,
   masterEnabled: true,
   autoWatch: true,
+  antiBlurPerspective: false,
+  antiBlurDiveMosaic: false,
   startMinimized: false,
   autoStartWithWindows: false,
   pollIntervalMs: 1000,
@@ -58,6 +62,8 @@ export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
   enabled: '帧率解锁',
   masterEnabled: '解锁服务总开关',
   autoWatch: '自动解锁',
+  antiBlurPerspective: '反角色虚化',
+  antiBlurDiveMosaic: '移除水下马赛克',
   startMinimized: '启动后最小化到托盘',
   autoStartWithWindows: '开机自启动',
   pollIntervalMs: '进程检测间隔',

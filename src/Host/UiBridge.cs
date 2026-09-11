@@ -359,6 +359,10 @@ internal sealed class UiBridge : IDisposable
                 _service.SetMasterEnabled(master.GetValue<bool>());
             if (p["autoWatch"] is JsonNode watch)
                 _service.SetAutoWatch(watch.GetValue<bool>());
+            if (p["antiBlurPerspective"] is JsonNode abp)
+                _service.SetAntiBlurPerspective(abp.GetValue<bool>());
+            if (p["antiBlurDiveMosaic"] is JsonNode abm)
+                _service.SetAntiBlurDiveMosaic(abm.GetValue<bool>());
             if (p["autoStartWithWindows"] is JsonNode auto)
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
             if (p["startMinimized"] is JsonNode min)
@@ -441,6 +445,8 @@ internal sealed class UiBridge : IDisposable
         SetBool(root, "enabled", v => _config.Enabled = v);
         SetBool(root, "masterEnabled", v => _config.MasterEnabled = v);
         SetBool(root, "autoWatch", v => _config.AutoWatch = v);
+        SetBool(root, "antiBlurPerspective", v => _config.AntiBlurPerspective = v);
+        SetBool(root, "antiBlurDiveMosaic", v => _config.AntiBlurDiveMosaic = v);
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
         SetBool(root, "debugLogging", v => _config.DebugLogging = v);
@@ -478,6 +484,8 @@ internal sealed class UiBridge : IDisposable
     {
         to.TargetFps = from.TargetFps;
         to.Enabled = from.Enabled;
+        to.AntiBlurPerspective = from.AntiBlurPerspective;
+        to.AntiBlurDiveMosaic = from.AntiBlurDiveMosaic;
         to.MasterEnabled = from.MasterEnabled;
         to.AutoWatch = from.AutoWatch;
         to.StartMinimized = from.StartMinimized;
@@ -519,6 +527,7 @@ internal sealed class UiBridge : IDisposable
             attachedPid = _service.AttachedPid,
             currentFps = _service.CurrentFpsFeedback,
             stubStatus = (int)_service.StubStatus,
+            antiBlurState = _service.AntiBlurStateFeedback,
             saveState = save == 1 ? "saving" : save == 2 ? "error" : "saved",
             isNative = true,
             isElevated = elevated,
@@ -533,6 +542,8 @@ internal sealed class UiBridge : IDisposable
         enabled = _config.Enabled,
         masterEnabled = _config.MasterEnabled,
         autoWatch = _config.AutoWatch,
+        antiBlurPerspective = _config.AntiBlurPerspective,
+        antiBlurDiveMosaic = _config.AntiBlurDiveMosaic,
         startMinimized = _config.StartMinimized,
         autoStartWithWindows = _config.AutoStartWithWindows,
         pollIntervalMs = _config.PollIntervalMs,

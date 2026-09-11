@@ -15,6 +15,7 @@ internal enum IpcStatus : int
 
 /// <summary>
 /// Host ↔ Stub 共享结构体（Pack=8，字段顺序与 IpcData.h 必须一致）。
+/// 协议 v2：新增反虚化开关（Host 写）与就绪状态掩码（Stub 写）。
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
 internal struct IpcData
@@ -24,7 +25,9 @@ internal struct IpcData
     public int TargetFps;
     public int Enabled;
     public int CurrentFps;
-    public int Reserved0;
+    public int AntiBlurPerspective;
+    public int AntiBlurDiveMosaic;
+    public int AntiBlurState;
     public ulong Magic;
 }
 
@@ -39,10 +42,10 @@ internal sealed class IpcSharedMemory : IDisposable
     public const ulong Magic = 0x465053554E4C4B52ul;
 
     /// <summary>全局命名（服务会话/提权场景更稳）。</summary>
-    public const string MappingName = @"Global\GenshinFpsUnlocker.Shared.v1";
+    public const string MappingName = @"Global\GenshinFpsUnlocker.Shared.v2";
 
     /// <summary>本地命名回退（无 Global 权限时）。</summary>
-    public const string MappingNameLocal = @"GenshinFpsUnlocker.Shared.v1";
+    public const string MappingNameLocal = @"GenshinFpsUnlocker.Shared.v2";
 
     private readonly MemoryMappedFile _file;
     private readonly MemoryMappedViewAccessor _accessor;
@@ -82,7 +85,9 @@ internal sealed class IpcSharedMemory : IDisposable
             TargetFps = 120,
             Enabled = 1,
             CurrentFps = 0,
-            Reserved0 = 0,
+            AntiBlurPerspective = 0,
+            AntiBlurDiveMosaic = 0,
+            AntiBlurState = 0,
             Magic = Magic,
         };
         Write(data);
@@ -110,10 +115,10 @@ internal sealed class IpcSharedMemory : IDisposable
     }
 
     /// <summary>
-    /// 仅更新 Host 侧字段（TargetFps / Enabled / Magic），保留 Stub 写入的 Status 等。
+    /// 仅更新 Host 侧字段（TargetFps / Enabled / 反虚化开关 / Magic），保留 Stub 写入的 Status 等。
     /// 监视循环应优先调用本方法，避免把 Stub 状态抹成 None。
     /// </summary>
-    public void UpdateHostFields(int targetFps, bool enabled)
+    public void UpdateHostFields(int targetFps, bool enabled, bool antiBlurPerspective = false, bool antiBlurDiveMosaic = false)
     {
         lock (_sync)
         {
@@ -121,15 +126,17 @@ internal sealed class IpcSharedMemory : IDisposable
             _accessor.Read(0, out IpcData data);
             data.TargetFps = Math.Clamp(targetFps, 1, 540);
             data.Enabled = enabled ? 1 : 0;
+            data.AntiBlurPerspective = antiBlurPerspective ? 1 : 0;
+            data.AntiBlurDiveMosaic = antiBlurDiveMosaic ? 1 : 0;
             data.Magic = Magic;
-            _accessor.Write(0, ref data);
+        _accessor.Write(0, ref data);
         }
     }
 
     /// <summary>
     /// 新一次注入前：清 Stub 状态/错误，写入 Host 目标，保留 Magic。
     /// </summary>
-    public void ResetForNewInject(int targetFps, bool enabled)
+    public void ResetForNewInject(int targetFps, bool enabled, bool antiBlurPerspective = false, bool antiBlurDiveMosaic = false)
     {
         lock (_sync)
         {
@@ -138,8 +145,11 @@ internal sealed class IpcSharedMemory : IDisposable
             data.Status = IpcStatus.None;
             data.LastError = 0;
             data.CurrentFps = 0;
+            data.AntiBlurState = 0;
             data.TargetFps = Math.Clamp(targetFps, 1, 540);
             data.Enabled = enabled ? 1 : 0;
+            data.AntiBlurPerspective = antiBlurPerspective ? 1 : 0;
+            data.AntiBlurDiveMosaic = antiBlurDiveMosaic ? 1 : 0;
             data.Magic = Magic;
             _accessor.Write(0, ref data);
         }

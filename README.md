@@ -1,6 +1,6 @@
 # 原神帧率解锁 (GenshinFpsUnlocker)
 
-自定义目标 FPS · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（无 UAC）
+自定义目标 FPS · 反角色虚化 / 移除水下马赛克（反虚化注入） · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（无 UAC）
 
 界面为设计稿一比一实现的 Web UI（WebView2 嵌入）：概览 / 设置 / 日志 / 指南 / 关于；深浅色切换。
 
@@ -131,3 +131,6 @@ Kachina 安装界面自带「我已阅读并同意用户协议」勾选（上游
 ## License
 
 MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（kachina-installer）按其上游许可使用
+
+帧率解锁与反虚化（反角色虚化 / 移除水下马赛克）的特征码与 Hook/Patch 思路参考
+[DGP Studio 的 Snap.Hutao.Remastered.UnlockerIsland](https://github.com/SnapHutaoRemasteringProject/Snap.Hutao.Remastered.UnlockerIsland)（MIT），已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp`。
