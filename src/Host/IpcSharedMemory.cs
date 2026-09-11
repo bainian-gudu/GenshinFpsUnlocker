@@ -51,21 +51,30 @@ internal sealed class IpcSharedMemory : IDisposable
 
     public IpcSharedMemory()
     {
+        // 非管理员无 Global\ 权限时 CreateOrOpen 会抛；必须回退，且不得让 Host 启动失败
         MemoryMappedFile? file = null;
-        try
+        Exception? last = null;
+        foreach (var name in new[] { MappingName, MappingNameLocal, @"Local\" + MappingNameLocal })
         {
-            file = MemoryMappedFile.CreateOrOpen(MappingName, Marshal.SizeOf<IpcData>(), MemoryMappedFileAccess.ReadWrite);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Warn("Global MMF 创建失败，回退本地命名: " + ex.Message);
-            file = MemoryMappedFile.CreateOrOpen(MappingNameLocal, Marshal.SizeOf<IpcData>(), MemoryMappedFileAccess.ReadWrite);
+            try
+            {
+                file = MemoryMappedFile.CreateOrOpen(name, Marshal.SizeOf<IpcData>(), MemoryMappedFileAccess.ReadWrite);
+                AppLog.Info("IPC MMF opened: " + name);
+                break;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                AppLog.Warn($"IPC MMF '{name}' 失败: {ex.Message}");
+            }
         }
 
-        _file = file!;
+        if (file is null)
+            throw new InvalidOperationException("无法创建共享内存 IPC（Global/Local 均失败）: " + last?.Message);
+
+        _file = file;
         _accessor = _file.CreateViewAccessor(0, Marshal.SizeOf<IpcData>(), MemoryMappedFileAccess.ReadWrite);
 
-        // 初始化默认值，供 Stub 连接后立即可见
         var data = new IpcData
         {
             Status = IpcStatus.None,

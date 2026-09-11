@@ -46,10 +46,22 @@ internal sealed partial class UnlockService : IDisposable
     public UnlockService(AppConfig config)
     {
         _config = config;
-        _ipc = new IpcSharedMemory();
+        try
+        {
+            _ipc = new IpcSharedMemory();
+        }
+        catch (Exception ex)
+        {
+            // 共享内存失败不应阻止主窗/托盘；后续注入会提示
+            AppLog.Error(ex, "IpcSharedMemory");
+            throw new InvalidOperationException(
+                "无法初始化进程通信（共享内存）。\n" +
+                "请确认以当前用户身份运行（无需管理员），并检查安全软件是否拦截。\n" +
+                ex.Message, ex);
+        }
         _stubPath = PathUtil.Normalize(AppPaths.StubDllPath);
-        RefreshGamePath(autoLocateIfMissing: true);
-        PushConfigToIpc(force: true);
+        try { RefreshGamePath(autoLocateIfMissing: true); } catch (Exception ex) { AppLog.Warn(ex.Message); }
+        try { PushConfigToIpc(force: true); } catch (Exception ex) { AppLog.Warn(ex.Message); }
     }
 
     /// <summary>启动后台监视循环（线程池 Task）。</summary>

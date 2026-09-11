@@ -1,25 +1,72 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 进程入口：单实例、安装/卸载分支、运行时检测、安全声明、启动监视服务与主窗体。
-/// 清单为 asInvoker：开机自启不弹 UAC；仅 --install / --uninstall 在需要时主动提权。
-/// 官方安装/卸载由 Kachina（Install.exe / *.uninst.exe）完成；以下为便携与收尾兼容：
-/// 命令行：
-///   --install [--no-run] [--quiet]
-///   --uninstall [--quiet]   （有 *.uninst.exe 时转发）
-///   --autostart / --minimized
-///   --fps N / --no-watch / --master-on|off / --no-log / --log-level LEVEL
+/// 进程入口：单实例、安装/卸载分支、运行时检测、启动监视服务与主窗体。
+/// 清单为 asInvoker：非管理员日常启动不弹 UAC，必须能显示主窗 + 托盘。
+/// 仅 --install / --uninstall 在需要时主动提权。
 /// </summary>
 internal static class Program
 {
-    /// <summary>全局单实例互斥体名称。</summary>
-    private const string MutexName = @"Global\GenshinFpsUnlocker.Instance.v1";
-
     [STAThread]
     private static void Main(string[] args)
     {
+        // 顶层兜底：任何未捕获异常都弹窗，禁止「双击无反应」
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) =>
+        {
+            try { AppLog.Error(e.Exception, "UI ThreadException"); } catch { /* ignore */ }
+            try
+            {
+                MessageBox.Show(
+                    "界面线程异常：\n" + e.Exception.Message +
+                    "\n\n日志：%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
+                    AppPaths.ProductDisplayName,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            catch { /* ignore */ }
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            var ex = e.ExceptionObject as Exception;
+            try { if (ex is not null) AppLog.Error(ex, "UnhandledException"); } catch { /* ignore */ }
+            try
+            {
+                MessageBox.Show(
+                    "启动失败：\n" + (ex?.Message ?? e.ExceptionObject?.ToString() ?? "unknown") +
+                    "\n\n若以标准用户运行，请确认已安装 .NET Desktop Runtime 9 与 WebView2。\n" +
+                    "日志：%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
+                    "原神帧率解锁",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            catch { /* ignore */ }
+        };
+
+        try
+        {
+            Run(args);
+        }
+        catch (Exception ex)
+        {
+            try { AppLog.Error(ex, "Main"); } catch { /* ignore */ }
+            try
+            {
+                MessageBox.Show(
+                    "无法启动：\n" + ex.Message +
+                    "\n\n" + ex.GetType().FullName +
+                    "\n\n日志目录：\n%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
+                    "原神帧率解锁",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            catch { /* ignore */ }
+        }
+    }
+
+    private static void Run(string[] args)
+    {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-        // 字体 + 浅色/深色主题跟随系统（需在创建窗体前）
         UiStyle.ApplyApplicationTheme();
         ApplicationConfiguration.Initialize();
 
@@ -28,7 +75,6 @@ internal static class Program
         var isInstall = args.Any(a => a is "--install" or "/install");
         var isAutostart = args.Any(a => a is "--autostart");
 
-        // 先初始化日志，再 Load 配置（Load 内会写 AppLog，须已 Initialize）
         AppConfig? earlyConfig = null;
         try
         {
@@ -46,16 +92,18 @@ internal static class Program
             catch { /* 日志失败不得阻断启动 */ }
         }
 
-        AppLog.Info($"args=[{string.Join(' ', args)}] admin={Elevation.IsAdministrator()} autostart={isAutostart}");
+        AppLog.Info(
+            $"args=[{string.Join(' ', args)}] admin={Elevation.IsAdministrator()} " +
+            $"autostart={isAutostart} user={Environment.UserName} " +
+            $"integrity={(Elevation.IsAdministrator() ? "high" : "medium")}");
 
-        // Windows 10 / 11 x64 最低要求（自启路径 quiet 不弹窗）
         if (!OsCompatibility.EnsureOrPrompt(quiet || isAutostart))
         {
             AppLog.Error("OS 兼容性检查未通过 — 退出");
             return;
         }
 
-        // ---- 卸载：优先安装器 *.uninst.exe；否则提权后内置白名单清理 ----
+        // ---- 卸载 ----
         if (isUninstall)
         {
             AppLog.Info("收到卸载请求");
@@ -71,15 +119,13 @@ internal static class Program
                     return;
                 }
                 if (!Elevation.IsAdministrator())
-                {
                     AppLog.Warn("无管理员权限，尝试有限卸载（用户数据/HKCU/快捷方式）");
-                }
             }
             InstallUninstall.RunUninstall(quiet);
             return;
         }
 
-        // ---- 安装收尾同样按需提权 ----
+        // ---- 安装收尾按需提权 ----
         if (isInstall && !Elevation.IsAdministrator())
         {
             var argLine = string.Join(' ', args.Select(QuoteIfNeeded));
@@ -90,37 +136,40 @@ internal static class Program
             }
         }
 
-        // ---- 单实例（asInvoker 下 Global\ 互斥体通常仍可用）----
-        using var mutex = new Mutex(true, MutexName, out var createdNew);
-        if (!createdNew)
+        // ---- 单实例：Global 失败自动 Local（非管理员关键路径）----
+        using var instance = new SingleInstance();
+        if (!instance.TryAcquire())
         {
             AppLog.Warn("已有实例在运行 — 退出");
             if (!quiet && !isAutostart)
             {
                 MessageBox.Show(
-                    "程序已在运行（可在系统托盘查看）。",
+                    "程序已在运行。\n\n" +
+                    "请查看系统托盘（任务栏 ^「显示隐藏的图标」）。\n" +
+                    "若仍找不到，请在任务管理器结束 GenshinFpsUnlocker.exe 后重试。",
                     AppPaths.ProductDisplayName,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
             return;
         }
+        AppLog.Info("single-instance acquired: " + (instance.Name ?? "(none)"));
 
-        // ---- 运行时依赖（FDD 需要 .NET 8/9 Desktop Runtime）----
+        // ---- 运行时依赖 ----
         if (!RuntimePrerequisite.EnsureOrPrompt(quiet || isAutostart))
         {
             AppLog.Error("运行时前置条件不满足 — 退出");
             return;
         }
 
-        // ---- 安装收尾：标记、ARP、快捷方式、Defender ----
+        // ---- 安装收尾 ----
         if (isInstall)
         {
             AppLog.Info("安装收尾: 注册 ARP、快捷方式、Defender");
-            InstallUninstall.WriteInstallMarker();
-            InstallUninstall.RegisterUninstallInfo();
-            InstallUninstall.WriteUninstallCmdShim();
-            ShortcutHelper.CreateAll();
+            try { InstallUninstall.WriteInstallMarker(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
+            try { InstallUninstall.RegisterUninstallInfo(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
+            try { InstallUninstall.WriteUninstallCmdShim(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
+            try { ShortcutHelper.CreateAll(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
             if (Elevation.IsAdministrator())
             {
                 BackgroundResilience.TryAddDefenderExclusions(out var defMsg);
@@ -130,7 +179,8 @@ internal static class Program
             if (!quiet)
             {
                 MessageBox.Show(
-                    $"安装完成。\n\n安装目录：\n{AppPaths.ExeDirectory}\n\n配置目录：\n{AppPaths.DataDirectory}\n\n日志目录：\n{AppPaths.LogDirectory}\n\n已创建开始菜单与桌面快捷方式。\n\n提示：日常运行与开机自启不再弹出系统授权框。",
+                    $"安装完成。\n\n安装目录：\n{AppPaths.ExeDirectory}\n\n配置目录：\n{AppPaths.DataDirectory}\n\n" +
+                    $"日志目录：\n{AppPaths.LogDirectory}\n\n日常运行无需管理员，不会弹出 UAC。",
                     AppPaths.ProductDisplayName,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -143,38 +193,26 @@ internal static class Program
             }
         }
 
-        // ---- 日常启动：asInvoker，不弹 UAC ----
-        // 开机自启（--autostart）路径：禁止任何会阻塞登录的 MessageBox / UAC
         if (!Elevation.IsAdministrator())
-        {
-            AppLog.Info("以标准用户完整性运行（asInvoker，无 UAC）");
-            // 仅手动启动时给一次可选提示；自启静默
-            if (!isAutostart && !quiet && !(earlyConfig?.SuppressAdminHint ?? false))
-            {
-                // 不阻断；用户可在设置里关闭提示
-                AppLog.Debug("非管理员：注入部分受保护进程时可能失败，可在托盘查看状态");
-            }
-        }
+            AppLog.Info("以标准用户完整性运行（asInvoker，无 UAC）— 应正常显示主窗与托盘");
         else
-        {
             AppLog.Info("当前进程已提权");
-        }
 
-        BackgroundResilience.Apply();
+        try { BackgroundResilience.Apply(); }
+        catch (Exception ex) { AppLog.Warn("BackgroundResilience: " + ex.Message); }
 
         var config = earlyConfig ?? AppConfig.Load();
         AppLog.ApplyConfig(config);
 
-        // ---- 命令行覆盖 ----
         for (var i = 0; i < args.Length; i++)
         {
             if ((args[i] is "--fps" or "-f") && i + 1 < args.Length && int.TryParse(args[i + 1], out var fps))
                 config.TargetFps = fps;
             if (args[i] is "--no-watch")
                 config.AutoWatch = false;
-            if (args[i] is "--minimized" or "-m" or "--autostart")
+            // 仅 --minimized / -m 强制启动进托盘；--autostart 跟随配置（默认显示窗，可勾选最小化）
+            if (args[i] is "--minimized" or "-m")
                 config.StartMinimized = true;
-            // 强制显示主窗口（排查「看不见 UI/托盘」时使用）
             if (args[i] is "--show" or "--no-minimize")
                 config.StartMinimized = false;
             if (args[i] is "--master-off")
@@ -187,19 +225,27 @@ internal static class Program
                 config.LogLevel = args[i + 1];
         }
 
+        // 开机自启：若用户未勾选「启动后最小化」，仍显示主窗（避免「开机后找不到」）
+        // 若勾选了，则进托盘。
+        if (isAutostart && !args.Any(a => a is "--minimized" or "-m" or "--show" or "--no-minimize"))
+        {
+            // 保持 config.StartMinimized 原值
+            AppLog.Info("autostart: StartMinimized=" + config.StartMinimized);
+        }
+
         config.Sanitize();
         AppLog.ApplyConfig(config);
 
-        // 自启项写入 HKCU\Run，无需管理员，不弹 UAC
-        Autostart.SetEnabled(config.AutoStartWithWindows);
+        try { Autostart.SetEnabled(config.AutoStartWithWindows); }
+        catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
         AppLog.Info($"autostart={config.AutoStartWithWindows} cmd={Autostart.GetCommand()}");
 
-        // 已安装副本：刷新标记 / ARP / 缺失的快捷方式（HKLM ARP 失败则静默）
+        // 已安装副本：无管理员时写 PF/HKLM 会失败，全部吞掉
         if (AppPaths.IsInstalledUnderProgramFiles()
             || PathUtil.ExistsFile(Path.Combine(AppPaths.ExeDirectory, InstallUninstall.InstallMarkerFileName)))
         {
-            try { InstallUninstall.WriteInstallMarker(); } catch { /* 无写权限时忽略 */ }
-            try { InstallUninstall.RegisterUninstallInfo(); } catch { /* HKLM 可能失败 */ }
+            try { InstallUninstall.WriteInstallMarker(); } catch { /* PF 无写权限 */ }
+            try { InstallUninstall.RegisterUninstallInfo(); } catch { /* HKLM */ }
             try { InstallUninstall.WriteUninstallCmdShim(); } catch { /* ignore */ }
             try { ShortcutHelper.CreateStartMenuShortcuts(AppPaths.ExePath, AppPaths.ExeDirectory); }
             catch (Exception ex) { AppLog.Warn("刷新开始菜单: " + ex.Message); }
@@ -211,22 +257,24 @@ internal static class Program
         }
 
         if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
-        AppLog.Info($"配置已保存 targetFps={config.TargetFps} master={config.MasterEnabled} enabled={config.Enabled} autoWatch={config.AutoWatch}");
+        AppLog.Info(
+            $"config ok targetFps={config.TargetFps} master={config.MasterEnabled} " +
+            $"enabled={config.Enabled} startMin={config.StartMinimized} data={AppPaths.DataDirectory}");
 
-        // 安全声明改由 Web UI 呈现（开机自启/quiet 不打断）
         if (!config.SafetyNoticeAcknowledged && !quiet && !isAutostart)
             AppLog.Info("首次运行：将由界面展示安全声明");
 
-        using var service = new UnlockService(config);
-        service.Start();
-        AppLog.Info("UnlockService 已启动 — 进入 UI 消息循环");
-
+        UnlockService? service = null;
         try
         {
+            service = new UnlockService(config);
+            service.Start();
+            AppLog.Info("UnlockService 已启动 — 进入 UI 消息循环");
             Application.Run(new MainForm(config, service));
         }
         finally
         {
+            try { service?.Dispose(); } catch { /* ignore */ }
             try { BackgroundResilience.Clear(); } catch { /* ignore */ }
             AppLog.Shutdown();
         }
