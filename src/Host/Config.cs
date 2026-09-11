@@ -286,10 +286,14 @@ internal sealed class AppConfig
 
     private static IEnumerable<string> EnumerateCandidateReadPaths()
     {
-        yield return ConfigPath;
-        yield return BackupPath;
-        yield return TempPath;
-        // 残留的进程临时文件
+        var list = new List<string>
+        {
+            ConfigPath,
+            BackupPath,
+            TempPath,
+        };
+
+        // 残留的进程临时文件（不可在 try/catch 内 yield）
         try
         {
             var dir = AppPaths.DataDirectory;
@@ -298,13 +302,15 @@ internal sealed class AppConfig
                 foreach (var f in Directory.EnumerateFiles(dir, ".config.*.tmp")
                              .OrderByDescending(File.GetLastWriteTimeUtc)
                              .Take(3))
-                    yield return f;
+                    list.Add(f);
             }
         }
         catch { /* ignore */ }
 
         var legacy = AppPaths.LegacyPortableConfigPath;
-        if (legacy is not null) yield return legacy;
+        if (legacy is not null) list.Add(legacy);
+
+        return list;
     }
 
     private static void EnsureDataDirectory()

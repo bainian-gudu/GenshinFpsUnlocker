@@ -16,8 +16,10 @@ internal static class UiStyle
     {
         try
         {
-            // .NET 9+：WinForms 控件随系统浅色/深色
+            // .NET 9+：WinForms 控件随系统浅色/深色（实验 API，需抑制 WFO5001）
+#pragma warning disable WFO5001
             Application.SetColorMode(SystemColorMode.System);
+#pragma warning restore WFO5001
         }
         catch (Exception ex)
         {
@@ -26,7 +28,9 @@ internal static class UiStyle
 
         try
         {
-            Application.SetDefaultFont(SystemFonts.MessageBoxFont);
+            var font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
+            if (font is not null)
+                Application.SetDefaultFont(font);
         }
         catch (Exception ex)
         {
@@ -41,12 +45,13 @@ internal static class UiStyle
     }
 
     /// <summary>正文/界面默认字体（跟随系统）。</summary>
-    public static Font UiFont => SystemFonts.MessageBoxFont;
+    public static Font UiFont =>
+        SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont ?? new Font(FontFamily.GenericSansSerif, 9f);
 
     /// <summary>加粗标题（基于系统字体族与尺寸）。</summary>
     public static Font UiFontBold(float sizeDelta = 1.5f)
     {
-        var baseFont = SystemFonts.MessageBoxFont;
+        var baseFont = UiFont;
         var size = Math.Max(8f, baseFont.Size + sizeDelta);
         return new Font(baseFont.FontFamily, size, FontStyle.Bold, baseFont.Unit);
     }
@@ -60,7 +65,7 @@ internal static class UiStyle
         }
         catch
         {
-            return SystemFonts.MessageBoxFont;
+            return UiFont;
         }
     }
 
@@ -125,7 +130,9 @@ internal static class UiStyle
         try
         {
             // 重新声明跟随系统（用户改主题后）
+#pragma warning disable WFO5001
             Application.SetColorMode(SystemColorMode.System);
+#pragma warning restore WFO5001
         }
         catch { /* ignore */ }
 

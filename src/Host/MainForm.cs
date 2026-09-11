@@ -124,7 +124,16 @@ internal sealed partial class MainForm : Form
         core.Settings.IsGeneralAutofillEnabled = false;
         core.Settings.IsPasswordAutosaveEnabled = false;
 
-        core.Profile.DefaultDownloadDialogCornerAlignment = CoreWebView2DefaultDownloadDialogCornerAlignment.TopRight;
+        // DefaultDownloadDialog* 在 CoreWebView2 上（非 Profile）
+        try
+        {
+            core.DefaultDownloadDialogCornerAlignment =
+                CoreWebView2DefaultDownloadDialogCornerAlignment.TopRight;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug("DefaultDownloadDialogCornerAlignment: " + ex.Message);
+        }
 
         var uiDir = ResolveUiDirectory();
         if (uiDir is null)

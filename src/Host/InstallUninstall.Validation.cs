@@ -69,7 +69,7 @@ internal static partial class InstallUninstall
             foreach (var dir in Directory.EnumerateDirectories(normalized))
             {
                 var name = Path.GetFileName(dir);
-                if (name.StartsWith('.', StringComparison.Ordinal)) continue;
+                if (name.StartsWith(".", StringComparison.Ordinal)) continue;
                 if (name.Equals("zh-CN", StringComparison.OrdinalIgnoreCase)
                     || name.Equals("zh-Hans", StringComparison.OrdinalIgnoreCase)
                     || name.Equals("en", StringComparison.OrdinalIgnoreCase)

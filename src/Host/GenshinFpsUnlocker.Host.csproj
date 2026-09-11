@@ -29,6 +29,10 @@
     <ApplicationIcon></ApplicationIcon>
     <Product>GenshinFpsUnlocker</Product>
     <AssemblyTitle>原神帧率解锁</AssemblyTitle>
+    <!-- WFO5001: SystemColorMode 实验 API（跟随系统主题所需） -->
+    <!-- WFO0003: app.manifest 已声明 PerMonitorV2，与 SetHighDpiMode 并存可接受 -->
+    <NoWarn>$(NoWarn);WFO5001;WFO0003</NoWarn>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.0" />
