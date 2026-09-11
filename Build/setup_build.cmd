@@ -3,17 +3,16 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 rem =============================================================================
-rem 安装包构建（与常见 MicaSetup 流程一致）：
-rem   1) 调用根目录 build.ps1 编译 Stub + Host（跳过旧 WinForms Setup）
-rem   2) 7z 打 publish.7z 便携/安装载荷
-rem   3) makemica + micasetup.json → GenshinFpsUnlocker_Setup_v{ver}.exe
-rem      （内含 Uninst.exe、桌面/开始菜单快捷方式、ARP 注册表）
+rem Kachina 安装包构建：
+rem   1) 根目录 build.ps1 编译 Stub + Host
+rem   2) kachina-builder pack → update.exe
+rem   3) kachina-builder gen  → metadata + hashed
+rem   4) kachina-builder pack → GenshinFpsUnlocker.Install.{ver}.exe
 rem
 rem 前置：
 rem   - .NET 9 SDK、CMake、MSVC
-rem   - 7-Zip（PATH 中的 7z，或 Build\MicaSetup.Tools\7-Zip\7z.exe）
-rem   - makemica.exe：从 https://github.com/lemutec/MicaSetup/releases
-rem     下载 MicaSetup_v*.7z 解压到本目录（含 makemica.exe 与 template\）
+rem   - kachina-builder.exe：放在 Build\ 或仓库根
+rem     https://github.com/YuehaiTeam/kachina-installer/releases
 rem =============================================================================
 
 cd /d "%~dp0.."
@@ -21,7 +20,7 @@ set "ROOT=%CD%"
 cd /d "%~dp0"
 
 if exist "%~dp0dist" rd /s /q "%~dp0dist"
-mkdir "%~dp0dist\payload" 2>nul
+mkdir "%~dp0dist\GenshinFpsUnlocker" 2>nul
 
 @echo [prepare version]
 set "script=Select-String -Path '%ROOT%\src\Host\GenshinFpsUnlocker.Host.csproj' -Pattern 'Version\>(.*)\<\/Version' | ForEach-Object { $_.Matches.Groups[1].Value }"
@@ -30,9 +29,9 @@ if "%version%"=="" set version=1.0.0
 echo current version is %version%
 if "%b%"=="" ( set "b=%version%" )
 
-set "tmpfolder=%~dp0dist\payload"
+set "appDir=%~dp0dist\GenshinFpsUnlocker"
 set "archiveFile=GenshinFpsUnlocker_v%b%.7z"
-set "setupFile=GenshinFpsUnlocker_Setup_v%b%.exe"
+set "installFile=GenshinFpsUnlocker.Install.%b%.exe"
 
 @echo [build stub + host]
 powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\build.ps1" -Configuration Release -SkipSetup
@@ -41,56 +40,62 @@ if errorlevel 1 (
   exit /b 1
 )
 
-@echo [stage payload from %ROOT%\dist]
-xcopy "%ROOT%\dist\*" "%tmpfolder%\" /E /C /I /Y >nul
-if exist "%tmpfolder%\Setup" rd /s /q "%tmpfolder%\Setup"
-if exist "%tmpfolder%\*.Setup.exe" del /f /q "%tmpfolder%\*.Setup.exe" 2>nul
-if exist "%ROOT%\LICENSE" copy /y "%ROOT%\LICENSE" "%tmpfolder%\LICENSE" >nul
-if exist "%ROOT%\config.example.json" copy /y "%ROOT%\config.example.json" "%tmpfolder%\config.example.json" >nul
+@echo [stage app dir]
+xcopy "%ROOT%\dist\*" "%appDir%\" /E /C /I /Y >nul
+if exist "%appDir%\Setup" rd /s /q "%appDir%\Setup"
+if exist "%appDir%\*.Install.*.exe" del /f /q "%appDir%\*.Install.*.exe" 2>nul
+if exist "%appDir%\GenshinFpsUnlocker.update.exe" del /f /q "%appDir%\GenshinFpsUnlocker.update.exe" 2>nul
+if exist "%ROOT%\LICENSE" copy /y "%ROOT%\LICENSE" "%appDir%\LICENSE" >nul
+if exist "%ROOT%\config.example.json" copy /y "%ROOT%\config.example.json" "%appDir%\config.example.json" >nul
 
-@echo [pack publish.7z]
+set "BUILDER="
+if exist "%~dp0kachina-builder.exe" set "BUILDER=%~dp0kachina-builder.exe"
+if "%BUILDER%"=="" if exist "%ROOT%\kachina-builder.exe" set "BUILDER=%ROOT%\kachina-builder.exe"
+if "%BUILDER%"=="" (
+  echo.
+  echo kachina-builder.exe not found.
+  echo Download from https://github.com/YuehaiTeam/kachina-installer/releases
+  echo Place as Build\kachina-builder.exe then re-run.
+  echo App payload staged at: Build\dist\GenshinFpsUnlocker\
+  exit /b 1
+)
+
+@echo [kachina pack updater]
+"%BUILDER%" pack -c "%~dp0kachina.config.json" -o "%appDir%\GenshinFpsUnlocker.update.exe"
+if errorlevel 1 (
+  echo kachina pack updater failed
+  exit /b 1
+)
+
+@echo [optional portable 7z]
 set "SEVEN="
 where 7z >nul 2>&1 && set "SEVEN=7z"
-if "%SEVEN%"=="" if exist "%~dp0MicaSetup.Tools\7-Zip\7z.exe" set "SEVEN=%~dp0MicaSetup.Tools\7-Zip\7z.exe"
-if "%SEVEN%"=="" (
-  echo ERROR: 7z not found. Install 7-Zip or place 7z.exe under Build\MicaSetup.Tools\7-Zip\
-  exit /b 1
+if "%SEVEN%"=="" if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVEN=%ProgramFiles%\7-Zip\7z.exe"
+if not "%SEVEN%"=="" (
+  if exist "%~dp0dist\%archiveFile%" del /f /q "%~dp0dist\%archiveFile%"
+  "%SEVEN%" a -t7z "%~dp0dist\%archiveFile%" "%appDir%" -mx=5 -mf=BCJ2 -r -y
 )
 
-if exist "%~dp0publish.7z" del /f /q "%~dp0publish.7z"
-"%SEVEN%" a -t7z "%~dp0publish.7z" "%tmpfolder%\*" -mx=5 -mf=BCJ2 -r -y
-if errorlevel 1 exit /b 1
-copy /y "%~dp0publish.7z" "%~dp0dist\%archiveFile%" >nul
-
-@echo [MicaSetup makemica]
-if not exist "%~dp0makemica.exe" (
-  echo.
-  echo makemica.exe not found in Build\.
-  echo Download latest MicaSetup_v*.7z from:
-  echo   https://github.com/lemutec/MicaSetup/releases
-  echo Extract into Build\ (makemica.exe + template\), then re-run.
-  echo Portable archive is ready: Build\dist\%archiveFile%
-  exit /b 0
-)
-
-copy /y "%~dp0micasetup.json" "%~dp0micasetup.json.bak" >nul 2>&1
-if exist "%ROOT%\LICENSE" copy /y "%ROOT%\LICENSE" "%~dp0LICENSE" >nul
-"%~dp0makemica.exe" "%~dp0micasetup.json"
+@echo [kachina gen metadata]
+cd /d "%~dp0dist"
+if exist hashed rd /s /q hashed
+if exist metadata.json del /f /q metadata.json
+"%BUILDER%" gen -j 6 -i GenshinFpsUnlocker -m metadata.json -o hashed -r bainian-gudu/GenshinFpsUnlocker -t %b% -u ".\GenshinFpsUnlocker\GenshinFpsUnlocker.update.exe"
 if errorlevel 1 (
-  echo makemica failed
+  echo kachina gen failed
   exit /b 1
 )
 
-if exist "%~dp0GenshinFpsUnlocker_Setup.exe" (
-  move /y "%~dp0GenshinFpsUnlocker_Setup.exe" "%~dp0dist\%setupFile%" >nul
-  echo.
-  echo Done:
-  echo   Build\dist\%archiveFile%
-  echo   Build\dist\%setupFile%
-) else (
-  echo WARNING: GenshinFpsUnlocker_Setup.exe not produced
-  dir /b "%~dp0*.exe" 2>nul
+@echo [kachina pack offline installer]
+"%BUILDER%" pack -c "%~dp0kachina.config.json" -m metadata.json -d hashed -o "%installFile%"
+if errorlevel 1 (
+  echo kachina pack install failed
   exit /b 1
 )
 
+echo.
+echo Done:
+echo   Build\dist\%installFile%
+if exist "%~dp0dist\%archiveFile%" echo   Build\dist\%archiveFile%
+echo   ^(updater inside portable dir: GenshinFpsUnlocker.update.exe^)
 endlocal

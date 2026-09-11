@@ -26,7 +26,7 @@ env:
 
 jobs:
   build-windows:
-    name: Windows x64 (host + MicaSetup)
+    name: Windows x64 (host + Kachina)
     runs-on: windows-latest
     permissions:
       contents: read
@@ -80,65 +80,64 @@ jobs:
             "version=1.0.0" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
 
-      - name: Pack publish.7z
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $ver = "${{ steps.ver.outputs.version }}"
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          if (Test-Path publish.7z) { Remove-Item publish.7z -Force }
-          # 载荷 = dist 全部应用文件
-          7z a -t7z "publish.7z" ".\dist\*" -mx=5 -mf=BCJ2 -r -y
-          Copy-Item publish.7z "artifacts\GenshinFpsUnlocker_v$ver.7z" -Force
-          # 便携 zip（便于无 7z 用户）
-          $portableDir = "artifacts\GenshinFpsUnlocker-portable-win-x64"
-          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-          Copy-Item "dist\*" $portableDir -Recurse -Force
-          Compress-Archive -Path $portableDir -DestinationPath "artifacts\GenshinFpsUnlocker-portable-win-x64.zip" -Force
-
-      - name: Download MicaSetup
+      - name: Download kachina-builder
         uses: robinraju/release-downloader@v1.8
         with:
-          repository: "lemutec/MicaSetup"
+          repository: "YuehaiTeam/kachina-installer"
           latest: true
-          fileName: "MicaSetup_v*.7z"
+          fileName: "kachina-builder.exe"
 
-      - name: Build MicaSetup installer
+      - name: Pack Kachina installer
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $ver = "${{ steps.ver.outputs.version }}"
+          $app = "GenshinFpsUnlocker"
+          if (-not (Test-Path ".\kachina-builder.exe")) { throw "kachina-builder.exe missing" }
 
-          $archiveFiles = Get-ChildItem -Path . -Filter "MicaSetup_v*.7z"
-          if (-not $archiveFiles) { throw "MicaSetup archive not downloaded" }
-          foreach ($archive in $archiveFiles) {
-            & 7z x $archive.FullName -y
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $work = "build\kachina-ci"
+          if (Test-Path $work) { Remove-Item $work -Recurse -Force }
+          $appDir = Join-Path $work $app
+          New-Item -ItemType Directory -Force -Path $appDir | Out-Null
+          Copy-Item "dist\*" $appDir -Recurse -Force
+
+          $config = "Build\kachina.config.json"
+          $updater = Join-Path $appDir "$app.update.exe"
+
+          Write-Host "==> pack updater"
+          .\kachina-builder.exe pack -c $config -o $updater
+          if ($LASTEXITCODE -ne 0) { throw "pack updater failed" }
+
+          Write-Host "==> gen metadata"
+          Push-Location $work
+          try {
+            ..\..\kachina-builder.exe gen -j 6 -i $app -m metadata.json -o hashed `
+              -r bainian-gudu/GenshinFpsUnlocker -t $ver -u ".\$app\$app.update.exe"
+            if ($LASTEXITCODE -ne 0) { throw "gen failed" }
+
+            $installName = "$app.Install.$ver.exe"
+            Write-Host "==> pack offline install $installName"
+            ..\..\kachina-builder.exe pack -c ..\..\Build\kachina.config.json `
+              -m metadata.json -d hashed -o $installName
+            if ($LASTEXITCODE -ne 0) { throw "pack install failed" }
+
+            Copy-Item $installName "..\..\artifacts\$installName" -Force
+          } finally {
+            Pop-Location
           }
-          if (-not (Test-Path "makemica.exe")) { throw "makemica.exe missing after extract" }
 
-          # makemica 读取相对路径：Package=./publish.7z，图标 ./micasetup/...
-          Copy-Item -Path "Build\micasetup.json" -Destination ".\micasetup.json" -Force
-          if (Test-Path ".\micasetup") { Remove-Item ".\micasetup" -Recurse -Force }
-          Copy-Item -Path "Build\micasetup" -Destination ".\micasetup" -Recurse -Force
-          if (Test-Path "LICENSE") { Copy-Item "LICENSE" ".\LICENSE" -Force }
+          # 便携 zip（含 update.exe）
+          $portableDir = "artifacts\$app-portable-win-x64"
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Copy-Item "$work\$app\*" $portableDir -Recurse -Force
+          Compress-Archive -Path $portableDir -DestinationPath "artifacts\$app-portable-win-x64.zip" -Force
 
-          # publish.7z 已在仓库根（上一步）
-          if (-not (Test-Path "publish.7z")) { throw "publish.7z missing" }
-
-          .\makemica.exe micasetup.json
-          if ($LASTEXITCODE -ne 0) { throw "makemica failed" }
-
-          $setup = "GenshinFpsUnlocker_Setup.exe"
-          if (-not (Test-Path $setup)) {
-            $setup = Get-ChildItem -Filter "*Setup*.exe" -File |
-              Where-Object { $_.Name -notmatch "makemica|MicaSetup" } |
-              Select-Object -First 1 -ExpandProperty Name
+          # 便携 7z
+          if (Get-Command 7z -ErrorAction SilentlyContinue) {
+            7z a -t7z "artifacts\${app}_v$ver.7z" "$work\$app" -mx=5 -mf=BCJ2 -r -y
           }
-          if (-not $setup -or -not (Test-Path $setup)) { throw "Setup exe not produced" }
 
-          $outName = "GenshinFpsUnlocker_Setup_v$ver.exe"
-          Move-Item -Path $setup -Destination "artifacts\$outName" -Force
-          Write-Host "Produced artifacts\$outName"
           Get-ChildItem artifacts | Format-Table Name, Length
 
       - name: Upload artifacts
@@ -148,6 +147,6 @@ jobs:
           path: |
             artifacts/*.zip
             artifacts/*.7z
-            artifacts/*_Setup_v*.exe
+            artifacts/*.Install.*.exe
           if-no-files-found: error
           retention-days: 30

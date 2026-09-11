@@ -1,4 +1,4 @@
-# Build outputs (cmake / intermediate; capital Build\ holds tracked MicaSetup config)
+# Build outputs (cmake / intermediate; capital Build\ holds tracked Kachina config)
 build/
 dist/
 bin/
@@ -34,13 +34,10 @@ docs/
 *.md
 !README.md
 
-# MicaSetup local tools / intermediate (CI downloads makemica)
-Build/makemica.exe
-Build/makemica.pdb
-Build/template/
-Build/publish.7z
+# Kachina local tools / intermediate (CI downloads builder)
+Build/kachina-builder.exe
 Build/dist/
-Build/LICENSE
-Build/MicaSetup.Tools/
+Build/hashed/
+Build/metadata.json
 Build/*.7z
-# keep: Build/micasetup.json, Build/setup_build.cmd, Build/micasetup/*
+# keep: Build/kachina.config.json, Build/setup_build.cmd

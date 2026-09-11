@@ -309,7 +309,7 @@ internal sealed partial class MainForm : Form
         {
             Text = "提示：开机自启不会弹出系统授权框。游戏内请关闭 V-Sync。关闭窗口会隐藏到托盘。\n" +
                    "默认安装于 C:\\Program Files\\GenshinFpsUnlocker\\ ；配置/日志在 %LocalAppData%\\GenshinFpsUnlocker\\ 。\n" +
-                   "官方安装包含 Uninst.exe 卸载。调试日志默认开启。",
+                   "官方安装包含 GenshinFpsUnlocker.uninst.exe 卸载。调试日志默认开启。",
             AutoSize = false,
             Height = 52,
             Dock = DockStyle.Fill,

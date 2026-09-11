@@ -30,9 +30,9 @@ internal static partial class InstallUninstall
         "FpsUnlockerStub.dll",
         "FpsUnlockerStub.pdb",
         "Uninstall.cmd",
+        "GenshinFpsUnlocker.uninst.exe",
+        "GenshinFpsUnlocker.update.exe",
         "Uninst.exe",
-        "unins000.exe",
-        "unins000.dat",
         InstallMarkerFileName,
         "config.example.json",
         "README.md",
@@ -151,7 +151,7 @@ internal static partial class InstallUninstall
     }
 
     /// <summary>
-    /// 安装器生成的卸载程序路径（MicaSetup: Uninst.exe）。
+    /// 安装器生成的卸载程序路径（Kachina: GenshinFpsUnlocker.uninst.exe）。
     /// 官方安装布局优先走外部卸载器；便携/开发目录回退内置安全清理。
     /// </summary>
     public static string? FindExternalUninstaller()
@@ -159,11 +159,19 @@ internal static partial class InstallUninstall
         try
         {
             var dir = AppPaths.ExeDirectory;
-            foreach (var name in new[] { "Uninst.exe", "uninst.exe", "Uninstall.exe" })
+            // Kachina: {Product}.uninst.exe；兼容旧布局 Uninst.exe
+            foreach (var name in new[]
+                     {
+                         AppPaths.ProductName + ".uninst.exe",
+                         "GenshinFpsUnlocker.uninst.exe",
+                         "Uninst.exe",
+                         "uninst.exe",
+                         "Uninstall.exe",
+                     })
             {
-                var p = Path.Combine(dir, name);
-                if (PathUtil.ExistsFile(p))
-                    return PathUtil.Normalize(p);
+                var path = Path.Combine(dir, name);
+                if (PathUtil.ExistsFile(path))
+                    return PathUtil.Normalize(path);
             }
         }
         catch { /* ignore */ }
@@ -171,7 +179,7 @@ internal static partial class InstallUninstall
     }
 
     /// <summary>
-    /// UI / 托盘入口：优先启动安装目录 Uninst.exe；否则提权后走内置清理。
+    /// UI / 托盘入口：优先启动安装目录 *.uninst.exe；否则提权后走内置清理。
     /// </summary>
     public static void RunUninstallInteractive(bool quiet)
     {
@@ -194,7 +202,7 @@ internal static partial class InstallUninstall
         RunUninstall(quiet);
     }
 
-    /// <summary>若存在 Uninst.exe 则启动并结束当前进程。</summary>
+    /// <summary>若存在官方 uninst 则启动并结束当前进程。</summary>
     public static bool TryLaunchExternalUninstaller(bool quiet)
     {
         var uninst = FindExternalUninstaller();
@@ -203,7 +211,7 @@ internal static partial class InstallUninstall
         try
         {
             AppLog.Info("launch external uninstaller: " + uninst);
-            // 先尽量清理本软件用户数据/自启（Uninst 主要负责安装目录 + ARP）
+            // 先尽量清理本软件用户数据/自启（官方 uninst 主要负责安装目录 + ARP）
             try { Autostart.SetEnabled(false); } catch { /* ignore */ }
             try
             {
@@ -239,7 +247,7 @@ internal static partial class InstallUninstall
 
     /// <summary>
     /// 完整卸载：多层安全校验，绝不删除无关路径。
-    /// 顺序：外部 Uninst（若有）→ 自启 → 用户数据 → 便携配置 → ARP → 快捷方式 → 安装目录。
+    /// 顺序：外部 uninst（若有）→ 自启 → 用户数据 → 便携配置 → ARP → 快捷方式 → 安装目录。
     /// </summary>
     public static void RunUninstall(bool quiet)
     {

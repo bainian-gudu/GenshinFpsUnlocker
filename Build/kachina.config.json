@@ -1,0 +1,27 @@
+{
+  "source": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "uri": "https://github.com/bainian-gudu/GenshinFpsUnlocker/releases/download/v${version}/GenshinFpsUnlocker.Install.${version}.exe"
+    }
+  ],
+  "appName": "GenshinFpsUnlocker",
+  "publisher": "GenshinFpsUnlocker",
+  "regName": "GenshinFpsUnlocker",
+  "exeName": "GenshinFpsUnlocker.exe",
+  "uninstallName": "GenshinFpsUnlocker.uninst.exe",
+  "updaterName": "GenshinFpsUnlocker.update.exe",
+  "programFilesPath": "GenshinFpsUnlocker",
+  "title": "原神帧率解锁",
+  "description": "自定义 FPS · 后台注入 · 托盘设置",
+  "windowTitle": "原神帧率解锁 安装程序",
+  "ignoreFolderPath": [],
+  "userDataPath": [],
+  "extraUninstallPath": [],
+  "uacStrategy": "prefer-admin",
+  "runtimes": [
+    "Microsoft.DotNet.DesktopRuntime.9",
+    "Microsoft.VCRedist.2015+.x64"
+  ]
+}

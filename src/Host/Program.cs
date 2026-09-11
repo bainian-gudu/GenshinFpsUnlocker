@@ -3,10 +3,10 @@ namespace GenshinFpsUnlocker.Host;
 /// <summary>
 /// 进程入口：单实例、安装/卸载分支、运行时检测、安全声明、启动监视服务与主窗体。
 /// 清单为 asInvoker：开机自启不弹 UAC；仅 --install / --uninstall 在需要时主动提权。
-/// 官方安装/卸载由 MicaSetup（Setup.exe / Uninst.exe）完成；以下为便携与收尾兼容：
+/// 官方安装/卸载由 Kachina（Install.exe / *.uninst.exe）完成；以下为便携与收尾兼容：
 /// 命令行：
 ///   --install [--no-run] [--quiet]
-///   --uninstall [--quiet]   （有 Uninst.exe 时转发）
+///   --uninstall [--quiet]   （有 *.uninst.exe 时转发）
 ///   --autostart / --minimized
 ///   --fps N / --no-watch / --master-on|off / --no-log / --log-level LEVEL
 /// </summary>
@@ -55,7 +55,7 @@ internal static class Program
             return;
         }
 
-        // ---- 卸载：优先安装器 Uninst.exe；否则提权后内置白名单清理 ----
+        // ---- 卸载：优先安装器 *.uninst.exe；否则提权后内置白名单清理 ----
         if (isUninstall)
         {
             AppLog.Info("收到卸载请求");

@@ -54,9 +54,15 @@ internal static class ShortcutHelper
             workDir,
             description: AppPaths.ProductDisplayName);
 
-        // 优先指向安装器生成的 Uninst.exe；否则回退主程序 --uninstall
-        var uninstExe = Path.Combine(workDir, "Uninst.exe");
-        if (File.Exists(uninstExe))
+        // 优先指向 Kachina uninst；否则回退主程序 --uninstall
+        var uninstExe = AppPaths.UninstExePath;
+        if (!File.Exists(uninstExe))
+        {
+            var legacy = Path.Combine(workDir, "Uninst.exe");
+            if (File.Exists(legacy)) uninstExe = legacy;
+            else uninstExe = null;
+        }
+        if (uninstExe is not null && File.Exists(uninstExe))
         {
             CreateShortcut(
                 Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"),

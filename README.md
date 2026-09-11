@@ -8,58 +8,63 @@
 
 - **操作系统**：64 位 **Windows 10**（1607 / 版本 14393 及以上）或 **Windows 11**
 - **架构**：x64（与游戏客户端一致）
-- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）；安装包另需 7-Zip + [MicaSetup](https://github.com/lemutec/MicaSetup) `makemica`
+- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）；安装包另需 [kachina-builder](https://github.com/YuehaiTeam/kachina-installer/releases)
 - 运行依赖策略：
   - **应用自身**（托管 DLL、`FpsUnlockerStub.dll`、MinHook 静态编入 Stub 等）随安装包**自包含**
   - **无** Node / Python 等其它编程语言运行时依赖
-  - **仅** .NET Desktop Runtime 不打进分发包：首次运行检测；缺失时提示并提供官方下载链接
+  - **.NET Desktop Runtime 9**、**VC++ 2015+ x64**：由 **Kachina** 安装器按配置检测/安装（亦可首次运行时由主程序提示下载）
   - 可选 `build.ps1 -SelfContained` 将 .NET 也打进主程序（离线、包体更大）
 
 ## 构建
 
-默认：**主程序框架依赖（包体小）**。安装包由 **MicaSetup**（`makemica`）生成（含 `Uninst.exe`、桌面/开始菜单、ARP）：
+默认：**主程序框架依赖（包体小）**。安装包由 **Kachina**（`kachina-builder`）生成：
 
 ```powershell
 # 仅编译主程序 + Stub
 .\build.ps1 -Configuration Release -SkipSetup
 
-# 完整：编译 + 7z 载荷 + MicaSetup 安装器（需本机 Build\makemica.exe）
+# 完整：编译 + Kachina 离线安装器（需 Build\kachina-builder.exe）
 .\build.ps1 -Configuration Release
 
-# 或一键脚本
+# 或
 .\Build\setup_build.cmd
 
-# 可选：主程序也自包含（离线场景，包体更大）
+# 可选：主程序也自包含
 .\build.ps1 -Configuration Release -SelfContained
 ```
 
-首次生成安装器前，请从 [MicaSetup Releases](https://github.com/lemutec/MicaSetup/releases) 下载 `MicaSetup_v*.7z`，解压到 `Build\`（得到 `makemica.exe` 与 `template\`）。CI 会自动下载。
+首次打包前，从 [kachina-installer Releases](https://github.com/YuehaiTeam/kachina-installer/releases) 下载 `kachina-builder.exe` 放到 `Build\`。CI 会自动下载。
 
 产物：
 
 ```text
 dist\GenshinFpsUnlocker.exe
 dist\FpsUnlockerStub.dll
-dist\GenshinFpsUnlocker_v{ver}.7z              # 便携 7z
-dist\GenshinFpsUnlocker_Setup_v{ver}.exe       # MicaSetup 安装器（内含 Uninst.exe）
+dist\GenshinFpsUnlocker.Install.{ver}.exe   # Kachina 离线安装器
+dist\GenshinFpsUnlocker\                    # 便携目录（含 .update.exe）
+dist\GenshinFpsUnlocker_v{ver}.7z           # 可选便携 7z
 ```
+
+配置见 `Build/kachina.config.json`（默认安装目录 `Program Files\GenshinFpsUnlocker`、GitHub 在线源、运行库列表）。
 
 ## 安装 / 卸载
 
 ```powershell
-.\dist\GenshinFpsUnlocker_Setup_v1.0.0.exe
+.\dist\GenshinFpsUnlocker.Install.1.0.0.exe
 ```
 
 - 可选安装目录（默认 `C:\Program Files\GenshinFpsUnlocker\`）
-- 安装时一次管理员授权；装完后日常与开机自启不再弹 UAC
-- 自动创建桌面与开始菜单快捷方式、写入「应用和功能」卸载项
-- 安装目录生成 **`Uninst.exe`**（官方卸载入口）
+- 安装时按 UAC 策略提权；装完后日常与开机自启不再弹 UAC
+- 可自动处理 .NET Desktop Runtime 9 / VCRedist（见配置 `runtimes`）
+- 安装目录生成 **`GenshinFpsUnlocker.uninst.exe`**、**`GenshinFpsUnlocker.update.exe`**
 
 卸载：
 
-- 开始菜单「卸载」或安装目录 **`Uninst.exe`**
-- 程序内「卸载清理」/ 托盘菜单：优先启动 `Uninst.exe`；便携目录无该文件时回退内置白名单清理
-- 将清理安装文件、本软件配置/日志（`%LocalAppData%\GenshinFpsUnlocker`）、自启与快捷方式
+- 开始菜单 / 「应用和功能」/ 安装目录 **`GenshinFpsUnlocker.uninst.exe`**
+- 程序内「卸载清理」与托盘：优先启动官方 uninst；便携无该文件时回退内置白名单清理
+- 配置与日志默认在 `%LocalAppData%\GenshinFpsUnlocker\`（程序内卸载会尽量清理）
+
+在线更新：已安装副本可使用 `GenshinFpsUnlocker.update.exe`，从配置的 GitHub Release 源拉取（需已发布对应 `Install` 包）。
 
 ## 依赖说明
 
@@ -67,10 +72,10 @@ dist\GenshinFpsUnlocker_Setup_v{ver}.exe       # MicaSetup 安装器（内含 Un
 |------|----------|
 | 应用托管程序集 / 资源 | 打进安装包 |
 | `FpsUnlockerStub.dll` + MinHook | 打进安装包；CRT **静态链接**（/MT） |
-| 安装器 / 卸载器 | **MicaSetup** 生成的单文件 Setup.exe + Uninst.exe |
-| .NET Desktop Runtime 8/9 x64 | **不进分发包**；首次运行检测并提示官方下载 |
+| 安装器 / 卸载器 / 更新器 | **Kachina**（`Install` / `uninst` / `update`） |
+| .NET Desktop Runtime 9 x64 | 安装器 `runtimes`；亦可首次运行提示 |
+| VC++ 2015+ x64 | 安装器 `runtimes`（通常 Stub 已静态 CRT） |
 | Node / Python 等 | **不需要、不安装** |
-| VC++ 可再发行组件 | 通常不需要（Stub 已静态 CRT） |
 
 ## 配置
 
@@ -85,7 +90,8 @@ dist\GenshinFpsUnlocker_Setup_v{ver}.exe       # MicaSetup 安装器（内含 Un
 {安装目录}\GenshinFpsUnlocker\     # 默认 Program Files 下
   GenshinFpsUnlocker.exe
   FpsUnlockerStub.dll
-  Uninst.exe                       # MicaSetup 卸载程序
+  GenshinFpsUnlocker.uninst.exe    # Kachina 卸载
+  GenshinFpsUnlocker.update.exe    # Kachina 更新（可选）
   GenshinFpsUnlocker.install       # 可选标记（内置清理用）
 
 %LocalAppData%\GenshinFpsUnlocker\
@@ -100,10 +106,12 @@ GitHub Actions **仅手动运行**（Actions → Build → Run workflow），不
 产物：
 
 - `GenshinFpsUnlocker-portable-win-x64.zip`
-- `GenshinFpsUnlocker_v*.7z`
-- `GenshinFpsUnlocker_Setup_v*.exe`（MicaSetup）
+- `GenshinFpsUnlocker_v*.7z`（若 runner 有 7z）
+- `GenshinFpsUnlocker.Install.*.exe`（Kachina）
 
 工作流可选 `host_mode=self-contained` 打全量自包含主程序。
+
+将 `Install` 包发布到 Release 且 tag 为 `v{version}` 后，配置中的 GitHub 在线源即可用于更新器。
 
 ## 安全说明
 
@@ -111,4 +119,4 @@ GitHub Actions **仅手动运行**（Actions → Build → Run workflow），不
 
 ## License
 
-MIT · MinHook：BSD-2-Clause · 安装包构建工具 MicaSetup 按其上游许可使用
+MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（kachina-installer）按其上游许可使用
