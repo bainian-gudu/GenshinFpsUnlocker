@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Download, FileJson, FolderOpen, Info, RotateCcw, Settings2, ShieldCheck, SlidersHorizontal, Upload } from 'lucide-react';
+import { Check, ChevronRight, Download, FileJson, FolderOpen, Info, LoaderCircle, RotateCcw, Settings2, Shield, ShieldCheck, SlidersHorizontal, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { LogLevel, UnlockerConfig, UpdateConfig } from '../lib/config';
@@ -19,8 +19,9 @@ function NumberSetting({ title, description, value, min, max, unit, onChange }: 
   return <div className="setting-row"><div><span className="row-title">{title}</span><p className={error ? 'field-error' : ''}>{error ? `请输入 ${min} 至 ${max} 之间的整数` : description}</p></div><div className="number-setting"><input aria-label={title} type="number" min={min} max={max} value={draft} aria-invalid={error} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{unit}</span></div></div>;
 }
 
-export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative }: {
+export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative, isElevated, onRestartElevated, elevating }: {
   config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; onUninstall?: () => void; busy: boolean; isNative?: boolean;
+  isElevated?: boolean; onRestartElevated?: () => void; elevating?: boolean;
 }) {
   const [tab, setTab] = useState<'game' | 'behavior' | 'advanced'>('game');
   const tabs = [{ id: 'game', label: '游戏与解锁', icon: SlidersHorizontal }, { id: 'behavior', label: '启动与行为', icon: Settings2 }, { id: 'advanced', label: '高级设置', icon: FileJson }] as const;
@@ -60,10 +61,27 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
         <section className="control-panel settings-path-panel"><div className="panel-heading"><h2><FolderOpen size={18} />游戏安装位置</h2><button className="text-button" onClick={onPath} disabled={busy}>更改路径<ChevronRight size={15} /></button></div><p className="path-display">{config.gamePath || '尚未设置游戏路径'}</p><p className="input-help">请选择游戏本体，而非米哈游启动器。支持国服和国际服客户端。</p></section>
       </>}
       {tab === 'behavior' && <section className="control-panel setting-list"><div className="section-intro"><h2>更安静，也更顺手</h2><p>让解锁器融入你的游戏习惯，无需每次重复操作。</p></div>
-        <ToggleRow title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} />
+        <ToggleRow title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行（普通权限，不弹 UAC）" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} />
         <ToggleRow title="启动后最小化到托盘" description="开启：下次启动直接进托盘。关闭主窗口或点最小化 → 始终进入托盘后台（托盘「退出」才结束）" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} />
         <ToggleRow title="维护桌面快捷方式" description="桌面版安装或启动时，确保桌面快捷方式可用" checked={config.createDesktopShortcut} onChange={(value) => updateConfig('createDesktopShortcut', value)} />
         <ToggleRow title="启动时显示用户协议" description="每次手动启动时展示用户协议与安全声明" checked={config.showSafetyNoticeOnStartup} onChange={(value) => updateConfig('showSafetyNoticeOnStartup', value)} />
+        {isNative && <ToggleRow title="隐藏管理员权限提醒" description="关闭后，概览页不再显示「以管理员重新启动」提示条" checked={config.suppressAdminHint} onChange={(value) => updateConfig('suppressAdminHint', value)} />}
+        {isNative && (
+          <div className="setting-row admin-setting-row">
+            <div>
+              <span className="row-title">运行权限</span>
+              <p>{isElevated
+                ? '当前已以管理员身份运行，可向游戏进程注入解锁模块。'
+                : '标准用户下注入可能失败。可一键提权重启（仅本次会话弹一次 UAC；开机自启仍为普通权限）。'}</p>
+            </div>
+            {isElevated
+              ? <span className="admin-pill is-on"><ShieldCheck size={14} />管理员</span>
+              : <button type="button" className="button button-secondary" disabled={busy || elevating} onClick={onRestartElevated}>
+                  {elevating ? <LoaderCircle size={15} className="spin" /> : <Shield size={15} />}
+                  {elevating ? '请求中…' : '以管理员重新启动'}
+                </button>}
+          </div>
+        )}
       </section>}
       {tab === 'advanced' && <>
         <section className="control-panel setting-list"><div className="section-intro"><h2>后台与诊断</h2><p>默认值适用于日常使用，仅在需要时调整。</p></div>

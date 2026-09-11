@@ -10,6 +10,10 @@ export type NativeState = {
   stubStatus: number;
   saveState: 'saving' | 'saved' | 'error';
   isNative: true;
+  /** 宿主进程是否已提权（管理员） */
+  isElevated: boolean;
+  /** 解锁注入通常需要管理员；与 isElevated 相反时便于 UI 横幅 */
+  needsAdminForUnlock: boolean;
   version: string;
 };
 
@@ -97,6 +101,7 @@ function ensureListeners() {
 
 function normalizeState(raw: any): NativeState {
   const config = parseConfig({ ...DEFAULT_CONFIG, ...(raw.config ?? {}) });
+  const isElevated = Boolean(raw.isElevated);
   return {
     config,
     statusText: String(raw.statusText ?? ''),
@@ -106,6 +111,8 @@ function normalizeState(raw: any): NativeState {
     stubStatus: Number(raw.stubStatus ?? 0),
     saveState: raw.saveState === 'saving' || raw.saveState === 'error' ? raw.saveState : 'saved',
     isNative: true,
+    isElevated,
+    needsAdminForUnlock: raw.needsAdminForUnlock != null ? Boolean(raw.needsAdminForUnlock) : !isElevated,
     version: String(raw.version ?? '1.0.0'),
   };
 }

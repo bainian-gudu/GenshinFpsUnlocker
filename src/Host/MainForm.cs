@@ -484,6 +484,39 @@ internal sealed partial class MainForm : Form
         Close();
     }
 
+    /// <summary>
+    /// 以管理员身份重新启动（UAC 一次）。成功后本进程退出。
+    /// 用于帧率解锁注入在非管理员下 OpenProcess 失败时的用户主动授权。
+    /// </summary>
+    public bool TryRestartElevated(out string error)
+    {
+        error = string.Empty;
+        if (Elevation.IsAdministrator())
+        {
+            error = "当前已是管理员权限。";
+            return false;
+        }
+
+        if (!Elevation.TryRestartElevatedForUnlock(out error))
+            return false;
+
+        // 提权实例已拉起：真正退出，不藏托盘
+        _reallyExit = true;
+        try
+        {
+            BeginInvoke(() =>
+            {
+                try { Close(); }
+                catch { Environment.Exit(0); }
+            });
+        }
+        catch
+        {
+            Environment.Exit(0);
+        }
+        return true;
+    }
+
     /// <summary>托盘菜单 / Web 改配置后：勾选、FPS 子菜单、提示全文与状态头对齐 UI。</summary>
     public void SyncTrayFromConfig()
     {

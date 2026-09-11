@@ -50,7 +50,7 @@ export const DEFAULT_CONFIG: UnlockerConfig = {
   logLevel: 'Debug',
   logRetainDays: 14,
   createDesktopShortcut: true,
-  suppressAdminHint: true,
+  suppressAdminHint: false,
 };
 
 export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
@@ -69,7 +69,7 @@ export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
   logLevel: '最低日志级别',
   logRetainDays: '日志保留天数',
   createDesktopShortcut: '桌面快捷方式',
-  suppressAdminHint: '管理员提示偏好',
+  suppressAdminHint: '隐藏管理员权限提醒',
 };
 
 export function isValidGamePath(path: string): boolean {

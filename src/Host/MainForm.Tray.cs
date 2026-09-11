@@ -168,13 +168,45 @@ internal sealed partial class MainForm
         });
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("查看安全声明…", null, (_, _) =>
+        menu.Items.Add("查看用户协议…", null, (_, _) =>
         {
             RestoreFromTrayPublic();
             // Web UI 内也有声明；托盘路径用原生对话框保证托盘-only 可用
             SafetyDialog.Show(this, _config, force: true);
             PushUiAndRefreshTray();
         });
+
+        if (!Elevation.IsAdministrator())
+        {
+            menu.Items.Add("以管理员身份重新启动…", null, (_, _) =>
+            {
+                var confirm = MessageBox.Show(
+                    "帧率解锁向游戏进程注入模块时，通常需要管理员权限。\n\n" +
+                    "将弹出系统 UAC 提示；同意后本程序会关闭并以管理员重新打开。\n" +
+                    "开机自启动仍为普通权限，不会每天弹 UAC。\n\n" +
+                    "是否继续？",
+                    AppPaths.ProductDisplayName,
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (confirm != DialogResult.Yes) return;
+                if (!TryRestartElevated(out var err))
+                {
+                    MessageBox.Show(
+                        "未能以管理员启动：\n" + err,
+                        AppPaths.ProductDisplayName,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+            });
+        }
+        else
+        {
+            var adminMark = new ToolStripMenuItem("已以管理员运行")
+            {
+                Enabled = false,
+            };
+            menu.Items.Add(adminMark);
+        }
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("打开配置目录", null, (_, _) =>
@@ -351,14 +383,17 @@ internal sealed partial class MainForm
         var effective = _config.MasterEnabled && _config.Enabled;
         var pid = _service.AttachedPid;
         var trayMark = _inTray ? " · 托盘" : "";
+        var adminMark = Elevation.IsAdministrator() ? " · 管理员" : "";
         if (pid > 0)
             return effective
-                ? $"运行中 · PID {pid} · {_config.TargetFps} FPS{trayMark}"
-                : $"已附加 · 解锁暂停 · PID {pid}{trayMark}";
-        if (!_config.MasterEnabled) return "解锁服务已暂停" + trayMark;
-        if (!_config.Enabled) return "帧率解锁已关闭" + trayMark;
-        if (_config.AutoWatch) return $"自动监视中 · 目标 {_config.TargetFps} FPS{trayMark}";
-        return $"已就绪 · 目标 {_config.TargetFps} FPS{trayMark}";
+                ? $"运行中 · PID {pid} · {_config.TargetFps} FPS{adminMark}{trayMark}"
+                : $"已附加 · 解锁暂停 · PID {pid}{adminMark}{trayMark}";
+        if (!_config.MasterEnabled) return "解锁服务已暂停" + adminMark + trayMark;
+        if (!_config.Enabled) return "帧率解锁已关闭" + adminMark + trayMark;
+        if (!Elevation.IsAdministrator())
+            return $"标准权限 · 目标 {_config.TargetFps} FPS{trayMark}";
+        if (_config.AutoWatch) return $"自动监视中 · 目标 {_config.TargetFps} FPS{adminMark}{trayMark}";
+        return $"已就绪 · 目标 {_config.TargetFps} FPS{adminMark}{trayMark}";
     }
 
     private string BuildTrayTipText()

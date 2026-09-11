@@ -7,6 +7,18 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal static class Program
 {
+    /// <summary>当前持有的单实例互斥；提权重启前需释放。</summary>
+    private static SingleInstance? _activeInstance;
+
+    /// <summary>释放单实例锁，供「以管理员重新启动」在拉起新进程前调用。</summary>
+    internal static void ReleaseSingleInstance()
+    {
+        var inst = Interlocked.Exchange(ref _activeInstance, null);
+        if (inst is null) return;
+        try { inst.Dispose(); }
+        catch (Exception ex) { AppLog.Warn("ReleaseSingleInstance dispose: " + ex.Message); }
+    }
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -153,6 +165,7 @@ internal static class Program
             }
             return;
         }
+        _activeInstance = instance;
         AppLog.Info("single-instance acquired: " + (instance.Name ?? "(none)"));
 
         // ---- 运行时依赖 ----
@@ -276,6 +289,7 @@ internal static class Program
         {
             try { service?.Dispose(); } catch { /* ignore */ }
             try { BackgroundResilience.Clear(); } catch { /* ignore */ }
+            try { ReleaseSingleInstance(); } catch { /* ignore */ }
             AppLog.Shutdown();
         }
     }

@@ -301,6 +301,26 @@ internal sealed class UiBridge : IDisposable
                 });
                 return Task.FromResult<object?>(true);
 
+            case "restartElevated":
+            {
+                // 在 UI 线程执行：释放互斥 → runas → 退出
+                string? err = null;
+                var ok = false;
+                _form.Invoke(() =>
+                {
+                    ok = _form.TryRestartElevated(out err);
+                });
+                return Task.FromResult<object?>(new
+                {
+                    ok,
+                    message = ok
+                        ? "已请求管理员授权，本窗口即将关闭。"
+                        : (err ?? "无法以管理员身份重新启动"),
+                    isElevated = Elevation.IsAdministrator(),
+                    state = BuildStateObject(),
+                });
+            }
+
             default:
                 throw new InvalidOperationException("未知方法: " + method);
         }
@@ -450,6 +470,7 @@ internal sealed class UiBridge : IDisposable
     private object BuildStateObject()
     {
         var save = Volatile.Read(ref _saveState);
+        var elevated = Elevation.IsAdministrator();
         return new
         {
             config = BuildConfigDto(),
@@ -460,6 +481,8 @@ internal sealed class UiBridge : IDisposable
             stubStatus = (int)_service.StubStatus,
             saveState = save == 1 ? "saving" : save == 2 ? "error" : "saved",
             isNative = true,
+            isElevated = elevated,
+            needsAdminForUnlock = !elevated,
             version = typeof(UiBridge).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
         };
     }

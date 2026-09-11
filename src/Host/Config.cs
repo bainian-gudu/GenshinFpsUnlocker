@@ -77,8 +77,8 @@ internal sealed class AppConfig
     /// <summary>安装/首次运行时是否创建桌面快捷方式。</summary>
     public bool CreateDesktopShortcut { get; set; } = true;
 
-    /// <summary>是否不再提示“建议管理员运行”（预留，默认不弹窗）。</summary>
-    public bool SuppressAdminHint { get; set; } = true;
+    /// <summary>是否隐藏界面上的「建议管理员运行」提示条（默认显示；可在设置中关闭）。</summary>
+    public bool SuppressAdminHint { get; set; } = false;
 
     /// <summary>配置文件完整路径（不序列化）。</summary>
     [JsonIgnore]

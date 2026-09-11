@@ -2,8 +2,8 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import {
   ArrowRight, ArrowUpRight, BookOpen, Check, ChevronRight, CircleHelp, Folder,
   FolderOpen, Info, LayoutGrid, LoaderCircle, Menu, Moon, PanelBottomClose,
-  PanelsTopLeft, Play, Power, ScanLine, ShieldCheck, SlidersHorizontal, SquareTerminal,
-  Sun, X,
+  PanelsTopLeft, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck,
+  SlidersHorizontal, SquareTerminal, Sun, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
@@ -60,6 +60,9 @@ export default function App() {
   const [statusText, setStatusText] = useState('准备中');
   const [attachedPid, setAttachedPid] = useState(0);
   const [currentFps, setCurrentFps] = useState(0);
+  const [isElevated, setIsElevated] = useState(false);
+  const [needsAdmin, setNeedsAdmin] = useState(false);
+  const [elevating, setElevating] = useState(false);
   const [version, setVersion] = useState('1.0.0');
   const importRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
@@ -87,6 +90,8 @@ export default function App() {
     setStatusText(state.statusText || '就绪');
     setAttachedPid(state.attachedPid);
     setCurrentFps(state.currentFps);
+    setIsElevated(Boolean(state.isElevated));
+    setNeedsAdmin(Boolean(state.needsAdminForUnlock));
     setVersion(state.version || '1.0.0');
     setLaunchState(state.attachedPid > 0 ? 'running' : 'idle');
   }, []);
@@ -258,7 +263,26 @@ export default function App() {
     }
   }
 
-  function handleLaunch() {
+  async function restartElevated() {
+    if (!native || elevating || isElevated) return;
+    setElevating(true);
+    try {
+      const result = await nativeInvoke<{ ok: boolean; message?: string }>('restartElevated');
+      if (result?.ok) {
+        notify('正在请求管理员权限', '请在 UAC 对话框中选择「是」。本窗口即将关闭。', 'success');
+        addLog('Info', '已请求以管理员身份重新启动');
+      } else {
+        notify('未能提权重启', result?.message || '用户取消了授权，或系统拒绝了请求。', 'error');
+        addLog('Warn', result?.message || 'restartElevated 失败');
+        setElevating(false);
+      }
+    } catch (error) {
+      notify('提权失败', error instanceof Error ? error.message : '未知错误', 'error');
+      setElevating(false);
+    }
+  }
+
+    function handleLaunch() {
     if (launchState === 'launching') return;
     if (launchState === 'running' && !native) {
       setLaunchState('idle');
@@ -450,9 +474,34 @@ export default function App() {
                     </button>
                   </div>
                 </motion.section>
+                {native && needsAdmin && !config.suppressAdminHint && (
+                  <div className="admin-banner" role="status">
+                    <ShieldAlert size={18} strokeWidth={1.6} />
+                    <div className="admin-banner-body">
+                      <strong>解锁帧率需要管理员权限</strong>
+                      <p>向游戏进程注入模块时，标准用户可能无法打开目标进程（OpenProcess 失败）。点击下方按钮将弹出一次 UAC，同意后以管理员重新启动本程序。开机自启仍为普通权限，不会每天弹窗。</p>
+                    </div>
+                    <div className="admin-banner-actions">
+                      <button className="button button-primary" disabled={elevating} onClick={() => void restartElevated()}>
+                        {elevating ? <LoaderCircle size={16} className="spin" /> : <Shield size={16} />}
+                        <span>{elevating ? '请求中…' : '以管理员重新启动'}</span>
+                      </button>
+                      <button className="button button-quiet" disabled={elevating} onClick={() => updateConfig('suppressAdminHint', true)}>不再提醒</button>
+                    </div>
+                  </div>
+                )}
+                {native && isElevated && (
+                  <div className="admin-banner is-elevated" role="status">
+                    <ShieldCheck size={18} strokeWidth={1.6} />
+                    <div className="admin-banner-body">
+                      <strong>已以管理员权限运行</strong>
+                      <p>当前会话可正常向游戏进程注入帧率解锁模块。关闭本窗口仍会驻留托盘。</p>
+                    </div>
+                  </div>
+                )}
                 <div className="overview-tip"><ShieldCheck size={16} strokeWidth={1.6} /><p><span>冒险小贴士</span>请先关闭游戏内垂直同步（V-Sync）。第三方工具存在使用风险，使用前请阅读<button onClick={() => setModal('safety')}>用户协议<ArrowUpRight size={12} /></button></p><button className="icon-button tip-help" onClick={() => navigate('guide')} aria-label="查看使用帮助"><CircleHelp size={16} /></button></div>
               </>}
-              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching'} isNative={native} />}
+              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} />}
               {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} onOpenFolder={native ? () => { void nativeInvoke('openLogFolder').catch(() => undefined); } : undefined} />}
               {page === 'guide' && <GuidePage navigate={navigate} onSafety={() => setModal('safety')} isNative={native} />}
               {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} isNative={native} onUninstall={native ? () => setModal('uninstall') : undefined} />}
@@ -464,6 +513,15 @@ export default function App() {
               <span className={`status-dot ${attachedPid > 0 ? 'green pulse' : ''}`} />
               <span>{attachedPid > 0 ? '游戏进程已附加' : config.autoWatch && config.masterEnabled ? '自动监视中' : '后台监视已暂停'}</span>
               <span className="status-bar-separator" /><span className="status-target">目标 {config.targetFps} FPS</span>
+              {native && (
+                <>
+                  <span className="status-bar-separator" />
+                  <span className={`status-admin ${isElevated ? 'is-on' : 'is-off'}`} title={isElevated ? '已以管理员运行' : '标准用户 — 注入可能失败'}>
+                    {isElevated ? <ShieldCheck size={12} /> : <ShieldAlert size={12} />}
+                    {isElevated ? '管理员' : '标准权限'}
+                  </span>
+                </>
+              )}
             </div>
             <div className="status-bar-right">
               <span className={`save-status ${saveState === 'error' ? 'save-error' : ''}`} aria-live="polite">

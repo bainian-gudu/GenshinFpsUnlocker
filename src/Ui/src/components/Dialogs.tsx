@@ -113,7 +113,7 @@ export function LaunchDialog({ config, onStart, onClose, isNative }: {
       footer={<><button className="button button-quiet" onClick={onClose} disabled={busy}>暂不启动</button><button className="button button-primary" disabled={!acknowledged || busy} onClick={() => { void (async () => { setBusy(true); try { await onStart(dontAskAgain); } finally { setBusy(false); } })(); }}><Play size={15} fill="currentColor" />{isNative ? '启动游戏' : '开始启动演示'}</button></>}>
       <div className="launch-summary"><div><span>目标帧率</span><strong>{config.masterEnabled && config.enabled ? config.targetFps : 60}<small> FPS</small></strong></div><div><span>运行方式</span><strong className="summary-mode">{isNative ? '桌面服务' : '网页交互演示'}</strong></div></div>
       {!isNative && <div className="subtle-notice preview-notice"><Info size={17} /><p>网页不会启动真实游戏，也不会读取或注入游戏进程。</p></div>}
-      <p className="launch-risk">本工具属于第三方注入类软件，可能违反游戏服务条款，存在账号风险。请关闭游戏内 V-Sync，并自行评估后使用。</p>
+      <p className="launch-risk">本工具属于第三方注入类软件，可能违反游戏服务条款，存在账号风险。请关闭游戏内 V-Sync，并自行评估后使用。桌面版注入通常需要管理员权限，可在概览页一键提权重启。</p>
       <div className="launch-checkboxes"><Checkbox checked={acknowledged} onChange={setAcknowledged}>我已了解第三方工具的使用风险</Checkbox><Checkbox checked={dontAskAgain} onChange={setDontAskAgain}>下次启动不再提示</Checkbox></div>
     </Modal>
   );

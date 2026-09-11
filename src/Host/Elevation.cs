@@ -4,7 +4,7 @@ using System.Security.Principal;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 权限辅助：日常运行 asInvoker（无 UAC）；仅安装/卸载等操作按需提权。
+/// 权限辅助：日常运行 asInvoker（无 UAC）；安装/卸载与「用户主动」提权解锁时 runas。
 /// 开机自启路径绝不可触发 UAC 弹窗。
 /// </summary>
 internal static class Elevation
@@ -42,7 +42,7 @@ internal static class Elevation
                 FileName = exe,
                 Arguments = arguments,
                 UseShellExecute = true,
-                Verb = "runas", // 触发一次 UAC（仅用户主动安装/卸载时）
+                Verb = "runas", // 触发一次 UAC（用户主动）
                 WorkingDirectory = AppPaths.ExeDirectory,
             };
             Process.Start(psi);
@@ -83,5 +83,30 @@ internal static class Elevation
 
         relaunched = true;
         return false; // 当前进程应退出，由提权实例继续
+    }
+
+    /// <summary>
+    /// 用户主动：释放单实例后以管理员重新启动主程序（显示主窗）。
+    /// 成功拉起后应退出当前进程。不用于开机自启。
+    /// </summary>
+    public static bool TryRestartElevatedForUnlock(out string error)
+    {
+        error = string.Empty;
+        if (IsAdministrator())
+        {
+            error = "当前已是管理员权限。";
+            return false;
+        }
+
+        // 先释放互斥，避免提权实例被「已在运行」挡住
+        try { Program.ReleaseSingleInstance(); }
+        catch (Exception ex) { AppLog.Warn("ReleaseSingleInstance: " + ex.Message); }
+
+        // --show：提权后显示主窗；不带 --autostart，避免与自启语义混淆
+        if (!TryRelaunchElevated("--show", out error))
+            return false;
+
+        AppLog.Info("已请求以管理员身份重新启动");
+        return true;
     }
 }

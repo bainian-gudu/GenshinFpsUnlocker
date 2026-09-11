@@ -134,7 +134,10 @@ internal sealed partial class UnlockService
                     var backoff = Math.Min(60, 5 * _injectFailStreak);
                     _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(backoff);
                     AppLog.Error($"inject failed pid={process.Id} streak={_injectFailStreak} backoff={backoff}s: {error}");
-                    SetStatus($"注入失败: {error}（{backoff}s 后重试）");
+                    var adminHint = Elevation.IsAdministrator()
+                        ? string.Empty
+                        : " — 可在界面或托盘选择「以管理员重新启动」";
+                    SetStatus($"注入失败: {error}（{backoff}s 后重试）{adminHint}");
                     await Task.Delay(1000, token);
                     continue;
                 }
