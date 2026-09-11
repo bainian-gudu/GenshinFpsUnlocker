@@ -26,6 +26,10 @@ internal sealed partial class MainForm : Form
     /// </summary>
     private bool _allowVisible = true;
     private bool _startupTrayPending;
+    /// <summary>启动托盘时暂存正常位置，恢复时用。</summary>
+    private Point _restoreLocation;
+    private bool _hasRestoreLocation;
+    private CancellationTokenSource? _wakeCts;
 
     public MainForm(AppConfig config, UnlockService service)
     {
@@ -44,13 +48,18 @@ internal sealed partial class MainForm : Form
         ShowInTaskbar = true;
         BackColor = UiStyle.IsUiDark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
 
-        // 启动进托盘：先不真正显示主窗（Application.Run 仍会创建句柄）
+        // 启动进托盘：多管齐下防止「闪几秒再消失」
+        // 1) SetVisibleCore 拒绝显示  2) 屏外+透明  3) TOOLWINDOW/NOACTIVATE
+        // 4) 不等 Web 就绪，构造末尾即 FinishStartupToTray
         if (_config.StartMinimized)
         {
             _allowVisible = false;
             _startupTrayPending = true;
             _inTray = true;
             ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(-32000, -32000);
+            try { Opacity = 0; } catch { /* ignore */ }
         }
         try
         {
@@ -94,11 +103,39 @@ internal sealed partial class MainForm : Form
             }
         }
 
+        // 启动即进托盘：不等 WebView（其初始化可达数秒，否则用户会看到空窗闪现）
+        if (_startupTrayPending)
+        {
+            HandleCreated += (_, _) =>
+            {
+                try
+                {
+                    // 句柄一出即强制隐藏（兜底 SetVisibleCore）
+                    if (IsHandleCreated)
+                        ShowWindow(Handle, 0); // SW_HIDE
+                }
+                catch { /* ignore */ }
+            };
+            // 下一消息泵立刻完成托盘（气泡 + 可见托盘图标）
+            BeginInvoke(() =>
+            {
+                try { FinishStartupToTray(); }
+                catch (Exception ex) { AppLog.Warn("early FinishStartupToTray: " + ex.Message); }
+            });
+        }
+
         // 窗体句柄就绪后再强制刷新一次托盘可见性（部分环境构造阶段 Visible 会被吞）
         Shown += (_, _) =>
         {
             try
             {
+                // 启动托盘模式：Shown 不应出现；若出现则立刻藏
+                if (_startupTrayPending || (_config.StartMinimized && _inTray && !_allowVisible))
+                {
+                    try { FinishStartupToTray(); } catch { /* ignore */ }
+                    return;
+                }
+
                 if (_tray is not null)
                 {
                     _tray.Visible = false;
@@ -113,6 +150,27 @@ internal sealed partial class MainForm : Form
             }
         };
 
+        // 二次启动快捷方式 → 唤醒本实例
+        _wakeCts = new CancellationTokenSource();
+        InstanceWake.StartListener(() =>
+        {
+            try
+            {
+                if (IsDisposed || _reallyExit) return;
+                BeginInvoke(() =>
+                {
+                    try
+                    {
+                        // 用户主动再点快捷方式：打开主界面（比仅弹「已在运行」更合理）
+                        RestoreFromTrayPublic();
+                        ShowTrayBalloon(AppPaths.ProductDisplayName, "主窗口已打开。", ToolTipIcon.Info);
+                    }
+                    catch (Exception ex) { AppLog.Warn("wake restore: " + ex.Message); }
+                });
+            }
+            catch { /* ignore */ }
+        }, _wakeCts.Token);
+
         Load += async (_, _) =>
         {
             var webOk = false;
@@ -125,36 +183,46 @@ internal sealed partial class MainForm : Form
             {
                 AppLog.Error(ex, "WebView2 初始化失败");
                 try { ShowNativeFallbackUi(ex.Message); } catch { /* ignore */ }
-                try
-                {
-                    MessageBox.Show(
-                        this,
-                        "界面引擎（WebView2）初始化失败：\n" + ex.Message +
-                        "\n\n已显示简易原生界面与系统托盘。\n" +
-                        "请安装 Microsoft Edge WebView2 Runtime 后重开：\n" +
-                        "https://developer.microsoft.com/microsoft-edge/webview2/\n\n" +
-                        "也可右键托盘图标进行基本设置。",
-                        Text,
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-                catch { /* ignore */ }
-            }
-
-            // 默认打开显示主窗口；仅当勾选「启动后最小化到托盘」且 Web UI 正常时才启动进托盘
-            if (webOk && (_config.StartMinimized || _startupTrayPending))
-            {
-                BeginInvoke(() =>
+                // 启动托盘模式：不要 MessageBox 抢焦点；托盘气球即可
+                if (!(_config.StartMinimized || _inTray))
                 {
                     try
                     {
-                        // 从未真正显示过：直接完成托盘驻留，不先 Show 再 Hide（避免闪窗）
-                        FinishStartupToTray();
+                        MessageBox.Show(
+                            this,
+                            "界面引擎（WebView2）初始化失败：\n" + ex.Message +
+                            "\n\n已显示简易原生界面与系统托盘。\n" +
+                            "请安装 Microsoft Edge WebView2 Runtime 后重开：\n" +
+                            "https://developer.microsoft.com/microsoft-edge/webview2/\n\n" +
+                            "也可右键托盘图标进行基本设置。",
+                            Text,
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
                     }
+                    catch { /* ignore */ }
+                }
+                else
+                {
+                    try
+                    {
+                        ShowTrayBalloon(
+                            AppPaths.ProductDisplayName,
+                            "界面引擎加载失败，可在托盘右键进行基本设置。",
+                            ToolTipIcon.Warning);
+                    }
+                    catch { /* ignore */ }
+                }
+            }
+
+            // 启动托盘：构造期已 Finish；此处仅兜底
+            if (_config.StartMinimized || _startupTrayPending || _inTray && !_allowVisible)
+            {
+                BeginInvoke(() =>
+                {
+                    try { FinishStartupToTray(); }
                     catch (Exception ex)
                     {
                         AppLog.Warn("startup tray: " + ex.Message);
-                        try { HideToTrayPublic(showTip: true, fromStartup: true); } catch { /* ignore */ }
                     }
                 });
             }
@@ -164,7 +232,6 @@ internal sealed partial class MainForm : Form
                 {
                     try
                     {
-                        // 强制前台，避免黑窗/无托盘
                         _config.StartMinimized = false;
                         _startupTrayPending = false;
                         _allowVisible = true;
@@ -183,7 +250,6 @@ internal sealed partial class MainForm : Form
             }
             else
             {
-                // 明确保持窗口可见（覆盖历史配置误藏）
                 BeginInvoke(() =>
                 {
                     try
@@ -237,6 +303,8 @@ internal sealed partial class MainForm : Form
             }
 
             _reallyExit = true;
+            try { _wakeCts?.Cancel(); } catch { /* ignore */ }
+            try { _wakeCts?.Dispose(); } catch { /* ignore */ }
             try { _service.StateChanged -= OnServiceStateForTray; } catch { /* ignore */ }
             try { _tray.Visible = false; } catch { /* ignore */ }
             try { _tray.Dispose(); } catch { /* ignore */ }
@@ -423,6 +491,25 @@ internal sealed partial class MainForm : Form
     }
 
     /// <summary>
+    /// 启动托盘：工具窗口 + 不激活，进一步降低任务栏/动画闪现。
+    /// </summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            // 注意：base 构造期 _config 可能尚未赋值，只看 _allowVisible（字段初值 true，ctor 里 StartMinimized 时改 false）
+            if (!_allowVisible)
+            {
+                const int wsExToolwindow = 0x00000080;
+                const int wsExNoactivate = 0x08000000;
+                cp.ExStyle |= wsExToolwindow | wsExNoactivate;
+            }
+            return cp;
+        }
+    }
+
+    /// <summary>
     /// 拦截启动期 Show：StartMinimized 时只创建句柄、不把窗口画到屏幕上。
     /// </summary>
     protected override void SetVisibleCore(bool value)
@@ -433,13 +520,20 @@ internal sealed partial class MainForm : Form
             {
                 try { CreateHandle(); } catch { /* ignore */ }
             }
+            // 即便框架强制 Show，也立刻 SW_HIDE + 屏外
             value = false;
+            try
+            {
+                if (IsHandleCreated)
+                    ShowWindow(Handle, 0);
+            }
+            catch { /* ignore */ }
         }
         base.SetVisibleCore(value);
     }
 
     /// <summary>
-    /// 启动配置为进托盘：Web 已初始化后调用。窗口从未 Show，故无闪现。
+    /// 启动配置为进托盘：尽早调用。窗口保持隐藏/屏外，用户看不到主界面。
     /// </summary>
     private void FinishStartupToTray()
     {
@@ -450,20 +544,37 @@ internal sealed partial class MainForm : Form
         _suppressResizeHide = true;
         try
         {
-            try { Opacity = 1; } catch { /* ignore */ }
             ShowInTaskbar = false;
             try
             {
-                if (IsHandleCreated && Visible)
-                    Hide();
+                if (!_hasRestoreLocation)
+                {
+                    // 记下一个合理的恢复位置（屏幕中央），不要用 -32000
+                    var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 800);
+                    _restoreLocation = new Point(
+                        screen.Left + Math.Max(0, (screen.Width - Width) / 2),
+                        screen.Top + Math.Max(0, (screen.Height - Height) / 2));
+                    _hasRestoreLocation = true;
+                }
             }
             catch { /* ignore */ }
+
+            try
+            {
+                if (IsHandleCreated)
+                    ShowWindow(Handle, 0); // SW_HIDE
+            }
+            catch { /* ignore */ }
+            try { Hide(); } catch { /* ignore */ }
             try
             {
                 if (WindowState != FormWindowState.Normal)
                     WindowState = FormWindowState.Normal;
             }
             catch { /* ignore */ }
+            // 保持透明+屏外，直到用户主动恢复（恢复时再 Opacity=1 / 复位 Location）
+            try { if (Opacity > 0.01) Opacity = 0; } catch { /* ignore */ }
+            try { if (Location.X > -10000) Location = new Point(-32000, -32000); } catch { /* ignore */ }
 
             UpdateTrayTip();
             try
@@ -588,12 +699,27 @@ internal sealed partial class MainForm : Form
                 _startupTrayPending = false;
                 _allowVisible = true; // 允许 SetVisibleCore 真正显示
 
-                // 1) 彻底取消透明 / 最小化残留
+                // 1) 彻底取消透明 / 最小化 / 屏外残留
                 try { Opacity = 1; } catch { /* ignore */ }
                 try
                 {
                     if (WindowState != FormWindowState.Normal)
                         WindowState = FormWindowState.Normal;
+                }
+                catch { /* ignore */ }
+                try
+                {
+                    if (_hasRestoreLocation)
+                        Location = _restoreLocation;
+                    else if (Location.X < -1000 || Location.Y < -1000)
+                    {
+                        StartPosition = FormStartPosition.CenterScreen;
+                        // 触发一次居中：先放到工作区中心
+                        var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 800);
+                        Location = new Point(
+                            screen.Left + Math.Max(0, (screen.Width - Width) / 2),
+                            screen.Top + Math.Max(0, (screen.Height - Height) / 2));
+                    }
                 }
                 catch { /* ignore */ }
 

@@ -434,8 +434,9 @@ internal sealed partial class MainForm
         }
 
         /// <summary>左侧勾选槽宽度（所有菜单项文字从同一 X 起排）。</summary>
-        private const int CheckGutter = 26;
-        private const int TextLeft = 30;
+        /// <summary>勾选槽 + 文字左缘；所有项（含无勾选项）同一 X，避免参差。</summary>
+        private const int CheckGutter = 28;
+        private const int TextLeft = 32;
 
         protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
         {

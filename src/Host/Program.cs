@@ -152,8 +152,11 @@ internal static class Program
         using var instance = new SingleInstance();
         if (!instance.TryAcquire())
         {
-            AppLog.Warn("已有实例在运行 — 退出");
-            if (!quiet && !isAutostart)
+            AppLog.Warn("已有实例在运行 — 尝试唤醒主实例后退出");
+            // 快捷方式二次点击：唤醒已有进程主窗，不再弹「已在运行」阻塞框
+            var signaled = false;
+            try { signaled = InstanceWake.TrySignal(); } catch { /* ignore */ }
+            if (!signaled && !quiet && !isAutostart)
             {
                 MessageBox.Show(
                     "程序已在运行。\n\n" +
