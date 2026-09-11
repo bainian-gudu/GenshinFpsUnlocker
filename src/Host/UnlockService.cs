@@ -94,7 +94,7 @@ internal sealed partial class UnlockService : IDisposable
     public void ApplyFps(int fps)
     {
         _config.TargetFps = fps;
-        _config.Save();
+        _config.TrySave(out _);
         PushConfigToIpc(force: true);
     }
 
@@ -102,7 +102,7 @@ internal sealed partial class UnlockService : IDisposable
     public void SetEnabled(bool enabled)
     {
         _config.Enabled = enabled;
-        _config.Save();
+        _config.TrySave(out _);
         PushConfigToIpc(force: true);
     }
 
@@ -111,7 +111,7 @@ internal sealed partial class UnlockService : IDisposable
     {
         AppLog.Info($"SetMasterEnabled={enabled}");
         _config.MasterEnabled = enabled;
-        _config.Save();
+        _config.TrySave(out _);
         PushConfigToIpc(force: true);
         SetStatus(enabled
             ? (_config.AutoWatch ? "总开关已开启 — 后台监视中" : "总开关已开启 — 自动监视关闭")
@@ -122,7 +122,7 @@ internal sealed partial class UnlockService : IDisposable
     public void SetAutoWatch(bool enabled)
     {
         _config.AutoWatch = enabled;
-        _config.Save();
+        _config.TrySave(out _);
         Raise(forceUi: true);
     }
 
@@ -130,7 +130,7 @@ internal sealed partial class UnlockService : IDisposable
     public void SetAutoStartWithWindows(bool enabled)
     {
         _config.AutoStartWithWindows = enabled;
-        _config.Save();
+        _config.TrySave(out _);
         Autostart.SetEnabled(enabled);
         Raise(forceUi: true);
     }
@@ -157,7 +157,7 @@ internal sealed partial class UnlockService : IDisposable
         if (result.Ok && result.Path is not null)
         {
             _config.GamePath = PathUtil.Normalize(result.Path);
-            _config.Save();
+            _config.TrySave(out _);
             _gamePathStatus = $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(result.Source)}）";
         }
         else
@@ -176,7 +176,7 @@ internal sealed partial class UnlockService : IDisposable
         if (result.Ok && result.Path is not null)
         {
             _config.GamePath = PathUtil.Normalize(result.Path);
-            _config.Save();
+            _config.TrySave(out _);
             _gamePathStatus = $"游戏路径: {_config.GamePath}（手动选择）";
             AppLog.Info("manual game path: " + _config.GamePath);
             Raise(forceUi: true);
@@ -195,7 +195,7 @@ internal sealed partial class UnlockService : IDisposable
         {
             AppLog.Info($"game path auto: {result.Path} source={result.Source}");
             _config.GamePath = PathUtil.Normalize(result.Path);
-            _config.Save();
+            _config.TrySave(out _);
             _gamePathStatus = $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(result.Source)}）";
         }
         else

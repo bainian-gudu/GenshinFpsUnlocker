@@ -14,19 +14,19 @@ internal sealed record RuntimeCheckResult(
 
 /// <summary>
 /// 检测启动所需运行库是否就绪：
-/// - 依赖框架（FDD）发布需要 .NET Desktop Runtime 8.x（Windows x64）
-/// - 游戏 Stub 始终需要 64 位 Windows
-/// - VC++ x64 为软提示（缺失不硬阻断）
-/// 缺失时弹窗并提供官方下载链接。
+/// - 默认 FDD：强制检测本机 .NET Desktop Runtime 8/9（安装器下载官方 .exe 静默安装）
+/// - 可选 SC：旁路含 coreclr 时不强制本机 Runtime
+/// - 无 Node/Python 等语言依赖；Stub 静态 CRT，VC++ 仅记日志
+/// 硬性缺失时弹窗并提供官方下载链接。
 /// </summary>
 internal static class RuntimePrerequisite
 {
     // Microsoft 官方下载页 / 直链
-    public const string DotnetDesktopRuntime8Url =
-        "https://dotnet.microsoft.com/download/dotnet/8.0";
+    public const string DotnetDesktopRuntimeUrl =
+        "https://dotnet.microsoft.com/download/dotnet/9.0";
 
-    public const string DotnetDesktopRuntime8DirectX64 =
-        "https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe";
+    public const string DotnetDesktopRuntimeDirectX64 =
+        "https://aka.ms/dotnet/9.0/windowsdesktop-runtime-win-x64.exe";
 
     public const string VcRedistX64Url =
         "https://aka.ms/vs/17/release/vc_redist.x64.exe";
@@ -58,35 +58,28 @@ internal static class RuntimePrerequisite
         var fdd = IsFrameworkDependent();
         if (fdd)
         {
-            if (!IsDotNetDesktopRuntime8Installed(out var detail))
+            if (!IsDotNetDesktopRuntimeInstalled(out var detail))
             {
                 return new RuntimeCheckResult(
                     false,
-                    "缺少 .NET 8 桌面运行时",
-                    "未检测到 .NET Desktop Runtime 8.x（Windows x64）。\n\n" +
-                    "本程序以“依赖框架”方式发布，需要先安装运行库才能启动。\n\n" +
+                    "缺少 .NET 桌面运行时",
+                    "未检测到 .NET Desktop Runtime 8/9 x64（Windows x64）。\n\n" +
+                    "应用 DLL / Stub 等已随安装包提供；仅需系统 .NET 桌面运行时。\n" +
+                    "请使用官方安装器（会自动下载并静默安装 .exe），或手动安装后重试。\n\n" +
                     $"检测详情：{detail}\n\n" +
-                    "请下载并安装后重新运行安装程序 / 本软件。\n\n" +
-                    $"下载页：{DotnetDesktopRuntime8Url}\n" +
-                    $"直链(x64)：{DotnetDesktopRuntime8DirectX64}",
-                    DotnetDesktopRuntime8DirectX64,
+                    $"下载页：{DotnetDesktopRuntimeUrl}\n" +
+                    $"安装包(x64)：{DotnetDesktopRuntimeDirectX64}",
+                    DotnetDesktopRuntimeDirectX64,
                     true);
             }
         }
 
-        // VC++ 通常已存在；缺失时仅警告，不硬阻断
+        // Stub 已静态链接 CRT（/MT），一般不再需要单独 VC++ 红包。
+        // 仅记录检测结果，不弹窗、不阻断。
         if (!IsVcRedistX64Present(out var vcDetail))
-        {
-            AppLog.Warn($"未明确检测到 VC++ 可再发行组件: {vcDetail}");
-            return new RuntimeCheckResult(
-                true, // soft
-                "建议安装 VC++ 运行库",
-                "未明确检测到 Visual C++ 2015-2022 x64 运行库。\n" +
-                "若注入 Stub 失败，请安装 VC++ 可再发行组件包。\n\n" +
-                $"下载：{VcRedistX64Url}\n\n详情：{vcDetail}",
-                VcRedistX64Url,
-                fdd);
-        }
+            AppLog.Debug("VC++ redist not clearly present (Stub uses static CRT): " + vcDetail);
+        else
+            AppLog.Debug("VC++ redist: " + vcDetail);
 
         return new RuntimeCheckResult(true, "运行库检查通过", "所需运行库已就绪。", null, fdd);
     }
@@ -103,7 +96,7 @@ internal static class RuntimePrerequisite
         if (result.Ok && result.DownloadUrl is null)
             return true;
 
-        // 软警告（如 VC++）— ok=true 但带下载提示
+        // ok=true 且带 DownloadUrl 时的软提示（预留；VC++ 已改为仅记日志）
         if (result.Ok)
         {
             if (!quiet)
@@ -192,7 +185,7 @@ internal static class RuntimePrerequisite
     /// 多途径检测 .NET 8 Windows Desktop 运行时：
     /// 注册表、共享框架目录、dotnet --list-runtimes、当前进程 FrameworkDescription。
     /// </summary>
-    public static bool IsDotNetDesktopRuntime8Installed(out string detail)
+    public static bool IsDotNetDesktopRuntimeInstalled(out string detail)
     {
         detail = "";
         var found = new List<string>();
@@ -206,12 +199,12 @@ internal static class RuntimePrerequisite
             {
                 foreach (var name in key.GetValueNames())
                 {
-                    if (name.StartsWith("8.", StringComparison.Ordinal))
+                    if (name.StartsWith("8.", StringComparison.Ordinal) || name.StartsWith("9.", StringComparison.Ordinal))
                         found.Add("reg:" + name);
                 }
                 foreach (var sub in key.GetSubKeyNames())
                 {
-                    if (sub.StartsWith("8.", StringComparison.Ordinal))
+                    if (sub.StartsWith("8.", StringComparison.Ordinal) || sub.StartsWith("9.", StringComparison.Ordinal))
                         found.Add("regkey:" + sub);
                 }
             }
@@ -235,7 +228,7 @@ internal static class RuntimePrerequisite
                 foreach (var d in Directory.GetDirectories(root))
                 {
                     var ver = Path.GetFileName(d);
-                    if (ver.StartsWith("8.", StringComparison.Ordinal))
+                    if (ver.StartsWith("8.", StringComparison.Ordinal) || ver.StartsWith("9.", StringComparison.Ordinal))
                         found.Add("dir:" + ver);
                 }
             }
@@ -265,7 +258,7 @@ internal static class RuntimePrerequisite
                 foreach (var line in output.Split('\n'))
                 {
                     if (line.Contains("Microsoft.WindowsDesktop.App", StringComparison.OrdinalIgnoreCase)
-                        && line.Contains(" 8.", StringComparison.Ordinal))
+                        && (line.Contains(" 8.", StringComparison.Ordinal) || line.Contains(" 9.", StringComparison.Ordinal)))
                     {
                         found.Add("dotnet:" + line.Trim());
                     }
@@ -282,7 +275,9 @@ internal static class RuntimePrerequisite
         {
             var fx = RuntimeInformation.FrameworkDescription;
             if (fx.Contains(".NET 8.", StringComparison.OrdinalIgnoreCase)
-                || fx.Contains(".NET 8 ", StringComparison.OrdinalIgnoreCase))
+                || fx.Contains(".NET 8 ", StringComparison.OrdinalIgnoreCase)
+                || fx.Contains(".NET 9.", StringComparison.OrdinalIgnoreCase)
+                || fx.Contains(".NET 9 ", StringComparison.OrdinalIgnoreCase))
             {
                 found.Add("running:" + fx);
             }
@@ -295,7 +290,7 @@ internal static class RuntimePrerequisite
             return true;
         }
 
-        detail = string.IsNullOrEmpty(detail) ? "no .NET 8 Windows Desktop runtime found" : detail;
+        detail = string.IsNullOrEmpty(detail) ? "no .NET 8/9 Windows Desktop runtime found" : detail;
         return false;
     }
 

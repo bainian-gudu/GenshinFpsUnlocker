@@ -12,18 +12,21 @@ on:
         options:
           - Release
           - Debug
-      self_contained:
-        description: "Also build self-contained setup package"
+      host_mode:
+        description: "Host publish mode (setup always self-contained)"
         required: true
-        default: true
-        type: boolean
+        default: "framework-dependent"
+        type: choice
+        options:
+          - framework-dependent
+          - self-contained
 
 env:
-  DOTNET_VERSION: "8.0.x"
+  DOTNET_VERSION: "9.0.x"
 
 jobs:
   build-windows:
-    name: Windows x64
+    name: Windows x64 (host FDD + setup SC)
     runs-on: windows-latest
     permissions:
       contents: read
@@ -46,21 +49,33 @@ jobs:
         shell: pwsh
         env:
           CONFIGURATION: ${{ inputs.configuration }}
+          HOST_MODE: ${{ inputs.host_mode }}
         run: |
           $ErrorActionPreference = "Stop"
-          .\build.ps1 -Configuration $env:CONFIGURATION -SelfContained:$false
-          if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) {
-            throw "Host exe missing"
+          $args = @("-Configuration", $env:CONFIGURATION)
+          if ($env:HOST_MODE -eq "self-contained") {
+            $args += "-SelfContained"
           }
-          if (-not (Test-Path "dist\FpsUnlockerStub.dll")) {
-            throw "Stub dll missing"
+          .\build.ps1 @args
+          if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "Host exe missing" }
+          if (-not (Test-Path "dist\FpsUnlockerStub.dll")) { throw "Stub dll missing" }
+          if (-not (Test-Path "dist\Setup\GenshinFpsUnlocker.Setup.exe")) { throw "Setup exe missing" }
+
+          # 默认 FDD：不应带 coreclr；SC 模式应带
+          $hasCore = (Test-Path "dist\coreclr.dll") -or (Test-Path "dist\hostfxr.dll")
+          if ($env:HOST_MODE -eq "self-contained") {
+            if (-not $hasCore) { Write-Warning "SC host missing coreclr/hostfxr" }
+          } else {
+            if ($hasCore) { Write-Warning "FDD host unexpectedly contains coreclr/hostfxr" }
+            else { Write-Host "FDD host OK (no bundled runtime)" }
           }
-          if (-not (Test-Path "dist\Setup\GenshinFpsUnlocker.Setup.exe")) {
-            throw "Setup exe missing"
+          # Setup 始终 SC
+          if (-not (Test-Path "dist\Setup\coreclr.dll") -and -not (Test-Path "dist\Setup\hostfxr.dll")) {
+            Write-Warning "Setup missing coreclr/hostfxr — verify self-contained setup"
           }
           Get-ChildItem dist -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
 
-      - name: Pack portable zip
+      - name: Pack zip artifacts
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -85,58 +100,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: GenshinFpsUnlocker-win-x64
-          path: artifacts/*.zip
-          if-no-files-found: error
-          retention-days: 30
-
-  build-self-contained:
-    name: Windows x64 (self-contained)
-    runs-on: windows-latest
-    permissions:
-      contents: read
-    if: ${{ inputs.self_contained }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Add MSVC Developer environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Build self-contained
-        shell: pwsh
-        env:
-          CONFIGURATION: ${{ inputs.configuration }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\build.ps1 -Configuration $env:CONFIGURATION -SelfContained
-          if (-not (Test-Path "dist\Setup\GenshinFpsUnlocker.Setup.exe")) {
-            throw "Setup exe missing"
-          }
-
-      - name: Pack self-contained setup zip
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $out = "artifacts"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $setupDir = Join-Path $out "GenshinFpsUnlocker-setup-sc-win-x64"
-          New-Item -ItemType Directory -Force -Path $setupDir | Out-Null
-          Copy-Item "dist\Setup\*" $setupDir -Recurse -Force
-          Compress-Archive -Path $setupDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-setup-sc-win-x64.zip") -Force
-          Get-ChildItem $out | Format-Table Name, Length
-
-      - name: Upload self-contained artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GenshinFpsUnlocker-setup-sc-win-x64
           path: artifacts/*.zip
           if-no-files-found: error
           retention-days: 30

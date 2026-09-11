@@ -39,6 +39,7 @@ internal sealed class SetupForm : Form
     private bool _busy;
     private CancellationTokenSource? _installCts;
     private string _lastInstallDir = "";
+    private int _progressPhaseTotal = -1;
 
     private const int WinW = 560;
     private const int WinH = 460;
@@ -53,7 +54,7 @@ internal sealed class SetupForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9.5F);
+        UiStyle.ApplyToForm(this);
         ShowInTaskbar = true;
 
         BuildUi();
@@ -90,7 +91,7 @@ internal sealed class SetupForm : Form
             Padding = new Padding(12, 8, 12, 8),
             BackColor = SystemColors.Control,
         };
-        var sep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Color.FromArgb(200, 200, 200) };
+        var sep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = UiStyle.Separator };
         bottom.Controls.Add(sep);
 
         _cancelBtn = new Button
@@ -156,7 +157,7 @@ internal sealed class SetupForm : Form
         var title = new Label
         {
             Text = "欢迎安装 " + SetupConstants.DisplayName,
-            Font = new Font(Font.FontFamily, 13F, FontStyle.Bold),
+            Font = UiStyle.UiFontBold(3f),
             AutoSize = true,
             Location = new Point(8, 4),
         };
@@ -178,7 +179,7 @@ internal sealed class SetupForm : Form
         {
             Location = new Point(8, 260),
             Size = new Size(500, 48),
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
             Text = "正在检测安装包…",
         };
         p.Controls.Add(title);
@@ -194,7 +195,7 @@ internal sealed class SetupForm : Form
         var title = new Label
         {
             Text = "安装选项",
-            Font = new Font(Font.FontFamily, 12F, FontStyle.Bold),
+            Font = UiStyle.UiFontBold(2f),
             AutoSize = true,
             Location = new Point(8, 4),
         };
@@ -220,7 +221,7 @@ internal sealed class SetupForm : Form
         {
             Location = new Point(8, 86),
             Size = new Size(500, 32),
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
             Text = "目录名须为 GenshinFpsUnlocker。若选择其它文件夹，将在其下自动创建该子目录。",
         };
 
@@ -257,7 +258,7 @@ internal sealed class SetupForm : Form
         {
             Location = new Point(8, 234),
             Size = new Size(500, 20),
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
             Text = "",
         };
 
@@ -265,13 +266,13 @@ internal sealed class SetupForm : Form
         {
             Location = new Point(8, 258),
             Size = new Size(400, 60),
-            ForeColor = Color.DarkSlateGray,
+            ForeColor = UiStyle.SecondaryText,
             Text = "",
         };
 
         var dlBtn = new Button
         {
-            Text = "下载 .NET 8 运行库",
+            Text = "打开运行库下载页",
             Location = new Point(8, 322),
             Size = new Size(160, 28),
         };
@@ -306,7 +307,7 @@ internal sealed class SetupForm : Form
         _statusLabel = new Label
         {
             Text = "准备安装…",
-            Font = new Font(Font.FontFamily, 11F, FontStyle.Bold),
+            Font = UiStyle.UiFontBold(1.5f),
             AutoSize = true,
             Location = new Point(8, 4),
         };
@@ -334,7 +335,7 @@ internal sealed class SetupForm : Form
         {
             Location = new Point(8, 60),
             Size = new Size(500, 36),
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
             Text = "",
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
@@ -353,7 +354,7 @@ internal sealed class SetupForm : Form
             Size = new Size(500, 230),
             IntegralHeight = false,
             HorizontalScrollbar = true,
-            Font = new Font("Consolas", 8.5F),
+            Font = UiStyle.MonoFont(8.5f),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
         };
 
@@ -383,7 +384,7 @@ internal sealed class SetupForm : Form
         var title = new Label
         {
             Text = "安装完成",
-            Font = new Font(Font.FontFamily, 13F, FontStyle.Bold),
+            Font = UiStyle.UiFontBold(3f),
             AutoSize = true,
             Location = new Point(8, 4),
         };
@@ -403,7 +404,7 @@ internal sealed class SetupForm : Form
         {
             Location = new Point(8, 200),
             Size = new Size(500, 60),
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
             Text = "",
         };
         p.Controls.Add(title);
@@ -463,14 +464,14 @@ internal sealed class SetupForm : Form
         if (_payloadDir is null)
         {
             _payloadLabel.Text = "未找到安装包（需要 Payload 中的 GenshinFpsUnlocker.exe）。\n请先运行 build.ps1。";
-            _payloadLabel.ForeColor = Color.DarkRed;
+            _payloadLabel.ForeColor = UiStyle.StatusError;
             return;
         }
 
         var stub = File.Exists(Path.Combine(_payloadDir, SetupConstants.StubName));
         var n = InstallEngine.CollectPayloadFiles(_payloadDir).Count;
         _payloadLabel.Text = $"安装包：{_payloadDir}\n文件数：{n}　Stub：{(stub ? "已找到" : "缺失")}";
-        _payloadLabel.ForeColor = stub ? Color.DimGray : Color.DarkOrange;
+        _payloadLabel.ForeColor = stub ? UiStyle.SecondaryText : UiStyle.StatusWarn;
     }
 
     private void UpdateOptionsHints()
@@ -487,18 +488,22 @@ internal sealed class SetupForm : Form
 
         if (PayloadLocator.IsSelfContained(_payloadDir))
         {
-            _runtimeLabel.Text = "自包含构建：一般无需单独安装 .NET。";
-            _runtimeLabel.ForeColor = Color.DarkGreen;
+            _runtimeLabel.Text =
+                "主程序自包含：.NET 与应用依赖均已打包，无需再装运行库。";
+            _runtimeLabel.ForeColor = UiStyle.StatusOk;
         }
-        else if (RuntimeCheck.HasDotNetDesktop8(out var detail))
+        else if (RuntimeCheck.HasDotNetDesktopRuntime(out var detail))
         {
-            _runtimeLabel.Text = "已检测到 .NET 8 桌面运行时。\n" + detail;
-            _runtimeLabel.ForeColor = Color.DarkGreen;
+            _runtimeLabel.Text =
+                "应用依赖已随包提供（无 Node/Python 等）。已检测到 .NET 桌面运行时 (8/9)。\n" + detail;
+            _runtimeLabel.ForeColor = UiStyle.StatusOk;
         }
         else
         {
-            _runtimeLabel.Text = "未检测到 .NET 8 桌面运行时，主程序可能无法启动。\n可先下载运行库，或仍继续安装。";
-            _runtimeLabel.ForeColor = Color.DarkOrange;
+            _runtimeLabel.Text =
+                "应用 DLL / Stub 已随包提供（无 Node/Python 等语言依赖）。\n" +
+                "未检测到 .NET 桌面运行时：点「下一步」将自动下载官方 .exe 并静默安装（约 50–60 MB，需联网）。";
+            _runtimeLabel.ForeColor = UiStyle.StatusWarn;
         }
     }
 
@@ -551,17 +556,25 @@ internal sealed class SetupForm : Form
             if (!TryResolveInstallDir(out var installDir))
                 return;
 
+            // 缺少运行库时不阻断：安装过程中会自动下载并静默安装
             if (!PayloadLocator.IsSelfContained(_payloadDir!) &&
-                !RuntimeCheck.HasDotNetDesktop8(out _))
+                !RuntimeCheck.HasDotNetDesktopRuntime(out _))
             {
                 var r = MessageBox.Show(
                     this,
-                    "未检测到 .NET 8 桌面运行时。\n\n是 = 打开下载\n否 = 仍然安装\n取消 = 返回",
+                    "未检测到 .NET 桌面运行时 (8/9)。\n\n" +
+                    "应用文件已在安装包内（无 Node/Python 等语言依赖）。\n" +
+                    "仅需 .NET 桌面运行时：将下载官方 .exe 并静默安装（约 50–60 MB，需联网）。\n\n" +
+                    "是否继续？\n\n是 = 继续并自动安装运行库\n否 = 打开下载页\n取消 = 返回",
                     "运行库",
                     MessageBoxButtons.YesNoCancel,
-                    MessageBoxIcon.Warning);
-                if (r == DialogResult.Yes) { RuntimeCheck.OpenDownload(); return; }
+                    MessageBoxIcon.Information);
                 if (r == DialogResult.Cancel) return;
+                if (r == DialogResult.No)
+                {
+                    RuntimeCheck.OpenDownload();
+                    return;
+                }
             }
 
             await RunInstallAsync(installDir);
@@ -613,6 +626,7 @@ internal sealed class SetupForm : Form
         _installCts = new CancellationTokenSource();
         _fileList.Items.Clear();
         _progress.Value = 0;
+        _progressPhaseTotal = -1;
         _percentLabel.Text = "0%";
         _currentFileLabel.Text = "";
         _statusLabel.Text = "正在安装…";
@@ -674,13 +688,28 @@ internal sealed class SetupForm : Form
     {
         if (ev.Total > 0)
         {
+            // 阶段切换（运行库 100 ↔ 文件复制 N）时重置进度条
+            if (ev.Total != _progressPhaseTotal)
+            {
+                _progressPhaseTotal = ev.Total;
+                _progress.Value = 0;
+            }
             var pct = (int)Math.Clamp(100.0 * ev.Current / ev.Total, 0, 100);
             if (pct >= _progress.Value)
                 _progress.Value = pct;
             _percentLabel.Text = _progress.Value + "%";
         }
 
-        _statusLabel.Text = ev.IsFileCopy ? "正在复制文件…" : (ev.Message.Length > 40 ? ev.Message[..40] + "…" : ev.Message);
+        if (!ev.IsFileCopy && (ev.Message.Contains("下载", StringComparison.Ordinal) ||
+                               ev.Message.Contains("运行时", StringComparison.Ordinal) ||
+                               ev.Message.Contains("运行库", StringComparison.Ordinal)))
+        {
+            _statusLabel.Text = ev.Message.Length > 52 ? ev.Message[..52] + "…" : ev.Message;
+        }
+        else
+        {
+            _statusLabel.Text = ev.IsFileCopy ? "正在复制文件…" : (ev.Message.Length > 40 ? ev.Message[..40] + "…" : ev.Message);
+        }
 
         if (ev.IsFileCopy && ev.RelativePath is not null)
         {

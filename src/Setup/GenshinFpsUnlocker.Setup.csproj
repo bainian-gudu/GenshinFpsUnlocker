@@ -1,13 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <!-- Windows 10 1809+/Windows 11 平台标注；实际运行检测见 OsCompatibility（1607+） -->
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- 安装器始终自包含：目标机无 .NET 也能运行，并负责自动安装运行库 -->
+    <SelfContained>true</SelfContained>
+    <PublishSelfContained>true</PublishSelfContained>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
     <LangVersion>latest</LangVersion>
     <AssemblyName>GenshinFpsUnlocker.Setup</AssemblyName>
     <RootNamespace>GenshinFpsUnlocker.Setup</RootNamespace>
@@ -21,4 +28,7 @@
     <Description>原神帧率解锁图形安装器</Description>
     <Authors>GenshinFpsUnlocker</Authors>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.0" />
+  </ItemGroup>
 </Project>

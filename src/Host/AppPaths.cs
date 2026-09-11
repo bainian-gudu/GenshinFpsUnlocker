@@ -2,8 +2,9 @@ namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
 /// 标准目录布局约定：
-///   安装目录：C:\Program Files\GenshinFpsUnlocker\   （仅二进制，专用子目录，不污染 PF 根）
+///   安装目录：C:\Program Files\GenshinFpsUnlocker\   （应用二进制，专用子目录）
 ///   数据目录：%LocalAppData%\GenshinFpsUnlocker\     （config.json、logs）
+///   运行库：安装器下载官方 .exe 静默安装；无 Node/Python 等语言依赖
 /// 所有路径访问尽量经 <see cref="PathUtil"/> 规范化，兼容中文目录。
 /// </summary>
 internal static class AppPaths
@@ -51,18 +52,59 @@ internal static class AppPaths
     /// <summary>安装目录下的卸载脚本垫片（双击即可卸载）。</summary>
     public static string UninstallCmdPath => Path.Combine(ExeDirectory, "Uninstall.cmd");
 
+
+    private static string? _dataDirectory;
+    private static readonly object DataDirLock = new();
+
     /// <summary>
     /// 每用户可写数据目录（配置不得放在 Program Files 下，否则无管理员权限无法保存）。
+    /// 探测一次后缓存：LocalAppData → AppData → 文档。
     /// </summary>
     public static string DataDirectory
     {
         get
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                ProductName);
-            PathUtil.EnsureDir(dir);
-            return PathUtil.Normalize(dir);
+            if (_dataDirectory is not null) return _dataDirectory;
+            lock (DataDirLock)
+            {
+                if (_dataDirectory is not null) return _dataDirectory;
+
+                // 优先 LocalAppData（标准、本机持久化）
+                var candidates = new[]
+                {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductName),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ProductName),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), ProductName),
+                };
+                Exception? last = null;
+                foreach (var dir in candidates)
+                {
+                    if (string.IsNullOrWhiteSpace(dir)) continue;
+                    try
+                    {
+                        PathUtil.EnsureDir(dir);
+                        // 探测可写
+                        var probe = Path.Combine(dir, ".write_test");
+                        File.WriteAllText(probe, "ok");
+                        File.Delete(probe);
+                        _dataDirectory = PathUtil.Normalize(dir);
+                        return _dataDirectory;
+                    }
+                    catch (Exception ex)
+                    {
+                        last = ex;
+                    }
+                }
+                // 最后回退：仍返回 LocalAppData 路径（调用方 Save 时再报错）
+                var fallback = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    ProductName);
+                try { Directory.CreateDirectory(fallback); } catch { /* ignore */ }
+                if (last is not null)
+                    AppLog.Warn("DataDirectory writable probe failed: " + last.Message);
+                _dataDirectory = PathUtil.Normalize(fallback);
+                return _dataDirectory;
+            }
         }
     }
 

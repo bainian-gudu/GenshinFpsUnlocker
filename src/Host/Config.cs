@@ -1,11 +1,13 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 应用配置（JSON）。存储于 %LocalAppData%\GenshinFpsUnlocker\config.json。
-/// 属性名序列化为 camelCase，与 config.example.json 对齐。
+/// 应用配置（JSON）。主路径：%LocalAppData%\GenshinFpsUnlocker\config.json。
+/// 持久化策略：写临时文件 → Flush → File.Replace 原子替换 → 保留 .bak 备份；
+/// 读失败时依次尝试主文件 / .bak / .tmp / 便携旁路，降低丢失与半截写入风险。
 /// </summary>
 internal sealed class AppConfig
 {
@@ -75,50 +77,193 @@ internal sealed class AppConfig
     [JsonIgnore]
     public static string ConfigPath => AppPaths.ConfigPath;
 
+    [JsonIgnore]
+    private static string BackupPath => ConfigPath + ".bak";
+
+    [JsonIgnore]
+    private static string TempPath => ConfigPath + ".tmp";
+
+    private static readonly object IoLock = new();
+
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        // 未知字段保留兼容，避免旧/新版本互相抹掉键
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     };
 
-    /// <summary>从磁盘加载配置；不存在则返回默认值。必要时迁移旧版便携配置。</summary>
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    /// <summary>
+    /// 从磁盘加载配置。顺序：主文件 → .bak → .tmp → 便携 config.json；
+    /// 全部失败则返回默认值（不在 Load 时写盘，避免覆盖用户残损文件前未备份）。
+    /// </summary>
     public static AppConfig Load()
     {
-        MigrateLegacyConfigIfNeeded();
-
-        try
+        lock (IoLock)
         {
-            if (File.Exists(ConfigPath))
+            MigrateLegacyConfigIfNeeded();
+
+            foreach (var path in EnumerateCandidateReadPaths())
             {
-                var json = File.ReadAllText(ConfigPath);
-                var cfg = JsonSerializer.Deserialize<AppConfig>(json, Options);
-                if (cfg != null)
+                try
                 {
+                    if (!PathUtil.ExistsFile(path)) continue;
+                    var json = File.ReadAllText(path, Utf8NoBom);
+                    if (string.IsNullOrWhiteSpace(json)) continue;
+
+                    var cfg = JsonSerializer.Deserialize<AppConfig>(json, Options);
+                    if (cfg is null) continue;
+
                     cfg.Sanitize();
+                    AppLog.Info($"config loaded from {path}");
+
+                    // 若是从备份/临时恢复，立刻写回主路径巩固
+                    if (!PathUtil.EqualsPath(path, ConfigPath))
+                    {
+                        try
+                        {
+                            cfg.SaveCore(createBackup: false);
+                            AppLog.Warn($"config recovered from {path} → {ConfigPath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLog.Warn("config recover write: " + ex.Message);
+                        }
+                    }
+
                     return cfg;
                 }
+                catch (Exception ex)
+                {
+                    AppLog.Warn($"config read failed ({path}): {ex.Message}");
+                }
             }
-        }
-        catch
-        {
-            // 损坏的 JSON 等：回退默认值
-        }
 
-        var defaults = new AppConfig();
-        defaults.Sanitize();
-        return defaults;
+            AppLog.Warn("config not found or unreadable — using defaults");
+            var defaults = new AppConfig();
+            defaults.Sanitize();
+            // 首次运行写出默认配置，确保目录与文件存在
+            try { defaults.SaveCore(createBackup: false); }
+            catch (Exception ex) { AppLog.Warn("config initial save: " + ex.Message); }
+            return defaults;
+        }
     }
 
-    /// <summary>原子写入配置（先写 .tmp 再覆盖），避免断电半截文件。</summary>
+    /// <summary>原子持久化；失败时抛出（UI 可提示）。内部带锁。</summary>
     public void Save()
     {
+        lock (IoLock)
+        {
+            SaveCore(createBackup: true);
+        }
+    }
+
+    /// <summary>尽力保存，不向外抛（托盘开关等热路径）。</summary>
+    public bool TrySave(out string? error)
+    {
+        error = null;
+        try
+        {
+            Save();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            try { AppLog.Error(ex, "config Save"); } catch { /* ignore */ }
+            return false;
+        }
+    }
+
+    private void SaveCore(bool createBackup)
+    {
         Sanitize();
-        Directory.CreateDirectory(AppPaths.DataDirectory);
+        EnsureDataDirectory();
+
+        var primary = ConfigPath;
+        var dir = Path.GetDirectoryName(primary);
+        if (string.IsNullOrEmpty(dir))
+            throw new InvalidOperationException("配置目录无效");
+
         var json = JsonSerializer.Serialize(this, Options);
-        var tmp = ConfigPath + ".tmp";
-        File.WriteAllText(tmp, json);
-        File.Copy(tmp, ConfigPath, overwrite: true);
-        try { File.Delete(tmp); } catch { /* ignore */ }
+        var bytes = Utf8NoBom.GetBytes(json);
+
+        // 独立临时名，避免多实例互相踩 .tmp
+        var tmp = Path.Combine(dir, $".config.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            // 写临时文件并刷盘
+            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None,
+                       bufferSize: 4096, FileOptions.WriteThrough))
+            {
+                fs.Write(bytes, 0, bytes.Length);
+                fs.Flush(flushToDisk: true);
+            }
+
+            if (PathUtil.ExistsFile(primary))
+            {
+                if (createBackup)
+                {
+                    try
+                    {
+                        // 先备份当前好文件
+                        File.Copy(primary, BackupPath, overwrite: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.Debug("config bak: " + ex.Message);
+                    }
+                }
+
+                try
+                {
+                    // 原子替换（NTFS）；保留 backupPath 作为 Replace 的备份参数再稳一层
+                    var replaceBackup = Path.Combine(dir, $".config.replace.{Guid.NewGuid():N}.bak");
+                    File.Replace(tmp, primary, replaceBackup, ignoreMetadataErrors: true);
+                    try { File.Delete(replaceBackup); } catch { /* ignore */ }
+                    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore */ }
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    File.Copy(tmp, primary, overwrite: true);
+                    try { File.Delete(tmp); } catch { /* ignore */ }
+                }
+                catch (IOException)
+                {
+                    // Replace 失败（跨卷等）：回退拷贝
+                    File.Copy(tmp, primary, overwrite: true);
+                    try { File.Delete(tmp); } catch { /* ignore */ }
+                }
+            }
+            else
+            {
+                File.Move(tmp, primary, overwrite: true);
+            }
+
+            // 校验可读
+            try
+            {
+                var check = File.ReadAllText(primary, Utf8NoBom);
+                if (string.IsNullOrWhiteSpace(check) || check.Length < 2)
+                    throw new IOException("写入后配置文件为空");
+            }
+            catch (Exception ex)
+            {
+                // 校验失败：尝试从刚写的内容再救一次
+                AppLog.Error(ex, "config verify");
+                File.WriteAllBytes(primary, bytes);
+            }
+
+            AppLog.Debug("config saved " + primary);
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore */ }
+        }
     }
 
     /// <summary>钳制数值范围并规范化游戏路径。</summary>
@@ -139,6 +284,53 @@ internal sealed class AppConfig
     [JsonIgnore]
     public bool EffectiveUnlockEnabled => MasterEnabled && Enabled;
 
+    private static IEnumerable<string> EnumerateCandidateReadPaths()
+    {
+        yield return ConfigPath;
+        yield return BackupPath;
+        yield return TempPath;
+        // 残留的进程临时文件
+        try
+        {
+            var dir = AppPaths.DataDirectory;
+            if (Directory.Exists(dir))
+            {
+                foreach (var f in Directory.EnumerateFiles(dir, ".config.*.tmp")
+                             .OrderByDescending(File.GetLastWriteTimeUtc)
+                             .Take(3))
+                    yield return f;
+            }
+        }
+        catch { /* ignore */ }
+
+        var legacy = AppPaths.LegacyPortableConfigPath;
+        if (legacy is not null) yield return legacy;
+    }
+
+    private static void EnsureDataDirectory()
+    {
+        try
+        {
+            PathUtil.EnsureDir(AppPaths.DataDirectory);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("EnsureDataDirectory: " + ex.Message);
+            // 回退：用户文档下的旁路（极少见 LocalAppData 不可写）
+            try
+            {
+                var fallback = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    AppPaths.ProductName);
+                PathUtil.EnsureDir(fallback);
+            }
+            catch
+            {
+                throw new IOException("无法创建配置目录: " + AppPaths.DataDirectory, ex);
+            }
+        }
+    }
+
     /// <summary>
     /// 若 AppData 尚无配置，而 exe 旁存在旧版 config.json，则复制一次到 AppData。
     /// 不删除旧文件，避免便携场景误伤。
@@ -147,16 +339,18 @@ internal sealed class AppConfig
     {
         try
         {
-            if (File.Exists(ConfigPath)) return;
+            if (PathUtil.ExistsFile(ConfigPath)) return;
             var legacy = AppPaths.LegacyPortableConfigPath;
             if (legacy is null) return;
 
-            Directory.CreateDirectory(AppPaths.DataDirectory);
+            PathUtil.EnsureDir(AppPaths.DataDirectory);
             File.Copy(legacy, ConfigPath, overwrite: false);
+            try { File.Copy(legacy, BackupPath, overwrite: true); } catch { /* ignore */ }
+            AppLog.Info("migrated portable config → " + ConfigPath);
         }
-        catch
+        catch (Exception ex)
         {
-            // 迁移失败不影响启动
+            AppLog.Warn("config migrate: " + ex.Message);
         }
     }
 }

@@ -210,7 +210,8 @@ internal sealed partial class UnlockService
                 !PathUtil.EqualsPath(_config.GamePath, path))
             {
                 _config.GamePath = path;
-                _config.Save();
+                if (!_config.TrySave(out var pathSaveErr))
+                    AppLog.Warn("game path save: " + pathSaveErr);
                 _gamePathStatus = $"游戏路径: {path}（运行中进程）";
                 AppLog.Info("captured game path from process: " + path);
                 Raise(forceUi: true);

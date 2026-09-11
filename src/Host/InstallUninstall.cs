@@ -28,6 +28,7 @@ internal static partial class InstallUninstall
         "GenshinFpsUnlocker.runtimeconfig.json",
         "GenshinFpsUnlocker.pdb",
         "FpsUnlockerStub.dll",
+        "Uninstall.cmd",
         "FpsUnlockerStub.pdb",
         "Uninstall.cmd",
         InstallMarkerFileName,

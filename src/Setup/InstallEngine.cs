@@ -15,7 +15,11 @@ internal readonly record struct InstallProgressEvent(
     int Total,
     bool IsFileCopy);
 
-/// <summary>执行复制、标记、快捷方式、ARP、可选 Defender 排除与收尾。</summary>
+/// <summary>
+/// 执行复制、.NET 运行库（exe 静默安装）、标记、快捷方式、ARP、可选 Defender 排除与收尾。
+/// 应用依赖随 Payload 自包含；仅 .NET Desktop Runtime 按需下载官方安装包。
+/// 无 Node/Python 等其它语言依赖。
+/// </summary>
 internal sealed class InstallEngine
 {
     public required string PayloadDir { get; init; }
@@ -36,11 +40,12 @@ internal sealed class InstallEngine
         Report("准备安装目录…", null, null, 0, 1, false);
         Directory.CreateDirectory(InstallDir);
 
+        // 1) 应用依赖随包自包含：复制 Payload
         var files = CollectPayloadFiles(PayloadDir);
-        var total = Math.Max(1, files.Count + 6); // 复制 + 后续步骤
+        var total = Math.Max(1, files.Count + 7);
         var step = 0;
 
-        Report($"开始复制 {files.Count} 个文件…", null, null, step, total, false);
+        Report($"开始复制 {files.Count} 个应用文件…", null, null, step, total, false);
 
         foreach (var (src, rel) in files)
         {
@@ -54,7 +59,8 @@ internal sealed class InstallEngine
 
         ThrowIfCancel();
         step++;
-        Report("写入安装标记…", SetupConstants.MarkerName, Path.Combine(InstallDir, SetupConstants.MarkerName), step, total, false);
+        Report("写入安装标记…", SetupConstants.MarkerName,
+            Path.Combine(InstallDir, SetupConstants.MarkerName), step, total, false);
         WriteMarker(InstallDir);
 
         var data = SetupConstants.DataDir;
@@ -64,6 +70,39 @@ internal sealed class InstallEngine
         var exe = Path.Combine(InstallDir, SetupConstants.ExeName);
         if (!File.Exists(exe))
             throw new InvalidOperationException("安装后未找到主程序: " + exe);
+
+        // 2) 仅 .NET 运行库：下载官方 .exe 并静默安装（若已具备则跳过）
+        ThrowIfCancel();
+        step++;
+        Report("检查 / 安装 .NET 桌面运行时…", null, null, step, total, false);
+        try
+        {
+            // 安装包临时放在安装目录 .runtime-cache，装完删除
+            var cacheDir = Path.Combine(InstallDir, ".runtime-cache");
+            var rtProgress = new Progress<RuntimeInstallProgress>(p =>
+            {
+                Report(p.Message, null, p.Detail, step, total, false);
+            });
+            RuntimeCheck.EnsureRuntimeAsync(PayloadDir, cacheDir, rtProgress, CancellationToken)
+                .GetAwaiter().GetResult();
+            try
+            {
+                if (Directory.Exists(cacheDir))
+                    Directory.Delete(cacheDir, recursive: true);
+            }
+            catch { /* ignore */ }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "自动安装 .NET 桌面运行时失败：" + Environment.NewLine + ex.Message +
+                Environment.NewLine + Environment.NewLine +
+                "可手动下载安装：" + Environment.NewLine + SetupConstants.DotnetDesktopUrl, ex);
+        }
 
         ThrowIfCancel();
         step++;
@@ -166,7 +205,6 @@ internal sealed class InstallEngine
         if (full.Length <= 3)
             throw new InvalidOperationException("拒绝安装到盘符根目录。");
 
-        // 拒绝危险系统根
         var pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles).TrimEnd('\\', '/');
         if (string.Equals(full, pf, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("禁止直接安装到 Program Files 根目录，请使用子文件夹 GenshinFpsUnlocker。");
@@ -181,7 +219,7 @@ internal sealed class InstallEngine
         foreach (var file in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(src, file);
-            if (ShouldSkipPayloadFile(rel, src)) continue;
+            if (ShouldSkipPayloadFile(rel)) continue;
             list.Add((file, rel));
         }
 
@@ -189,13 +227,15 @@ internal sealed class InstallEngine
         return list;
     }
 
-    private static bool ShouldSkipPayloadFile(string rel, string srcRoot)
+    private static bool ShouldSkipPayloadFile(string rel)
     {
         if (rel.EndsWith(".Setup.exe", StringComparison.OrdinalIgnoreCase)) return true;
         if (rel.Equals("GenshinFpsUnlocker.Setup.exe", StringComparison.OrdinalIgnoreCase)) return true;
-        // 避免嵌套 Payload
         if (rel.StartsWith("Payload" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             || rel.StartsWith("Payload/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (rel.StartsWith(".runtime-cache", StringComparison.OrdinalIgnoreCase)
+            || rel.Contains(Path.DirectorySeparatorChar + ".runtime-cache", StringComparison.OrdinalIgnoreCase))
             return true;
         return false;
     }
@@ -207,7 +247,7 @@ internal sealed class InstallEngine
             $"product={SetupConstants.ProductName}\n" +
             $"installUtc={DateTime.UtcNow:O}\n" +
             $"installDir={installDir}\n" +
-            $"via=GenshinFpsUnlocker.Setup\n";
+            "via=GenshinFpsUnlocker.Setup\n";
         File.WriteAllText(path, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
     }
 
@@ -269,18 +309,22 @@ internal sealed class InstallEngine
         var dir = Path.Combine(programsRoot, SetupConstants.ProductName);
         Directory.CreateDirectory(dir);
 
-        WriteLnk(Path.Combine(dir, SetupConstants.DisplayName + ".lnk"), exe, null, workDir, SetupConstants.DisplayName);
-        WriteLnk(Path.Combine(dir, "卸载 " + SetupConstants.DisplayName + ".lnk"), exe, "--uninstall", workDir, "卸载");
+        WriteLnk(Path.Combine(dir, SetupConstants.DisplayName + ".lnk"),
+            exe, null, workDir, SetupConstants.DisplayName);
+        WriteLnk(Path.Combine(dir, "卸载 " + SetupConstants.DisplayName + ".lnk"),
+            exe, "--uninstall", workDir, "卸载");
         var logDir = Path.Combine(SetupConstants.DataDir, "logs");
         Directory.CreateDirectory(logDir);
-        WriteLnk(Path.Combine(dir, "打开日志目录.lnk"), "explorer.exe", $"\"{logDir}\"", logDir, "日志");
+        WriteLnk(Path.Combine(dir, "打开日志目录.lnk"),
+            "explorer.exe", $"\"{logDir}\"", logDir, "日志");
 
         if (desktop)
         {
             var desk = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
             if (string.IsNullOrEmpty(desk) || !Directory.Exists(desk))
                 desk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            WriteLnk(Path.Combine(desk, SetupConstants.DisplayName + ".lnk"), exe, null, workDir, SetupConstants.DisplayName);
+            WriteLnk(Path.Combine(desk, SetupConstants.DisplayName + ".lnk"),
+                exe, null, workDir, SetupConstants.DisplayName);
         }
     }
 

@@ -18,6 +18,8 @@ internal static class Program
     private static void Main(string[] args)
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        // 字体 + 浅色/深色主题跟随系统（需在创建窗体前）
+        UiStyle.ApplyApplicationTheme();
         ApplicationConfiguration.Initialize();
 
         var quiet = args.Any(a => a is "--quiet" or "/S" or "/s");
@@ -200,7 +202,7 @@ internal static class Program
             }
         }
 
-        config.Save();
+        if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
         AppLog.Info($"配置已保存 targetFps={config.TargetFps} master={config.MasterEnabled} enabled={config.Enabled} autoWatch={config.AutoWatch}");
 
         // ---- 安全声明：开机自启不弹窗 ----

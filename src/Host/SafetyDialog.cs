@@ -24,8 +24,8 @@ internal static class SafetyDialog
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false,
-            Font = new Font("Segoe UI", 9.75F),
         };
+        UiStyle.ApplyToForm(dlg);
 
         var box = new TextBox
         {
@@ -34,7 +34,8 @@ internal static class SafetyDialog
             ScrollBars = ScrollBars.Vertical,
             Dock = DockStyle.Fill,
             Text = SafetyNotice.FullText,
-            BackColor = Color.White,
+            BackColor = SystemColors.Window,
+            ForeColor = SystemColors.WindowText,
         };
 
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 72, Padding = new Padding(12) };
@@ -69,7 +70,7 @@ internal static class SafetyDialog
         {
             config.ShowSafetyNoticeOnStartup = false;
         }
-        config.Save();
+        config.TrySave(out _);
     }
 
 

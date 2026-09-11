@@ -49,7 +49,7 @@ internal sealed partial class MainForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9.75F);
+        UiStyle.ApplyToForm(this);
         ShowInTaskbar = true;
         MinimumSize = new Size(520, 520);
 
@@ -61,7 +61,7 @@ internal sealed partial class MainForm : Form
             Height = 32,
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(12, 0, 12, 0),
-            Font = new Font("Segoe UI", 10.5F, FontStyle.Bold),
+            Font = UiStyle.UiFontBold(1.5f),
         };
 
         _safetyLabel = new Label
@@ -71,8 +71,8 @@ internal sealed partial class MainForm : Form
             Dock = DockStyle.Top,
             Height = 48,
             Padding = new Padding(12, 4, 12, 4),
-            BackColor = Color.FromArgb(255, 250, 230),
-            ForeColor = Color.FromArgb(120, 80, 0),
+            BackColor = UiStyle.SafetyBannerBack,
+            ForeColor = UiStyle.SafetyBannerFore,
             Cursor = Cursors.Hand,
         };
         _safetyLabel.Click += (_, _) => ShowSafetyDialog(force: true);
@@ -298,7 +298,7 @@ internal sealed partial class MainForm : Form
             AutoSize = false,
             Height = 36,
             Dock = DockStyle.Fill,
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
         };
         panel.SetColumnSpan(_pathStatusLabel, 3);
         panel.Controls.Add(_pathStatusLabel, 0, 10);
@@ -311,7 +311,7 @@ internal sealed partial class MainForm : Form
             AutoSize = false,
             Height = 52,
             Dock = DockStyle.Fill,
-            ForeColor = Color.DimGray,
+            ForeColor = UiStyle.SecondaryText,
         };
         panel.SetColumnSpan(tip, 3);
         panel.Controls.Add(tip, 0, 11);
@@ -349,13 +349,13 @@ internal sealed partial class MainForm : Form
         {
             if (_syncingUi) return;
             _config.StartMinimized = _startMinBox.Checked;
-            _config.Save();
+            _config.TrySave(out _);
         };
         _logBox.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
             _config.DebugLogging = _logBox.Checked;
-            _config.Save();
+            _config.TrySave(out _);
             AppLog.ApplyConfig(_config);
             AppLog.Info($"debugLogging toggled => {_config.DebugLogging}");
         };
@@ -363,7 +363,7 @@ internal sealed partial class MainForm : Form
         {
             if (_syncingUi) return;
             _config.CreateDesktopShortcut = _desktopShortcutBox.Checked;
-            _config.Save();
+            _config.TrySave(out _);
             if (_config.CreateDesktopShortcut)
             {
                 try { ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory); }
@@ -386,6 +386,7 @@ internal sealed partial class MainForm : Form
 
         Load += (_, _) =>
         {
+            ApplyThemeColors();
             UpdateStatusUi();
             if (_config.StartMinimized)
             {
@@ -419,6 +420,17 @@ internal sealed partial class MainForm : Form
     }
 
     private void ShowSafetyDialog(bool force) => SafetyDialog.Show(this, _config, force);
+
+    private void ApplyThemeColors()
+    {
+        try
+        {
+            _safetyLabel.BackColor = UiStyle.SafetyBannerBack;
+            _safetyLabel.ForeColor = UiStyle.SafetyBannerFore;
+            _pathStatusLabel.ForeColor = UiStyle.SecondaryText;
+        }
+        catch { /* ignore */ }
+    }
 
     private static Label MakeLabel(string text) => new()
     {

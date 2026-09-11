@@ -10,6 +10,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        UiStyle.ApplyApplicationTheme();
         ApplicationConfiguration.Initialize();
 
         if (!OsCompatibility.MeetsMinimumOs(out var osDetail))

@@ -168,7 +168,8 @@ internal sealed partial class MainForm
             _logBox.Checked = _trayLogItem.Checked;
             _syncingUi = false;
             _config.DebugLogging = _trayLogItem.Checked;
-            _config.Save();
+            if (!_config.TrySave(out var logSaveErr))
+                AppLog.Error("配置保存失败: " + logSaveErr);
             AppLog.ApplyConfig(_config);
         };
         menu.Items.Add(_trayLogItem);
@@ -231,7 +232,17 @@ internal sealed partial class MainForm
         _config.AutoStartWithWindows = _autoStartBox.Checked;
         _config.DebugLogging = _logBox.Checked;
         _config.CreateDesktopShortcut = _desktopShortcutBox.Checked;
-        _config.Save();
+        if (!_config.TrySave(out var saveErr))
+        {
+            AppLog.Error("配置保存失败: " + saveErr);
+            if (showTip)
+            {
+                MessageBox.Show(this,
+                    "配置保存失败：\n" + saveErr + "\n\n路径：\n" + AppConfig.ConfigPath,
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
         AppLog.ApplyConfig(_config);
         _service.PushConfigToIpc();
         Autostart.SetEnabled(_config.AutoStartWithWindows);
