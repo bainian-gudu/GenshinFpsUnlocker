@@ -26,7 +26,8 @@
     <Authors>GenshinFpsUnlocker</Authors>
     <Description>原神帧率解锁 — 自定义 FPS、后台监视注入、托盘设置</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <ApplicationIcon></ApplicationIcon>
+    <!-- BetterGenshinImpact logo.ico → 窗体/任务栏/快捷方式/托盘 -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Product>GenshinFpsUnlocker</Product>
     <AssemblyTitle>原神帧率解锁</AssemblyTitle>
     <!-- WFO5001: SystemColorMode 实验 API（跟随系统主题所需） -->
@@ -48,6 +49,19 @@
       <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
     </ItemGroup>
   </Target>
+  <!-- 应用图标旁路副本（exe 旁 app.ico），托盘/运行时读文件 -->
+  <ItemGroup>
+    <None Include="Assets\app.ico">
+      <Link>app.ico</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="Assets\app.png" Condition="Exists('Assets\app.png')">
+      <Link>app.png</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
   <!-- Web UI 构建产物（Vite singlefile）随宿主发布 -->
   <ItemGroup>
     <Content Include="..\Ui\dist\**\*" Condition="Exists('..\Ui\dist\index.html')">

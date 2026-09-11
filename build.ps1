@@ -121,6 +121,15 @@ foreach ($extra in @("LICENSE", "config.example.json")) {
         Copy-Item $p (Join-Path $dist $extra) -Force
     }
 }
+# BetterGI 同源应用图标（托盘/快捷方式旁路文件）
+$iconSrc = Join-Path $Root "src/Host/Assets/app.ico"
+if (Test-Path $iconSrc) {
+    Copy-Item $iconSrc (Join-Path $dist "app.ico") -Force
+}
+$iconPng = Join-Path $Root "src/Host/Assets/app.png"
+if (Test-Path $iconPng) {
+    Copy-Item $iconPng (Join-Path $dist "app.png") -Force
+}
 
 $installExePath = $null
 if (-not $SkipSetup) {

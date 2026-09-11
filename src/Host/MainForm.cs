@@ -39,8 +39,15 @@ internal sealed partial class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
+        MinimizeBox = true;
         ShowInTaskbar = true;
         BackColor = Color.FromArgb(0x12, 0x13, 0x19);
+        try
+        {
+            var ico = AppIcon.LoadClone();
+            if (ico is not null) Icon = ico;
+        }
+        catch { /* ignore */ }
         UiStyle.ApplyToForm(this);
 
         _webView = new WebView2
@@ -64,7 +71,7 @@ internal sealed partial class MainForm : Form
                 {
                     Visible = true,
                     Text = AppPaths.ProductDisplayName,
-                    Icon = SystemIcons.Application,
+                    Icon = AppIcon.LoadClone() ?? SystemIcons.Application,
                     ContextMenuStrip = new ContextMenuStrip(),
                 };
                 _tray.ContextMenuStrip.Items.Add("显示主窗口", null, (_, _) => RestoreFromTrayPublic());
@@ -124,14 +131,10 @@ internal sealed partial class MainForm : Form
                 catch { /* ignore */ }
             }
 
-            // 仅在 Web UI 正常时允许启动即藏托盘；失败则强制留在前台，避免「双不可见」
+            // 默认打开显示主窗口；仅当勾选「启动后最小化到托盘」且 Web UI 正常时才启动进托盘
             if (webOk && _config.StartMinimized)
             {
-                BeginInvoke(() =>
-                {
-                    // 首次启动进托盘也给气泡，否则用户常以为程序没开
-                    HideToTrayPublic(showTip: true, fromStartup: true);
-                });
+                BeginInvoke(() => HideToTrayPublic(showTip: true, fromStartup: true));
             }
             else if (!webOk)
             {
@@ -139,6 +142,8 @@ internal sealed partial class MainForm : Form
                 {
                     try
                     {
+                        // 强制前台，避免黑窗/无托盘
+                        _config.StartMinimized = false;
                         RestoreFromTrayPublic();
                         if (_tray is not null)
                         {
@@ -152,8 +157,22 @@ internal sealed partial class MainForm : Form
                     catch { /* ignore */ }
                 });
             }
+            else
+            {
+                // 明确保持窗口可见（覆盖历史配置误藏）
+                BeginInvoke(() =>
+                {
+                    try
+                    {
+                        if (!Visible || WindowState == FormWindowState.Minimized)
+                            RestoreFromTrayPublic();
+                    }
+                    catch { /* ignore */ }
+                });
+            }
         };
 
+        // 标题栏最小化 → 托盘（始终，便于后台驻留）
         Resize += (_, _) =>
         {
             if (_suppressResizeHide || _reallyExit) return;
@@ -161,6 +180,7 @@ internal sealed partial class MainForm : Form
                 HideToTrayPublic(showTip: true, fromStartup: false);
         };
 
+        // 关窗（×）：进托盘继续后台解锁；托盘「退出」才真正结束
         FormClosing += (_, e) =>
         {
             if (!_reallyExit && e.CloseReason is CloseReason.UserClosing)

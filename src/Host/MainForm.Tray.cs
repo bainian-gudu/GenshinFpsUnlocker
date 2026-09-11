@@ -1,6 +1,3 @@
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
-
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
@@ -23,8 +20,8 @@ internal sealed partial class MainForm
 
     private void BuildTray()
     {
-        _trayIconOwned = CreateBrandTrayIcon();
-        // 优先自绘图标；失败则用系统 Application，保证托盘一定有图
+        // BetterGI logo.ico（Assets/app.ico / exe 内嵌）
+        _trayIconOwned = AppIcon.LoadClone();
         var icon = _trayIconOwned ?? SystemIcons.Application;
         _tray = new NotifyIcon
         {
@@ -33,7 +30,7 @@ internal sealed partial class MainForm
             Icon = icon,
             BalloonTipIcon = ToolTipIcon.Info,
         };
-        AppLog.Info($"tray created visible={_tray.Visible} icon={(icon is null ? "null" : icon.GetType().Name)}");
+        AppLog.Info($"tray created visible={_tray.Visible} hasAppIcon={_trayIconOwned is not null}");
 
         var menu = new ContextMenuStrip
         {
@@ -111,11 +108,11 @@ internal sealed partial class MainForm
         };
         menu.Items.Add(_trayAutoStartItem);
 
-        _trayStartMinItem = new ToolStripMenuItem("启动后最小化")
+        _trayStartMinItem = new ToolStripMenuItem("启动后最小化到托盘")
         {
             CheckOnClick = true,
             Checked = _config.StartMinimized,
-            ToolTipText = "启动时直接驻留系统托盘",
+            ToolTipText = "开启后：下次启动直接进托盘。关闭主窗口 / 点最小化 始终会藏到托盘（托盘「退出」才结束进程）。",
         };
         _trayStartMinItem.CheckedChanged += (_, _) =>
         {
@@ -389,64 +386,5 @@ internal sealed partial class MainForm
             _tray.ShowBalloonTip(2200);
         }
         catch { /* ignore */ }
-    }
-
-    /// <summary>与设计稿 Brand 星形接近的托盘图标（紫调）。</summary>
-    private static Icon? CreateBrandTrayIcon()
-    {
-        try
-        {
-            const int size = 32;
-            using var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.Clear(Color.Transparent);
-                // 圆底
-                using (var bg = new SolidBrush(Color.FromArgb(0x16, 0x17, 0x1E)))
-                    g.FillEllipse(bg, 1, 1, size - 3, size - 3);
-                // 星
-                var cx = size / 2f;
-                var cy = size / 2f;
-                var pts = StarPoints(cx, cy, outer: 12f, inner: 5.2f, points: 4);
-                using var fill = new SolidBrush(Color.FromArgb(0xBD, 0xA2, 0xF2));
-                g.FillPolygon(fill, pts);
-                var pts2 = StarPoints(cx, cy, outer: 6.5f, inner: 2.8f, points: 4);
-                using var inner = new SolidBrush(Color.FromArgb(0x15, 0x16, 0x1D));
-                g.FillPolygon(inner, pts2);
-            }
-
-            var hIcon = bmp.GetHicon();
-            // Clone so we can free the temp handle
-            using var tmp = Icon.FromHandle(hIcon);
-            var clone = (Icon)tmp.Clone();
-            NativeMethods.DestroyIcon(hIcon);
-            return clone;
-        }
-        catch (Exception ex)
-        {
-            AppLog.Debug("tray icon: " + ex.Message);
-            return null;
-        }
-    }
-
-    private static PointF[] StarPoints(float cx, float cy, float outer, float inner, int points)
-    {
-        var list = new PointF[points * 2];
-        var step = MathF.PI / points;
-        var angle = -MathF.PI / 2;
-        for (var i = 0; i < points * 2; i++)
-        {
-            var r = (i % 2 == 0) ? outer : inner;
-            list[i] = new PointF(cx + r * MathF.Cos(angle), cy + r * MathF.Sin(angle));
-            angle += step;
-        }
-        return list;
-    }
-
-    private static class NativeMethods
-    {
-        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-        public static extern bool DestroyIcon(IntPtr handle);
     }
 }

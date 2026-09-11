@@ -4,6 +4,7 @@
   "masterEnabled": true,
   "autoWatch": true,
   "startMinimized": false,
+  "configSchemaVersion": 1,
   "autoStartWithWindows": false,
   "pollIntervalMs": 1000,
   "gamePath": null,

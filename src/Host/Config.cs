@@ -20,8 +20,15 @@ internal sealed class AppConfig
     /// <summary>是否监视游戏进程并在启动后自动注入。</summary>
     public bool AutoWatch { get; set; } = true;
 
-    /// <summary>启动时是否最小化到系统托盘（默认 false，避免首次运行「看不见窗口/托盘」）。</summary>
+    /// <summary>
+    /// 启动时是否最小化到系统托盘。
+    /// 默认 false：打开软件显示主窗口；关窗/点最小化仍进托盘后台。
+    /// 勾选后：下次启动直接进托盘。
+    /// </summary>
     public bool StartMinimized { get; set; } = false;
+
+    /// <summary>配置 schema 版本（用于一次性迁移默认行为）。</summary>
+    public int ConfigSchemaVersion { get; set; } = 0;
 
     /// <summary>是否写入 HKCU\...\Run，实现开机自启动。</summary>
     public bool AutoStartWithWindows { get; set; } = false;
@@ -266,7 +273,7 @@ internal sealed class AppConfig
         }
     }
 
-    /// <summary>钳制数值范围并规范化游戏路径。</summary>
+    /// <summary>钳制数值范围并规范化游戏路径；执行 schema 迁移。</summary>
     public void Sanitize()
     {
         TargetFps = Math.Clamp(TargetFps, 1, 540);
@@ -277,6 +284,18 @@ internal sealed class AppConfig
         {
             try { GamePath = PathUtil.Normalize(GamePath); }
             catch { /* 保留原串 */ }
+        }
+
+        // v1：旧默认 startMinimized=true 导致「打开没窗口」；一次性改回 false。
+        // 用户此后可再手动开启「启动后最小化到托盘」。
+        if (ConfigSchemaVersion < 1)
+        {
+            if (StartMinimized)
+            {
+                StartMinimized = false;
+                AppLog.Info("config migrate v1: StartMinimized false (show main window on launch)");
+            }
+            ConfigSchemaVersion = 1;
         }
     }
 
