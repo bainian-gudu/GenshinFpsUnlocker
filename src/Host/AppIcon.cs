@@ -1,7 +1,7 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 应用图标（来自 BetterGenshinImpact Resources/Images/logo.ico）。
+/// 应用图标（派蒙主题 app.ico / app.png）。
 /// 用于窗体、托盘、快捷方式（exe 内嵌 ApplicationIcon）。
 /// </summary>
 internal static class AppIcon
