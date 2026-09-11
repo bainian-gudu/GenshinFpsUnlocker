@@ -90,7 +90,7 @@ internal static class BackgroundResilience
     {
         try
         {
-            // 0x80000041 ≈ CONTINUOUS | SYSTEM_REQUIRED | AWAYMODE
+            // CONTINUOUS | SYSTEM_REQUIRED | AWAYMODE — 退出时须 Clear，否则可能影响休眠
             var flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED;
             SetThreadExecutionState(flags);
         }
@@ -98,6 +98,13 @@ internal static class BackgroundResilience
         {
             AppLog.Debug("ExecutionState: " + ex.Message);
         }
+    }
+
+    /// <summary>进程退出前清除执行状态请求。</summary>
+    public static void Clear()
+    {
+        try { SetThreadExecutionState(ES_CONTINUOUS); }
+        catch { /* ignore */ }
     }
 
     /// <summary>

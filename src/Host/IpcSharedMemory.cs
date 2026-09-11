@@ -117,6 +117,25 @@ internal sealed class IpcSharedMemory : IDisposable
         }
     }
 
+    /// <summary>
+    /// 新一次注入前：清 Stub 状态/错误，写入 Host 目标，保留 Magic。
+    /// </summary>
+    public void ResetForNewInject(int targetFps, bool enabled)
+    {
+        lock (_sync)
+        {
+            if (_disposed) return;
+            _accessor.Read(0, out IpcData data);
+            data.Status = IpcStatus.None;
+            data.LastError = 0;
+            data.CurrentFps = 0;
+            data.TargetFps = Math.Clamp(targetFps, 1, 540);
+            data.Enabled = enabled ? 1 : 0;
+            data.Magic = Magic;
+            _accessor.Write(0, ref data);
+        }
+    }
+
     /// <summary>通知 Stub 退出工作循环（设置 Status=Exiting）。</summary>
     public void RequestExit()
     {

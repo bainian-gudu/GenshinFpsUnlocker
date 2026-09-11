@@ -28,7 +28,6 @@ internal static partial class InstallUninstall
         "GenshinFpsUnlocker.runtimeconfig.json",
         "GenshinFpsUnlocker.pdb",
         "FpsUnlockerStub.dll",
-        "Uninstall.cmd",
         "FpsUnlockerStub.pdb",
         "Uninstall.cmd",
         InstallMarkerFileName,
@@ -42,7 +41,6 @@ internal static partial class InstallUninstall
         "coreclr.dll",
         "clrjit.dll",
         "clrcompression.dll",
-        "coreclr.dll",
         "mscordaccore.dll",
         "mscordbi.dll",
         "System.IO.Compression.Native.dll",
@@ -128,6 +126,28 @@ internal static partial class InstallUninstall
         {
             // ignore
         }
+    }
+
+    /// <summary>
+    /// UI / 托盘入口：若未提权则 runas 重启为 --uninstall，当前进程应退出。
+    /// 已提权则直接执行 <see cref="RunUninstall"/>。
+    /// </summary>
+    public static void RunUninstallInteractive(bool quiet)
+    {
+        if (!Elevation.IsAdministrator())
+        {
+            var args = quiet ? "--uninstall --quiet" : "--uninstall";
+            if (!Elevation.EnsureAdminOrRelaunch(args, quiet, out var relaunched) && relaunched)
+            {
+                AppLog.Info("已拉起提权卸载实例，结束本进程");
+                try { Application.Exit(); } catch { /* ignore */ }
+                Environment.Exit(0);
+                return;
+            }
+            if (!Elevation.IsAdministrator())
+                AppLog.Warn("无管理员权限，继续有限卸载");
+        }
+        RunUninstall(quiet);
     }
 
     /// <summary>
@@ -230,8 +250,8 @@ internal static partial class InstallUninstall
                 MessageBoxIcon.Information);
         }
 
-        try { Application.Exit(); }
-        catch { Environment.Exit(0); }
+        try { Application.Exit(); } catch { /* ignore */ }
+        Environment.Exit(0);
     }
 
 

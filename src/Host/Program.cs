@@ -27,12 +27,13 @@ internal static class Program
         var isInstall = args.Any(a => a is "--install" or "/install");
         var isAutostart = args.Any(a => a is "--autostart");
 
-        // 尽早加载配置并初始化日志（安装/卸载路径也需要排障日志）
+        // 先初始化日志，再 Load 配置（Load 内会写 AppLog，须已 Initialize）
         AppConfig? earlyConfig = null;
         try
         {
+            AppLog.Initialize(new AppConfig());
             earlyConfig = AppConfig.Load();
-            AppLog.Initialize(earlyConfig);
+            AppLog.ApplyConfig(earlyConfig);
         }
         catch
         {
@@ -101,7 +102,7 @@ internal static class Program
             return;
         }
 
-        // ---- 运行时依赖（FDD 需要 .NET 8 Desktop）----
+        // ---- 运行时依赖（FDD 需要 .NET 8/9 Desktop Runtime）----
         if (!RuntimePrerequisite.EnsureOrPrompt(quiet || isAutostart))
         {
             AppLog.Error("运行时前置条件不满足 — 退出");
@@ -163,7 +164,7 @@ internal static class Program
         // ---- 命令行覆盖 ----
         for (var i = 0; i < args.Length; i++)
         {
-            if (args[i] is "--fps" or "-f" && i + 1 < args.Length && int.TryParse(args[i + 1], out var fps))
+            if ((args[i] is "--fps" or "-f") && i + 1 < args.Length && int.TryParse(args[i + 1], out var fps))
                 config.TargetFps = fps;
             if (args[i] is "--no-watch")
                 config.AutoWatch = false;
@@ -224,6 +225,7 @@ internal static class Program
         }
         finally
         {
+            try { BackgroundResilience.Clear(); } catch { /* ignore */ }
             AppLog.Shutdown();
         }
     }

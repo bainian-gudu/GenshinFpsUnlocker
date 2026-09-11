@@ -113,16 +113,12 @@ internal sealed partial class UnlockService
                     continue;
                 }
 
-                // 注入前重置 IPC 状态，便于等待 Ready
-                var data = _ipc.Read();
-                data.Status = IpcStatus.None;
-                data.LastError = 0;
-                data.Magic = IpcSharedMemory.Magic;
-                data.TargetFps = _config.TargetFps;
-                data.Enabled = _config.EffectiveUnlockEnabled ? 1 : 0;
-                _ipc.Write(data);
-                _lastPushedFps = data.TargetFps;
-                _lastPushedEnabled = data.Enabled;
+                // 注入前重置 Stub 状态字段，并推送最新 Host 配置（勿整块乱序写）
+                _config.Sanitize();
+                _ipc.ResetForNewInject(_config.TargetFps, _config.EffectiveUnlockEnabled);
+                _lastPushedFps = _config.TargetFps;
+                _lastPushedEnabled = _config.EffectiveUnlockEnabled ? 1 : 0;
+                _lastIpcPushUtc = DateTime.UtcNow;
 
                 SetStatus($"检测到游戏 PID {process.Id}，等待主窗口后注入…");
                 await WaitForMainWindowAsync(process, token, TimeSpan.FromSeconds(45));
@@ -159,8 +155,21 @@ internal sealed partial class UnlockService
                 {
                     var st = _ipc.Read();
                     AppLog.Error($"stub not ready pid={process.Id} status={st.Status} lastError=0x{st.LastError:X}");
-                    SetStatus($"Stub 未就绪: Status={st.Status}, LastError=0x{st.LastError:X}（已注入，不再重复注入）");
+                    // 已注入但未 Ready：短时保活观察；若长期 Error/None 则允许冷却后重试
                     Volatile.Write(ref _attachedPid, process.Id);
+                    if (st.Status == IpcStatus.Error)
+                    {
+                        _injectFailStreak++;
+                        var backoff = Math.Min(90, 15 * _injectFailStreak);
+                        _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(backoff);
+                        Volatile.Write(ref _injectAttemptedPid, 0);
+                        Volatile.Write(ref _attachedPid, 0);
+                        SetStatus($"Stub 报告错误 0x{st.LastError:X}（{backoff}s 后可重试注入）");
+                    }
+                    else
+                    {
+                        SetStatus($"Stub 未就绪: Status={st.Status}, LastError=0x{st.LastError:X}（已注入，监视中）");
+                    }
                 }
 
                 // 游戏运行期间保活（PushConfigToIpc 内部已节流）

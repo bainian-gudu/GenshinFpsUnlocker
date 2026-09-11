@@ -72,16 +72,16 @@ internal sealed class InstallEngine
             throw new InvalidOperationException("安装后未找到主程序: " + exe);
 
         // 2) 仅 .NET 运行库：下载官方 .exe 并静默安装（若已具备则跳过）
+        //    进度单独用 0..100 阶段，便于进度条展示下载百分比
         ThrowIfCancel();
-        step++;
-        Report("检查 / 安装 .NET 桌面运行时…", null, null, step, total, false);
+        Report("检查 / 安装 .NET 桌面运行时…", null, null, 0, 100, false);
         try
         {
-            // 安装包临时放在安装目录 .runtime-cache，装完删除
+            // 安装包临时放在安装目录 .runtime-cache，装完删除（不污染系统 Temp 以外目录）
             var cacheDir = Path.Combine(InstallDir, ".runtime-cache");
             var rtProgress = new Progress<RuntimeInstallProgress>(p =>
             {
-                Report(p.Message, null, p.Detail, step, total, false);
+                Report(p.Message, null, p.Detail, Math.Clamp(p.Percent, 0, 100), 100, false);
             });
             RuntimeCheck.EnsureRuntimeAsync(PayloadDir, cacheDir, rtProgress, CancellationToken)
                 .GetAwaiter().GetResult();
@@ -104,6 +104,7 @@ internal sealed class InstallEngine
                 "可手动下载安装：" + Environment.NewLine + SetupConstants.DotnetDesktopUrl, ex);
         }
 
+        // 运行库阶段结束后，继续后置步骤
         ThrowIfCancel();
         step++;
         Report("创建快捷方式…", null, null, step, total, false);

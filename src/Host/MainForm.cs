@@ -37,6 +37,7 @@ internal sealed partial class MainForm : Form
     private bool _reallyExit;
     /// <summary>同步主界面与托盘勾选时置位，防止 CheckedChanged 递归。</summary>
     private bool _syncingUi;
+    private System.Windows.Forms.Timer? _fpsSaveTimer;
 
     public MainForm(AppConfig config, UnlockService service)
     {
@@ -103,11 +104,12 @@ internal sealed partial class MainForm : Form
         _fpsInput.ValueChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            // 实时推送 FPS，不弹“已保存”提示
+            // 实时推送 IPC；落盘防抖，避免滚轮连发时频繁原子写盘
             _config.TargetFps = (int)_fpsInput.Value;
-            _service.PushConfigToIpc();
+            _service.PushConfigToIpc(force: true);
             BuildTrayFpsItems();
             UpdateStatusUi();
+            ScheduleFpsSave();
         };
         var fpsRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Left };
         fpsRow.Controls.Add(_fpsInput);
@@ -270,7 +272,7 @@ internal sealed partial class MainForm : Form
         var safetyBtn = new Button { Text = "安全声明", Width = 100, Height = 30, Anchor = AnchorStyles.Left };
         safetyBtn.Click += (_, _) => ShowSafetyDialog(force: true);
         var uninstallBtn = new Button { Text = "卸载清理", Width = 100, Height = 30, Anchor = AnchorStyles.Left };
-        uninstallBtn.Click += (_, _) => InstallUninstall.RunUninstall(quiet: false);
+        uninstallBtn.Click += (_, _) => InstallUninstall.RunUninstallInteractive(quiet: false);
 
         var actionRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
         actionRow.Controls.Add(applyBtn);
@@ -406,17 +408,39 @@ internal sealed partial class MainForm : Form
 
         FormClosing += (_, e) =>
         {
-            if (!_reallyExit)
+            // 用户点关闭 → 托盘；退出菜单 / Application.Exit / Windows 关机 → 真退出
+            if (!_reallyExit
+                && e.CloseReason is CloseReason.UserClosing)
             {
                 e.Cancel = true;
                 HideToTray();
                 return;
             }
 
+            _reallyExit = true;
+            try { _fpsSaveTimer?.Stop(); _fpsSaveTimer?.Dispose(); } catch { /* ignore */ }
             _uiTimer.Stop();
             _tray.Visible = false;
-            PersistAll(showTip: false);
+            try { PersistAll(showTip: false); } catch { /* ignore */ }
         };
+    }
+
+    private void ScheduleFpsSave()
+    {
+        _fpsSaveTimer ??= new System.Windows.Forms.Timer { Interval = 600 };
+        _fpsSaveTimer.Stop();
+        _fpsSaveTimer.Tick -= FpsSaveTimerOnTick;
+        _fpsSaveTimer.Tick += FpsSaveTimerOnTick;
+        _fpsSaveTimer.Start();
+    }
+
+    private void FpsSaveTimerOnTick(object? sender, EventArgs e)
+    {
+        try { _fpsSaveTimer?.Stop(); } catch { /* ignore */ }
+        if (IsDisposed) return;
+        _config.TargetFps = (int)_fpsInput.Value;
+        if (!_config.TrySave(out var fpsErr))
+            AppLog.Warn("fps save: " + fpsErr);
     }
 
     private void ShowSafetyDialog(bool force) => SafetyDialog.Show(this, _config, force);

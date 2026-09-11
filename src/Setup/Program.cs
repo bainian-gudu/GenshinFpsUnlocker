@@ -37,8 +37,8 @@ internal static class Program
             var dir = SetupConstants.DefaultInstallDir;
             for (var i = 0; i < args.Length; i++)
             {
-                if (args[i] is "--dir" or "-d" && i + 1 < args.Length)
-                    dir = args[i + 1];
+                if ((args[i] is "--dir" or "-d") && i + 1 < args.Length)
+                    dir = args[++i];
             }
 
             var leaf = Path.GetFileName(dir.TrimEnd('\\', '/'));
@@ -58,8 +58,16 @@ internal static class Program
                     CancellationToken = CancellationToken.None,
                 }.Run();
             }
-            catch
+            catch (Exception ex)
             {
+                try
+                {
+                    Console.Error.WriteLine("quiet install failed: " + ex);
+                    File.WriteAllText(
+                        Path.Combine(Path.GetTempPath(), "GenshinFpsUnlocker-setup-error.txt"),
+                        ex.ToString());
+                }
+                catch { /* ignore */ }
                 Environment.ExitCode = 1;
             }
 

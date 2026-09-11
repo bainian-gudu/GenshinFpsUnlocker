@@ -187,7 +187,7 @@ internal sealed partial class MainForm
         });
         menu.Items.Add("卸载并清理全部数据…", null, (_, _) =>
         {
-            InstallUninstall.RunUninstall(quiet: false);
+            InstallUninstall.RunUninstallInteractive(quiet: false);
         });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) =>

@@ -60,10 +60,19 @@ internal static class AppLog
             _filePath = null;
         }
 
+        // 允许启动路径二次调用：只补定时器，不重复刷 session banner
+        var first = !_initialized;
         _initialized = true;
 
-        // 周期性刷盘，避免每行都 fsync
-        _flushTimer = new Timer(_ => FlushPending(), null, 1000, 1000);
+        if (_flushTimer is null)
+            _flushTimer = new Timer(_ => FlushPending(), null, 1000, 1000);
+
+        if (!first)
+        {
+            Info($"日志重新绑定: enabled={_enabled} minLevel={_minLevel} file={_filePath}");
+            FlushPending();
+            return;
+        }
 
         Info("========== session start ==========");
         Info($"pid={_sessionId} exe={AppPaths.ExePath}");
@@ -84,9 +93,12 @@ internal static class AppLog
     /// <summary>运行中热更新日志开关/级别（托盘勾选调试日志时）。</summary>
     public static void ApplyConfig(AppConfig config)
     {
+        var prevEn = _enabled;
+        var prevLv = _minLevel;
         _enabled = config.DebugLogging;
         _minLevel = ParseLevel(config.LogLevel);
-        Info($"日志设置已更新: enabled={_enabled} minLevel={_minLevel}");
+        if (prevEn != _enabled || prevLv != _minLevel)
+            Info($"日志设置已更新: enabled={_enabled} minLevel={_minLevel}");
         FlushPending();
     }
 

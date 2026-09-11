@@ -190,6 +190,7 @@ internal static class RuntimeCheck
                 Arguments = "/install /quiet /norestart",
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(installerPath) ?? cacheRoot,
             };
 
             using var proc = Process.Start(psi)
