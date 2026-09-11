@@ -126,12 +126,8 @@ jobs:
 
           $config = "Build\kachina.config.json"
           $updater = Join-Path $appDir "$app.update.exe"
-          $sideImg = "Build\installer-side.webp"
-          $packExtra = @()
-          if (Test-Path $sideImg) { $packExtra += @("-t", (Resolve-Path $sideImg).Path) }
-
           Write-Host "==> pack updater"
-          .\kachina-builder.exe pack -c $config -o $updater @packExtra
+          .\kachina-builder.exe pack -c $config -o $updater
           if ($LASTEXITCODE -ne 0) { throw "pack updater failed" }
 
           Write-Host "==> gen metadata"
@@ -144,7 +140,7 @@ jobs:
             $installName = "$app.Install.$ver.exe"
             Write-Host "==> pack offline install $installName"
             ..\..\kachina-builder.exe pack -c ..\..\Build\kachina.config.json `
-              -m metadata.json -d hashed -o $installName @packExtra
+              -m metadata.json -d hashed -o $installName
             if ($LASTEXITCODE -ne 0) { throw "pack install failed" }
 
             Copy-Item $installName "..\..\artifacts\$installName" -Force

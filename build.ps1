@@ -171,10 +171,7 @@ if (-not $SkipSetup) {
         $updaterName = "$appName.update.exe"
         $updaterPath = Join-Path $appDir $updaterName
         Write-Host "    pack updater → $updaterName" -ForegroundColor DarkCyan
-        $sideImg = Join-Path $buildDir "installer-side.webp"
-        $packExtra = @()
-        if (Test-Path $sideImg) { $packExtra += @("-t", $sideImg) }
-        & $builder pack -c $config -o $updaterPath @packExtra
+        & $builder pack -c $config -o $updaterPath
         if ($LASTEXITCODE -ne 0) { throw "kachina pack updater failed" }
 
         $meta = Join-Path $work "metadata.json"
@@ -189,7 +186,7 @@ if (-not $SkipSetup) {
             $installName = "$appName.Install.$ver.exe"
             $installOut = Join-Path $work $installName
             Write-Host "    pack offline installer → $installName" -ForegroundColor DarkCyan
-            & $builder pack -c $config -m "metadata.json" -d "hashed" -o $installName @packExtra
+            & $builder pack -c $config -m "metadata.json" -d "hashed" -o $installName
             if ($LASTEXITCODE -ne 0) { throw "kachina pack install failed" }
         } finally {
             Pop-Location

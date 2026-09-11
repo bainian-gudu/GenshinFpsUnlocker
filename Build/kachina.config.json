@@ -14,7 +14,7 @@
   "updaterName": "GenshinFpsUnlocker.update.exe",
   "programFilesPath": "GenshinFpsUnlocker",
   "title": "原神帧率解锁",
-  "description": "自定义 FPS · 后台注入 · 托盘设置\n安装即表示同意用户协议：第三方工具，风险自负；详见 USER_AGREEMENT.txt 与《米哈游用户协议》第10.2条。",
+  "description": "自定义 FPS · 后台注入 · 托盘设置",
   "windowTitle": "原神帧率解锁 安装程序",
   "ignoreFolderPath": [],
   "userDataPath": [],
