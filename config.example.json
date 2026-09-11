@@ -1,0 +1,17 @@
+{
+  "targetFps": 120,
+  "enabled": true,
+  "masterEnabled": true,
+  "autoWatch": true,
+  "startMinimized": true,
+  "autoStartWithWindows": false,
+  "pollIntervalMs": 1000,
+  "gamePath": null,
+  "safetyNoticeAcknowledged": false,
+  "showSafetyNoticeOnStartup": true,
+  "defenderExclusionApplied": false,
+  "debugLogging": true,
+  "logLevel": "Debug",
+  "logRetainDays": 14,
+  "createDesktopShortcut": true
+}
