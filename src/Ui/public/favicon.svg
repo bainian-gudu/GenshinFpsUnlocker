@@ -1,16 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#f0a0d0"/>
-      <stop offset="100%" stop-color="#c44dff"/>
-    </linearGradient>
-  </defs>
-  <circle cx="32" cy="32" r="30" fill="url(#g)"/>
-  <path d="M18 38 C18 24 28 16 32 14 C36 16 46 24 46 38 C42 44 36 46 32 46 C28 46 22 44 18 38Z" fill="#fff"/>
-  <path d="M22 22 L18 10 L28 18Z" fill="#ffb6d9"/>
-  <path d="M42 22 L46 10 L36 18Z" fill="#ffb6d9"/>
-  <circle cx="26" cy="32" r="2" fill="#7a2ea8"/>
-  <circle cx="38" cy="32" r="2" fill="#7a2ea8"/>
-  <path d="M28 38 Q32 41 36 38" stroke="#e070a0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-  <circle cx="40" cy="42" r="5" fill="#ffc0e0"/>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#f0a0d8"/><stop offset="100%" stop-color="#c026d3"/>
+  </linearGradient></defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <path d="M32 12c6 4 14 12 14 24 0 8-6 14-14 14S18 44 18 36C18 24 26 16 32 12z" fill="#fff"/>
+  <path d="M22 20L16 8l12 8M42 20l6-12-12 8" fill="#ffc0e8"/>
+  <circle cx="26" cy="34" r="2.2" fill="#7a2ea8"/><circle cx="38" cy="34" r="2.2" fill="#7a2ea8"/>
+  <path d="M28 40q4 3 8 0" stroke="#e070b0" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <circle cx="44" cy="44" r="6" fill="#ffb6e0"/>
 </svg>
