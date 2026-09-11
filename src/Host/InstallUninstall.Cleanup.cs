@@ -130,7 +130,7 @@ internal static partial class InstallUninstall
                     "rem Safety: only delete folder named GenshinFpsUnlocker\r\n" +
                     $"if /I not \"{Path.GetFileName(PathUtil.Normalize(dir))}\"==\"GenshinFpsUnlocker\" exit /b 2\r\n" +
                     $"rmdir /s /q \"{dir}\"\r\n" +
-                    "del "%~f0"\r\n";
+                    "del \"%~f0\"\r\n";
                 File.WriteAllText(bat, content, new UTF8Encoding(true));
                 Process.Start(new ProcessStartInfo
                 {
