@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(FpsUnlockerStub LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# C++20：消除 MSVC STL4038（<span> 仅 C++20+ 可用）
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # MinHook sources（直接编入 Stub，不另发 minhook.dll）
 set(MINHOOK_DIR "${CMAKE_SOURCE_DIR}/../../third_party/minhook")

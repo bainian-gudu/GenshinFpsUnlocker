@@ -15,7 +15,11 @@ internal sealed partial class MainForm
     private ToolStripMenuItem? _trayStartMinItem;
     private Icon? _trayIconOwned;
     private bool _trayTipShownThisSession;
+    /// <summary>主窗是否已藏入托盘（气泡/提示文案用）。</summary>
     private bool _inTray;
+
+    /// <summary>当前是否在托盘后台模式。</summary>
+    internal bool IsInTray => _inTray;
 
     private void BuildTray()
     {
@@ -345,14 +349,15 @@ internal sealed partial class MainForm
     {
         var effective = _config.MasterEnabled && _config.Enabled;
         var pid = _service.AttachedPid;
+        var trayMark = _inTray ? " · 托盘" : "";
         if (pid > 0)
             return effective
-                ? $"运行中 · PID {pid} · {_config.TargetFps} FPS"
-                : $"已附加 · 解锁暂停 · PID {pid}";
-        if (!_config.MasterEnabled) return "解锁服务已暂停";
-        if (!_config.Enabled) return "帧率解锁已关闭";
-        if (_config.AutoWatch) return $"自动监视中 · 目标 {_config.TargetFps} FPS";
-        return $"已就绪 · 目标 {_config.TargetFps} FPS";
+                ? $"运行中 · PID {pid} · {_config.TargetFps} FPS{trayMark}"
+                : $"已附加 · 解锁暂停 · PID {pid}{trayMark}";
+        if (!_config.MasterEnabled) return "解锁服务已暂停" + trayMark;
+        if (!_config.Enabled) return "帧率解锁已关闭" + trayMark;
+        if (_config.AutoWatch) return $"自动监视中 · 目标 {_config.TargetFps} FPS{trayMark}";
+        return $"已就绪 · 目标 {_config.TargetFps} FPS{trayMark}";
     }
 
     private string BuildTrayTipText()
@@ -360,11 +365,12 @@ internal sealed partial class MainForm
         var effective = _config.MasterEnabled && _config.Enabled ? "开" : "关";
         var watch = _config.AutoWatch ? "监视" : "待命";
         var pid = _service.AttachedPid;
+        var mode = _inTray ? "托盘" : "窗口";
         var core = pid > 0
-            ? $"FPS {_config.TargetFps} | {effective} | PID {pid}"
-            : $"FPS {_config.TargetFps} | {effective} | {watch}";
+            ? $"FPS {_config.TargetFps} | {effective} | PID {pid} | {mode}"
+            : $"FPS {_config.TargetFps} | {effective} | {watch} | {mode}";
         var status = _service.StatusText;
-        if (!string.IsNullOrWhiteSpace(status) && status.Length < 28)
+        if (!string.IsNullOrWhiteSpace(status) && status.Length < 24)
             core += " | " + status;
         return Truncate(core, 63);
     }

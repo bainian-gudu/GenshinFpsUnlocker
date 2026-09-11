@@ -26,6 +26,8 @@ env:
   # 避免 runner 上 SDK 10 抢先解析 csproj（仍以 global.json rollForward 为准）
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  # 第三方 action 若仍声明 node20，强制落到 runner 默认 Node 24，消减弃用告警
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build-windows:
@@ -36,15 +38,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -97,7 +99,7 @@ jobs:
           }
 
       - name: Download kachina-builder
-        uses: robinraju/release-downloader@v1.8
+        uses: robinraju/release-downloader@v1.13
         with:
           repository: "YuehaiTeam/kachina-installer"
           latest: true
@@ -112,7 +114,8 @@ jobs:
           if (-not (Test-Path ".\kachina-builder.exe")) { throw "kachina-builder.exe missing" }
 
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          $work = "build\kachina-ci"
+          # 与 stub 一样避开 Build/（Windows 大小写不敏感）；Kachina 配置仍读 Build\kachina.config.json
+          $work = "out\kachina-ci"
           if (Test-Path $work) { Remove-Item $work -Recurse -Force }
           $appDir = Join-Path $work $app
           New-Item -ItemType Directory -Force -Path $appDir | Out-Null
@@ -157,7 +160,7 @@ jobs:
           Get-ChildItem artifacts | Format-Table Name, Length
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: GenshinFpsUnlocker-win-x64
           path: |

@@ -19,7 +19,6 @@ internal sealed partial class UnlockService : IDisposable
     private int _attachedPid;
     /// <summary>已尝试注入的 PID（含 Stub 未就绪），避免对同一进程重复注入。</summary>
     private int _injectAttemptedPid;
-    private int _lastLoggedIdleSec;
     /// <summary>连续注入失败次数，用于指数退避。</summary>
     private int _injectFailStreak;
     private string _statusText = "空闲 — 等待游戏启动";
