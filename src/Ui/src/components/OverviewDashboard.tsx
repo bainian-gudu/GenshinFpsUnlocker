@@ -3,6 +3,7 @@ import {
   Play, Power, Rocket, ScanLine, Settings2, SlidersHorizontal, Users,
 } from 'lucide-react';
 import type { UnlockerConfig } from '../lib/config';
+import { BrandMark } from './Brand';
 import { Toggle } from './ui';
 
 const FPS_PRESETS = [60, 120, 144] as const;
@@ -87,7 +88,6 @@ export function OverviewDashboard({
         </section>
 
         <section className="yae-card yae-quote-card" aria-hidden="true">
-          <img className="yae-quote-emblem" src="/images/fox-emblem.webp" alt="" draggable={false} />
           <blockquote>
             「稻妻的樱花，
             <br />
@@ -101,7 +101,7 @@ export function OverviewDashboard({
             <h3><Users size={16} strokeWidth={1.8} />游戏检测</h3>
           </div>
           <div className="yae-game-row">
-            <img className="yae-game-thumb" src="/images/game-icon.webp" alt="" width={42} height={42} draggable={false} />
+            <BrandMark className="yae-game-thumb" />
             <div className="yae-game-meta">
               <div className="yae-game-title">
                 <strong>原神</strong>
@@ -214,7 +214,7 @@ export function OverviewDashboard({
             </label>
           </div>
           <div className="yae-launch-art">
-            <img src="/images/yae-card.jpg" alt="" draggable={false} />
+            <img src="/images/teyvat-landscape.jpg" alt="" draggable={false} />
             <div className="yae-launch-caption">
               <strong>鸣神大社</strong>
               <span>在樱花的尽头<br />等待与你相遇</span>

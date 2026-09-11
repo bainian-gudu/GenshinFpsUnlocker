@@ -1,14 +1,11 @@
-/** 八重神子主题品牌：狐樱标 */
+/** 品牌标志：原设计星形标（内联 SVG，无图片资源） */
 export function BrandMark({ className = '' }: { className?: string }) {
   return (
-    <img
-      className={`brand-mark-img ${className}`}
-      src="/images/brand-fox.png"
-      alt=""
-      width={44}
-      height={44}
-      draggable={false}
-    />
+    <svg className={className} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <path d="M24 3L29.6 18.4L45 24L29.6 29.6L24 45L18.4 29.6L3 24L18.4 18.4L24 3Z" fill="currentColor" />
+      <path d="M24 14L27 21L34 24L27 27L24 34L21 27L14 24L21 21L24 14Z" fill="var(--sidebar-bg, #15161d)" />
+      <path d="M37.5 4L39 8L43 9.5L39 11L37.5 15L36 11L32 9.5L36 8L37.5 4Z" fill="currentColor" opacity=".6" />
+    </svg>
   );
 }
 

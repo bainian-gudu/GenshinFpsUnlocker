@@ -418,7 +418,7 @@ export default function App() {
               </a>
             ))}
           </nav>
-          <div className="sidebar-bottom"><div className="sidebar-constellation" aria-hidden="true"><img className="sidebar-constellation-art" src="/images/sidebar-yae.jpg" alt="" draggable={false} /><div className="sidebar-constellation-shade" /><div className="sidebar-constellation-caption">八重宫司<span>永远的不过是，这世间的美好</span></div></div>
+          <div className="sidebar-bottom"><div className="sidebar-constellation" aria-hidden="true"><svg viewBox="0 0 180 130" fill="none"><path d="m12 102 32-30 36 14 29-47 48-23" stroke="currentColor" strokeWidth=".7" /><circle cx="12" cy="102" r="2" fill="currentColor" /><circle cx="44" cy="72" r="3" fill="currentColor" /><circle cx="80" cy="86" r="2" fill="currentColor" /><circle cx="109" cy="39" r="2.5" fill="currentColor" /><path d="m157 9 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="currentColor" /><circle cx="72" cy="30" r="1" fill="currentColor" /><circle cx="145" cy="76" r="1" fill="currentColor" /></svg></div>
             <nav className="secondary-nav" aria-label="帮助与项目">
               {SECONDARY_NAV.map(({ page: itemPage, label, icon: Icon }) => (
                 <a href={`#${itemPage}`} key={itemPage} aria-label={label} title={label}
