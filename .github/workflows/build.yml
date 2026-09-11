@@ -120,12 +120,18 @@ jobs:
           $appDir = Join-Path $work $app
           New-Item -ItemType Directory -Force -Path $appDir | Out-Null
           Copy-Item "dist\*" $appDir -Recurse -Force
+          if (Test-Path "USER_AGREEMENT.txt") {
+            Copy-Item "USER_AGREEMENT.txt" (Join-Path $appDir "USER_AGREEMENT.txt") -Force
+          }
 
           $config = "Build\kachina.config.json"
           $updater = Join-Path $appDir "$app.update.exe"
+          $sideImg = "Build\installer-side.webp"
+          $packExtra = @()
+          if (Test-Path $sideImg) { $packExtra += @("-t", (Resolve-Path $sideImg).Path) }
 
           Write-Host "==> pack updater"
-          .\kachina-builder.exe pack -c $config -o $updater
+          .\kachina-builder.exe pack -c $config -o $updater @packExtra
           if ($LASTEXITCODE -ne 0) { throw "pack updater failed" }
 
           Write-Host "==> gen metadata"
@@ -138,7 +144,7 @@ jobs:
             $installName = "$app.Install.$ver.exe"
             Write-Host "==> pack offline install $installName"
             ..\..\kachina-builder.exe pack -c ..\..\Build\kachina.config.json `
-              -m metadata.json -d hashed -o $installName
+              -m metadata.json -d hashed -o $installName @packExtra
             if ($LASTEXITCODE -ne 0) { throw "pack install failed" }
 
             Copy-Item $installName "..\..\artifacts\$installName" -Force

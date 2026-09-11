@@ -41,7 +41,7 @@ internal static class SafetyDialog
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 72, Padding = new Padding(12) };
         var dontShow = new CheckBox
         {
-            Text = "我已阅读，不再每次启动提示",
+            Text = "我已阅读并同意，不再每次启动提示",
             Checked = config.SafetyNoticeAcknowledged,
             AutoSize = true,
             Left = 12,
@@ -49,7 +49,7 @@ internal static class SafetyDialog
         };
         var ok = new Button
         {
-            Text = "我知道了",
+            Text = "同意并继续",
             Width = 100,
             Height = 30,
             Left = 420,

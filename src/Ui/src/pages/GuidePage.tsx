@@ -10,7 +10,7 @@ const FAQ_NATIVE = [
   { q: '关闭窗口后，解锁器还会运行吗？', a: '会。关闭或最小化窗口会将应用隐藏到系统托盘，后台监视继续运行。需要完全退出时，请从托盘菜单选择「退出」。也可在状态栏点击「驻留托盘」。' },
   { q: '支持国服与国际服吗？', a: '支持。国服请选择 YuanShen.exe，国际服请选择 GenshinImpact.exe。请使用游戏本体的完整路径，不要选择启动器或下载器。可用「自动查找」或「浏览本地文件」。' },
   { q: '配置保存在哪里？', a: '配置文件：%LocalAppData%\\GenshinFpsUnlocker\\config.json。可在「游戏设置 → 高级设置」导入/导出。日志在同一目录下的 logs 文件夹。' },
-  { q: '使用这个工具会有账号风险吗？', a: '有风险。本工具通过第三方模块注入调整帧率，并非官方功能，可能违反游戏服务条款。项目无法保证账号安全；是否使用由你自行决定。请先完整阅读安全声明。' },
+  { q: '使用这个工具会有账号风险吗？', a: '有风险。本工具通过第三方模块注入调整帧率，并非官方功能，可能违反游戏服务条款。项目无法保证账号安全；是否使用由你自行决定。请先完整阅读用户协议与安全声明。' },
 ];
 
 const FAQ_WEB = [
@@ -41,6 +41,6 @@ export function GuidePage({ navigate, onSafety, isNative }: { navigate: (page: P
       <div className="guide-art"><img src="/images/teyvat-landscape.jpg" alt="碧水群山之间的璃月风格亭台" /><div><span>BEYOND THE FRAME</span><p>不止是更高的帧率，<br />更是沉浸的每一刻。</p></div></div>
     </div>
     <section className="faq-section"><h2>你可能想知道</h2><div className="faq-list">{faq.map((item, index) => <div className={`faq-item ${expanded === index ? 'is-open' : ''}`} key={item.q}><button aria-expanded={expanded === index} aria-controls={`faq-${index}`} onClick={() => setExpanded(expanded === index ? null : index)}>{item.q}<ChevronDown size={17} /></button><AnimatePresence initial={false}>{expanded === index && <motion.div id={`faq-${index}`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}><p>{item.a}</p></motion.div>}</AnimatePresence></div>)}</div></section>
-    <div className="guide-safety"><ShieldCheck size={20} /><div><strong>保持知情，安心选择</strong><p>第三方工具存在使用风险，使用前请仔细阅读安全声明。</p></div><button className="text-button" onClick={onSafety}>阅读安全声明<ArrowRight size={15} /></button></div>
+    <div className="guide-safety"><ShieldCheck size={20} /><div><strong>保持知情，安心选择</strong><p>第三方工具存在使用风险，使用前请仔细阅读用户协议与安全声明。</p></div><button className="text-button" onClick={onSafety}>阅读用户协议<ArrowRight size={15} /></button></div>
   </>;
 }

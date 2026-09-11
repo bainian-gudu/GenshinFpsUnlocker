@@ -115,7 +115,7 @@ if (Test-Path (Join-Path $uiDistDir "index.html")) {
 }
 
 
-foreach ($extra in @("LICENSE", "config.example.json")) {
+foreach ($extra in @("LICENSE", "USER_AGREEMENT.txt", "config.example.json")) {
     $p = Join-Path $Root $extra
     if (Test-Path $p) {
         Copy-Item $p (Join-Path $dist $extra) -Force
@@ -160,13 +160,21 @@ if (-not $SkipSetup) {
         New-Item -ItemType Directory -Force -Path $appDir | Out-Null
         Copy-Item (Join-Path $dist "*") $appDir -Recurse -Force
 
+        $agree = Join-Path $Root "USER_AGREEMENT.txt"
+        if (Test-Path $agree) {
+            Copy-Item $agree (Join-Path $appDir "USER_AGREEMENT.txt") -Force
+        }
+
         $config = Join-Path $buildDir "kachina.config.json"
         if (-not (Test-Path $config)) { throw "missing $config" }
 
         $updaterName = "$appName.update.exe"
         $updaterPath = Join-Path $appDir $updaterName
         Write-Host "    pack updater → $updaterName" -ForegroundColor DarkCyan
-        & $builder pack -c $config -o $updaterPath
+        $sideImg = Join-Path $buildDir "installer-side.webp"
+        $packExtra = @()
+        if (Test-Path $sideImg) { $packExtra += @("-t", $sideImg) }
+        & $builder pack -c $config -o $updaterPath @packExtra
         if ($LASTEXITCODE -ne 0) { throw "kachina pack updater failed" }
 
         $meta = Join-Path $work "metadata.json"
@@ -181,7 +189,7 @@ if (-not $SkipSetup) {
             $installName = "$appName.Install.$ver.exe"
             $installOut = Join-Path $work $installName
             Write-Host "    pack offline installer → $installName" -ForegroundColor DarkCyan
-            & $builder pack -c $config -m "metadata.json" -d "hashed" -o $installName
+            & $builder pack -c $config -m "metadata.json" -d "hashed" -o $installName @packExtra
             if ($LASTEXITCODE -ne 0) { throw "kachina pack install failed" }
         } finally {
             Pop-Location

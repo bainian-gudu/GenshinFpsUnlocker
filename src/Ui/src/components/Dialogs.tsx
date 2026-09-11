@@ -82,12 +82,12 @@ export function SafetyDialog({ onClose, onAcknowledge, isNative }: {
     }).catch(() => { /* fallback content */ });
   }, [isNative]);
   return (
-    <Modal title="安全声明" description="在追求流畅之前，了解并掌握你的选择。" icon={ShieldCheck} onClose={onClose}
+    <Modal title="用户协议与安全声明" description="安装与使用前，请阅读并了解相关风险与责任。" icon={ShieldCheck} onClose={onClose}
       footer={<>
         <a className="text-button muted" href={`${PROJECT_URL}#安全说明`} target="_blank" rel="noreferrer">项目安全说明<ArrowUpRight size={14} /></a>
         {onAcknowledge
-          ? <button className="button button-primary" onClick={() => void onAcknowledge(showOnStartup)}>我已了解并继续</button>
-          : <button className="button button-primary" onClick={onClose}>我已了解</button>}
+          ? <button className="button button-primary" onClick={() => void onAcknowledge(showOnStartup)}>我已阅读并同意</button>
+          : <button className="button button-primary" onClick={onClose}>我已阅读并同意</button>}
       </>}>
       <SafetyContent fullText={fullText} />
       {onAcknowledge && (
