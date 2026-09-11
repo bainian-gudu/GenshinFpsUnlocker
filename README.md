@@ -4,7 +4,8 @@
 
 ## 要求
 
-- Windows x64
+- **操作系统**：64 位 **Windows 10**（1607 / 版本 14393 及以上）或 **Windows 11**
+- **架构**：x64（与游戏客户端一致）
 - 构建：.NET 8 SDK、CMake、MSVC（或 VS Build Tools）
 - 运行（框架依赖包）：.NET 8 Desktop Runtime x64  
   https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe

@@ -44,6 +44,13 @@ internal static class Program
 
         AppLog.Info($"args=[{string.Join(' ', args)}] admin={Elevation.IsAdministrator()} autostart={isAutostart}");
 
+        // Windows 10 / 11 x64 最低要求（自启路径 quiet 不弹窗）
+        if (!OsCompatibility.EnsureOrPrompt(quiet || isAutostart))
+        {
+            AppLog.Error("OS 兼容性检查未通过 — 退出");
+            return;
+        }
+
         // ---- 卸载：需要写 PF / HKLM 时按需提权（用户主动操作，可接受一次 UAC）----
         if (isUninstall)
         {

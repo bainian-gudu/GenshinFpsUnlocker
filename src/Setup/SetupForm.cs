@@ -169,6 +169,7 @@ internal sealed class SetupForm : Form
                 "• 可自定义安装目录（默认 Program Files\\GenshinFpsUnlocker）\n" +
                 "• 创建开始菜单与可选桌面快捷方式\n" +
                 "• 配置与日志：%LocalAppData%\\GenshinFpsUnlocker\\\n\n" +
+                "支持 Windows 10 与 Windows 11（64 位）。\n" +
                 "安装需要管理员权限（写入所选目录）。\n" +
                 "安装完成后，日常使用与开机自启不会再弹出系统授权框。\n\n" +
                 "请点击「下一步」选择安装位置。",

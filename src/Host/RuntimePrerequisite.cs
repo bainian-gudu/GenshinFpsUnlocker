@@ -34,6 +34,17 @@ internal static class RuntimePrerequisite
     /// <summary>执行完整检测并返回结构化结果。</summary>
     public static RuntimeCheckResult Check()
     {
+        if (!OsCompatibility.MeetsMinimumOs(out var osDetail))
+        {
+            return new RuntimeCheckResult(
+                false,
+                "需要 Windows 10 / Windows 11（x64）",
+                "本软件支持 64 位 Windows 10（1607 及以上）与 Windows 11。\n\n" +
+                "检测：" + osDetail,
+                null,
+                IsFrameworkDependent());
+        }
+
         if (!Environment.Is64BitOperatingSystem)
         {
             return new RuntimeCheckResult(

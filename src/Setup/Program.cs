@@ -12,6 +12,16 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         ApplicationConfiguration.Initialize();
 
+        if (!OsCompatibility.MeetsMinimumOs(out var osDetail))
+        {
+            MessageBox.Show(
+                "本安装程序需要 64 位 Windows 10（1607+）或 Windows 11。\n\n" + osDetail,
+                SetupConstants.DisplayName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
         var quiet = args.Any(a => a is "/S" or "/s" or "--quiet" or "-q");
         var payload = PayloadLocator.FindPayloadDirectory();
 

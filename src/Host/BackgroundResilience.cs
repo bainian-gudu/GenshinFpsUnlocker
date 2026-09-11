@@ -6,7 +6,7 @@ namespace GenshinFpsUnlocker.Host;
 /// <summary>
 /// 降低后台进程被“莫名杀掉/挂起”概率的软措施：
 /// - 进程优先级 AboveNormal（不过度抬到 High/Realtime，避免显眼）
-/// - 关闭节电执行节流（Win10 1709+ power throttling）
+/// - 关闭节电执行节流（Win10 1709+ / Win11 效率模式相关 power throttling，失败则忽略）
 /// - 请求系统执行状态，减少被休眠掐断
 /// - 可选：为安装目录添加 Defender 排除（需管理员，尽力而为）
 /// 不使用“关键进程”标志（崩溃会导致蓝屏，不安全）。
