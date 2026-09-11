@@ -28,9 +28,9 @@ import { SettingsPage } from './pages/SettingsPage';
 
 type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
 type LaunchState = 'idle' | 'launching' | 'running';
-const PAGE_NAMES: Record<Page, string> = { overview: '游戏概览', settings: '游戏设置', logs: '运行日志', guide: '使用指南', about: '关于项目' };
-const NAV_ITEMS = [{ page: 'overview', label: '游戏概览', icon: LayoutGrid }, { page: 'settings', label: '游戏设置', icon: SlidersHorizontal }, { page: 'logs', label: '运行日志', icon: SquareTerminal }] as const;
-const SECONDARY_NAV = [{ page: 'guide', label: '使用指南', icon: BookOpen }, { page: 'about', label: '关于项目', icon: Info }] as const;
+const PAGE_NAMES: Record<Page, string> = { overview: '概览', settings: '设置', logs: '日志', guide: '指南', about: '关于' };
+const NAV_ITEMS = [{ page: 'overview', label: '概览', icon: LayoutGrid }, { page: 'settings', label: '设置', icon: SlidersHorizontal }, { page: 'logs', label: '日志', icon: SquareTerminal }] as const;
+const SECONDARY_NAV = [{ page: 'guide', label: '指南', icon: BookOpen }, { page: 'about', label: '关于', icon: Info }] as const;
 
 export default function App() {
   const native = isNativeHost();
@@ -161,7 +161,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#121319' : '#f5f5f8');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#120f18' : '#faf5fc');
     try { localStorage.setItem('genshin-fps-unlocker.theme', theme); } catch { /* ignore */ }
     // 桌面宿主：标题栏 / 窗体底色与 UI 深浅一致（Win11 caption color）
     if (native) {
@@ -407,7 +407,7 @@ export default function App() {
         <AnimatePresence>{sidebarOpen && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}</AnimatePresence>
         <aside ref={sidebarRef} id="app-navigation" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="主导航" role={sidebarOpen ? 'dialog' : undefined} aria-modal={sidebarOpen || undefined}>
           <div className="sidebar-brand-row"><button className="brand-button" aria-label="返回游戏概览" onClick={() => navigate('overview')}><Brand /></button><button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="关闭导航"><X size={19} /></button></div>
-          <div className="nav-group-label">工作空间</div>
+          <div className="nav-group-label">导航</div>
           <nav className="primary-nav" aria-label="工作空间">
             {NAV_ITEMS.map(({ page: itemPage, label, icon: Icon }, index) => (
               <a key={itemPage} href={`#${itemPage}`} aria-label={label} title={`${label} (Alt+${index + 1})`}
@@ -419,7 +419,7 @@ export default function App() {
               </a>
             ))}
           </nav>
-          <div className="sidebar-bottom"><div className="sidebar-constellation" aria-hidden="true"><svg viewBox="0 0 180 130" fill="none"><path d="m12 102 32-30 36 14 29-47 48-23" stroke="currentColor" strokeWidth=".7" /><circle cx="12" cy="102" r="2" fill="currentColor" /><circle cx="44" cy="72" r="3" fill="currentColor" /><circle cx="80" cy="86" r="2" fill="currentColor" /><circle cx="109" cy="39" r="2.5" fill="currentColor" /><path d="m157 9 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="currentColor" /><circle cx="72" cy="30" r="1" fill="currentColor" /><circle cx="145" cy="76" r="1" fill="currentColor" /></svg></div>
+          <div className="sidebar-bottom"><div className="sidebar-constellation" aria-hidden="true"><img className="sidebar-constellation-art" src="/images/teyvat-landscape.jpg" alt="" draggable={false} /><div className="sidebar-constellation-shade" /><div className="sidebar-constellation-caption">八重宫司<span>永远的不过是，这世间的美好</span></div></div>
             <nav className="secondary-nav" aria-label="帮助与项目">
               {SECONDARY_NAV.map(({ page: itemPage, label, icon: Icon }) => (
                 <a href={`#${itemPage}`} key={itemPage} aria-label={label} title={label}
@@ -457,11 +457,17 @@ export default function App() {
           <AnimatePresence mode="wait" initial={false}>
             <motion.main id="main-content" tabIndex={-1} className={`main-content page-${page}`} key={page} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
               {page === 'overview' && <>
-                <PageHeading title="游戏概览" description="准备好，以更流畅的方式探索提瓦特。"><div className={`readiness ${!effectiveEnabled || !config.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedPid > 0 && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
+                <PageHeading title="概览" description="解锁帧率 · 畅享提瓦特"><div className={`readiness ${!effectiveEnabled || !config.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedPid > 0 && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
                 <section className="overview-hero" aria-label="Genshin FPS Unlocker">
-                  <motion.img className="hero-image" src="/images/teyvat-landscape.jpg" alt="阳光下的璃月风格山峦、亭台与碧水" initial={{ scale: 1.045 }} animate={{ scale: 1 }} transition={{ duration: 1.8, ease: 'easeOut' }} />
+                  <motion.img className="hero-image" src="/images/teyvat-landscape.jpg" alt="稻妻樱花与八重神子" initial={{ scale: 1.045 }} animate={{ scale: 1 }} transition={{ duration: 1.8, ease: 'easeOut' }} />
                   <div className="hero-shade" />
-                  <motion.div className="hero-copy" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}><h2>Genshin FPS Unlocker</h2><h3>让每一帧，都不被设限。</h3><p>更高帧率，更自在的冒险。以你喜欢的节奏，探索提瓦特。</p><button className="hero-guide" onClick={() => navigate('guide')}>初次使用？从这里开始<ArrowRight size={14} /></button></motion.div>
+                  <motion.div className="hero-copy" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}>
+                    <h2>GenshinFpsUnlocker</h2>
+                    <h3>解锁帧率 · 畅享提瓦特</h3>
+                    <p>让每一帧，都是更清晰的风景。</p>
+                    <blockquote className="hero-quote">「稻妻的樱花，永远不会凋零。」<cite>— 八重神子</cite></blockquote>
+                    <button className="hero-guide" onClick={() => navigate('guide')}>初次使用？从这里开始<ArrowRight size={14} /></button>
+                  </motion.div>
                 </section>
                 <motion.div className="overview-controls" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
                   <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />

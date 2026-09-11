@@ -4,7 +4,7 @@ using Microsoft.Win32;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 界面跟随系统：字体用 SystemFonts；主窗标题栏跟随 Web UI 深/浅色（与 #121319 / #f5f5f8 一致）。
+/// 界面跟随系统：字体用 SystemFonts；主窗标题栏跟随 Web UI 深/浅色（八重樱紫 #120f18 / #faf5fc）。
 /// </summary>
 internal static class UiStyle
 {
@@ -115,16 +115,20 @@ internal static class UiStyle
     public static Color StatusError =>
         IsAppsDarkMode() ? Color.FromArgb(255, 120, 120) : Color.DarkRed;
 
-    /// <summary>设计稿深色背景 #121319。</summary>
-    public static Color UiDarkBg => Color.FromArgb(0x12, 0x13, 0x19);
+    /// <summary>设计稿深色背景 #120f18（八重神子主题）。</summary>
+    public static Color UiDarkBg => Color.FromArgb(0x12, 0x0F, 0x18);
 
-    /// <summary>设计稿浅色背景 #f5f5f8。</summary>
-    public static Color UiLightBg => Color.FromArgb(0xF5, 0xF5, 0xF8);
+    /// <summary>设计稿浅色背景 #faf5fc。</summary>
+    public static Color UiLightBg => Color.FromArgb(0xFA, 0xF5, 0xFC);
 
-    public static Color UiDarkText => Color.FromArgb(0xED, 0xEC, 0xF3);
-    public static Color UiLightText => Color.FromArgb(0x1A, 0x1A, 0x22);
-    public static Color UiDarkBorder => Color.FromArgb(0x27, 0x29, 0x34);
-    public static Color UiLightBorder => Color.FromArgb(0xE4, 0xE2, 0xEC);
+    public static Color UiDarkText => Color.FromArgb(0xF3, 0xEE, 0xF8);
+    public static Color UiLightText => Color.FromArgb(0x2A, 0x1F, 0x35);
+    public static Color UiDarkBorder => Color.FromArgb(0x2A, 0x22, 0x36);
+    public static Color UiLightBorder => Color.FromArgb(0xEB, 0xDF, 0xF3);
+
+    /// <summary>强调色 #e879f9 / #c026d3。</summary>
+    public static Color UiAccentDark => Color.FromArgb(0xE8, 0x79, 0xF9);
+    public static Color UiAccentLight => Color.FromArgb(0xC0, 0x26, 0xD3);
 
     /// <summary>窗体加载时：系统字体 + 标题栏配色。</summary>
     public static void ApplyToForm(Form form)

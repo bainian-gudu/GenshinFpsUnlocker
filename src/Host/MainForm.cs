@@ -49,7 +49,7 @@ internal sealed partial class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            DefaultBackgroundColor = Color.FromArgb(0x12, 0x13, 0x19),
+            DefaultBackgroundColor = Color.FromArgb(0x12, 0x0F, 0x18),
         };
         Controls.Add(_webView);
 
@@ -318,7 +318,7 @@ internal sealed partial class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(24),
-            BackColor = Color.FromArgb(0x12, 0x13, 0x19),
+            BackColor = Color.FromArgb(0x12, 0x0F, 0x18),
             ForeColor = Color.White,
         };
 
@@ -327,7 +327,7 @@ internal sealed partial class MainForm : Form
             Text = "原神帧率解锁",
             AutoSize = true,
             Font = UiStyle.UiFontBold(6f),
-            ForeColor = Color.FromArgb(0xBD, 0xA2, 0xF2),
+            ForeColor = Color.FromArgb(0xE8, 0x79, 0xF9),
             Location = new Point(8, 8),
         };
 

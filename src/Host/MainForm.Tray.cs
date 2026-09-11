@@ -45,8 +45,8 @@ internal sealed partial class MainForm
             Font = UiStyle.UiFont,
             Padding = new Padding(6, 8, 6, 8),
             Renderer = new TrayMenuRenderer(dark),
-            BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA),
-            ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22),
+            BackColor = dark ? Color.FromArgb(0x1C, 0x17, 0x26) : Color.FromArgb(0xFA, 0xF5, 0xFC),
+            ForeColor = dark ? Color.FromArgb(0xF3, 0xEE, 0xF8) : Color.FromArgb(0x2A, 0x1F, 0x35),
         };
         _trayMenu = menu;
 
@@ -179,8 +179,8 @@ internal sealed partial class MainForm
         if (_trayMenu is null) return;
         var dark = UiStyle.IsUiDark;
         _trayMenu.Renderer = new TrayMenuRenderer(dark);
-        _trayMenu.BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
-        _trayMenu.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
+        _trayMenu.BackColor = dark ? Color.FromArgb(0x1C, 0x17, 0x26) : Color.FromArgb(0xFA, 0xF5, 0xFC);
+        _trayMenu.ForeColor = dark ? Color.FromArgb(0xF3, 0xEE, 0xF8) : Color.FromArgb(0x2A, 0x1F, 0x35);
         _trayMenu.Font = UiStyle.UiFont;
         foreach (ToolStripItem it in _trayMenu.Items)
             StyleTrayItem(it, dark);
@@ -196,9 +196,9 @@ internal sealed partial class MainForm
 
     private static void StyleTrayItem(ToolStripItem it, bool dark)
     {
-        it.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
+        it.ForeColor = dark ? Color.FromArgb(0xF3, 0xEE, 0xF8) : Color.FromArgb(0x2A, 0x1F, 0x35);
         if (it is ToolStripMenuItem mi && !mi.Enabled)
-            it.ForeColor = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
+            it.ForeColor = dark ? Color.FromArgb(0x96, 0x86, 0xA8) : Color.FromArgb(0x85, 0x74, 0x92);
     }
 
     private void OnServiceStateForTray()
@@ -252,7 +252,7 @@ internal sealed partial class MainForm
             Left = 22,
             Top = 22,
             AutoSize = true,
-            ForeColor = dark ? Color.FromArgb(0xB0, 0xAF, 0xBE) : Color.FromArgb(0x55, 0x52, 0x64),
+            ForeColor = dark ? Color.FromArgb(0xC4, 0xB6, 0xD4) : Color.FromArgb(0x6B, 0x5A, 0x78),
         };
         var num = new NumericUpDown
         {
@@ -274,8 +274,8 @@ internal sealed partial class MainForm
             Height = 32,
             DialogResult = DialogResult.OK,
             FlatStyle = FlatStyle.Flat,
-            BackColor = dark ? Color.FromArgb(0xBD, 0xA2, 0xF2) : Color.FromArgb(0x90, 0x6A, 0xC7),
-            ForeColor = dark ? Color.FromArgb(0x25, 0x1B, 0x36) : Color.White,
+            BackColor = dark ? Color.FromArgb(0xE8, 0x79, 0xF9) : Color.FromArgb(0xC0, 0x26, 0xD3),
+            ForeColor = dark ? Color.FromArgb(0x2A, 0x0A, 0x36) : Color.White,
         };
         ok.FlatAppearance.BorderSize = 0;
         var cancel = new Button
@@ -287,10 +287,10 @@ internal sealed partial class MainForm
             Height = 30,
             DialogResult = DialogResult.Cancel,
             FlatStyle = FlatStyle.Flat,
-            BackColor = dark ? Color.FromArgb(0x22, 0x24, 0x2E) : Color.FromArgb(0xEE, 0xEC, 0xF4),
+            BackColor = dark ? Color.FromArgb(0x25, 0x1F, 0x32) : Color.FromArgb(0xF8, 0xF1, 0xFB),
             ForeColor = dlg.ForeColor,
         };
-        cancel.FlatAppearance.BorderColor = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xD8, 0xD4, 0xE4);
+        cancel.FlatAppearance.BorderColor = dark ? Color.FromArgb(0x35, 0x2B, 0x45) : Color.FromArgb(0xEB, 0xDF, 0xF3);
         dlg.Controls.Add(label);
         dlg.Controls.Add(num);
         dlg.Controls.Add(ok);
@@ -398,12 +398,12 @@ internal sealed partial class MainForm
             : base(new TrayColorTable(dark))
         {
             _dark = dark;
-            _bg = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
-            _hover = dark ? Color.FromArgb(0x25, 0x26, 0x31) : Color.FromArgb(0xEE, 0xEA, 0xF6);
-            _accent = dark ? Color.FromArgb(0xBD, 0xA2, 0xF2) : Color.FromArgb(0x90, 0x6A, 0xC7);
-            _text = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
-            _muted = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
-            _sep = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xE0, 0xDC, 0xEA);
+            _bg = dark ? Color.FromArgb(0x1C, 0x17, 0x26) : Color.FromArgb(0xFA, 0xF5, 0xFC);
+            _hover = dark ? Color.FromArgb(0x2A, 0x22, 0x38) : Color.FromArgb(0xF0, 0xE4, 0xF7);
+            _accent = dark ? Color.FromArgb(0xE8, 0x79, 0xF9) : Color.FromArgb(0xC0, 0x26, 0xD3);
+            _text = dark ? Color.FromArgb(0xF3, 0xEE, 0xF8) : Color.FromArgb(0x2A, 0x1F, 0x35);
+            _muted = dark ? Color.FromArgb(0x96, 0x86, 0xA8) : Color.FromArgb(0x85, 0x74, 0x92);
+            _sep = dark ? Color.FromArgb(0x35, 0x2B, 0x45) : Color.FromArgb(0xEB, 0xDF, 0xF3);
             RoundedEdges = false;
         }
 
@@ -506,8 +506,8 @@ internal sealed partial class MainForm
 
         public TrayColorTable(bool dark)
         {
-            _bg = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
-            _hover = dark ? Color.FromArgb(0x25, 0x26, 0x31) : Color.FromArgb(0xEE, 0xEA, 0xF6);
+            _bg = dark ? Color.FromArgb(0x1C, 0x17, 0x26) : Color.FromArgb(0xFA, 0xF5, 0xFC);
+            _hover = dark ? Color.FromArgb(0x2A, 0x22, 0x38) : Color.FromArgb(0xF0, 0xE4, 0xF7);
         }
 
         public override Color MenuBorder => _bg;

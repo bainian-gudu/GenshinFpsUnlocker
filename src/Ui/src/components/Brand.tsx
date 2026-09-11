@@ -1,9 +1,34 @@
+/** 八重神子主题：狐面 + 樱花品牌标 */
 export function BrandMark({ className = '' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      <path d="M24 3L29.6 18.4L45 24L29.6 29.6L24 45L18.4 29.6L3 24L18.4 18.4L24 3Z" fill="currentColor" />
-      <path d="M24 14L27 21L34 24L27 27L24 34L21 27L14 24L21 21L24 14Z" fill="var(--sidebar-bg, #15161d)" />
-      <path d="M37.5 4L39 8L43 9.5L39 11L37.5 15L36 11L32 9.5L36 8L37.5 4Z" fill="currentColor" opacity=".6" />
+      <defs>
+        <linearGradient id="yaeBrandGrad" x1="8" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#ff9ad5" />
+          <stop offset=".55" stopColor="#e56bff" />
+          <stop offset="1" stopColor="#a855f7" />
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="44" height="44" rx="12" fill="url(#yaeBrandGrad)" opacity=".22" />
+      <path
+        d="M24 8c2.2 1.2 8.5 6.2 8.5 15.2 0 5.4-3.4 9.2-8.5 9.2S15.5 28.6 15.5 23.2C15.5 14.2 21.8 9.2 24 8Z"
+        fill="url(#yaeBrandGrad)"
+      />
+      <path d="M16.2 14.5 12 6.2 20.8 12.4" fill="#ffb6e0" />
+      <path d="M31.8 14.5 36 6.2 27.2 12.4" fill="#ffb6e0" />
+      <path d="M24 8c-1.2 3.5-2 7.8-2 12.2 0 4.2.7 7.2 2 8.6 1.3-1.4 2-4.4 2-8.6 0-4.4-.8-8.7-2-12.2Z" fill="#fff" opacity=".92" />
+      <circle cx="20.6" cy="22.2" r="1.35" fill="#5b1d7a" />
+      <circle cx="27.4" cy="22.2" r="1.35" fill="#5b1d7a" />
+      <path d="M21.5 26.2c1.4 1.2 3.6 1.2 5 0" stroke="#e070b0" strokeWidth="1.2" strokeLinecap="round" />
+      <path
+        d="M33.2 30.5c.2-2.2 2.4-3.3 4.2-2.6 1.1 2.1-.1 4.4-2.3 4.9-1.5.3-2.1-1-1.9-2.3Z"
+        fill="#ffc2e4"
+      />
+      <path
+        d="M34.8 29.2c.55-.15 1.1.2 1.2.7-.35.55-.95.75-1.45.55-.35-.15-.4-.55.25-1.25Z"
+        fill="#fff"
+        opacity=".7"
+      />
     </svg>
   );
 }
@@ -15,6 +40,7 @@ export function Brand({ large = false }: { large?: boolean }) {
       <div className="brand-wordmark">
         <strong>Genshin</strong>
         <span>FPS UNLOCKER</span>
+        <em className="brand-tagline">解锁帧率 · 畅享提瓦特</em>
       </div>
     </div>
   );

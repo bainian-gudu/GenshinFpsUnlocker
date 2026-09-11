@@ -1,18 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7ec8ff"/>
-      <stop offset="100%" stop-color="#3b82f6"/>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f0a0d0"/>
+      <stop offset="100%" stop-color="#c44dff"/>
     </linearGradient>
   </defs>
   <circle cx="32" cy="32" r="30" fill="url(#g)"/>
-  <circle cx="32" cy="30" r="16" fill="#fff8f0"/>
-  <circle cx="26" cy="28" r="2.8" fill="#2a2a40"/>
-  <circle cx="38" cy="28" r="2.8" fill="#2a2a40"/>
-  <circle cx="26.6" cy="27.4" r="0.9" fill="#fff"/>
-  <circle cx="38.6" cy="27.4" r="0.9" fill="#fff"/>
-  <path d="M26 35 Q32 39 38 35" stroke="#e07070" stroke-width="2" fill="none" stroke-linecap="round"/>
-  <ellipse cx="22" cy="18" rx="6" ry="5" fill="#fff8f0"/>
-  <ellipse cx="42" cy="18" rx="6" ry="5" fill="#fff8f0"/>
-  <path d="M28 10 Q32 6 36 10" stroke="#e8c070" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M18 38 C18 24 28 16 32 14 C36 16 46 24 46 38 C42 44 36 46 32 46 C28 46 22 44 18 38Z" fill="#fff"/>
+  <path d="M22 22 L18 10 L28 18Z" fill="#ffb6d9"/>
+  <path d="M42 22 L46 10 L36 18Z" fill="#ffb6d9"/>
+  <circle cx="26" cy="32" r="2" fill="#7a2ea8"/>
+  <circle cx="38" cy="32" r="2" fill="#7a2ea8"/>
+  <path d="M28 38 Q32 41 36 38" stroke="#e070a0" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <circle cx="40" cy="42" r="5" fill="#ffc0e0"/>
 </svg>
