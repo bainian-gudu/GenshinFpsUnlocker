@@ -174,6 +174,9 @@ internal static class Program
                 config.AutoWatch = false;
             if (args[i] is "--minimized" or "-m" or "--autostart")
                 config.StartMinimized = true;
+            // 强制显示主窗口（排查「看不见 UI/托盘」时使用）
+            if (args[i] is "--show" or "--no-minimize")
+                config.StartMinimized = false;
             if (args[i] is "--master-off")
                 config.MasterEnabled = false;
             if (args[i] is "--master-on")

@@ -20,8 +20,8 @@ internal sealed class AppConfig
     /// <summary>是否监视游戏进程并在启动后自动注入。</summary>
     public bool AutoWatch { get; set; } = true;
 
-    /// <summary>启动时是否最小化到系统托盘。</summary>
-    public bool StartMinimized { get; set; } = true;
+    /// <summary>启动时是否最小化到系统托盘（默认 false，避免首次运行「看不见窗口/托盘」）。</summary>
+    public bool StartMinimized { get; set; } = false;
 
     /// <summary>是否写入 HKCU\...\Run，实现开机自启动。</summary>
     public bool AutoStartWithWindows { get; set; } = false;

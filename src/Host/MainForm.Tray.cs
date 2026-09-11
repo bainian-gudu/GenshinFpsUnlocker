@@ -24,12 +24,16 @@ internal sealed partial class MainForm
     private void BuildTray()
     {
         _trayIconOwned = CreateBrandTrayIcon();
+        // 优先自绘图标；失败则用系统 Application，保证托盘一定有图
+        var icon = _trayIconOwned ?? SystemIcons.Application;
         _tray = new NotifyIcon
         {
             Visible = true,
-            Text = BuildTrayTipText(),
-            Icon = _trayIconOwned ?? SystemIcons.Application,
+            Text = Truncate(BuildTrayTipText(), 63),
+            Icon = icon,
+            BalloonTipIcon = ToolTipIcon.Info,
         };
+        AppLog.Info($"tray created visible={_tray.Visible} icon={(icon is null ? "null" : icon.GetType().Name)}");
 
         var menu = new ContextMenuStrip
         {

@@ -3,7 +3,7 @@
   "enabled": true,
   "masterEnabled": true,
   "autoWatch": true,
-  "startMinimized": true,
+  "startMinimized": false,
   "autoStartWithWindows": false,
   "pollIntervalMs": 1000,
   "gamePath": null,
