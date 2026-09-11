@@ -41,3 +41,8 @@ Build/hashed/
 Build/metadata.json
 Build/*.7z
 # keep: Build/kachina.config.json, Build/setup_build.cmd
+
+# Web UI
+src/Ui/node_modules/
+src/Ui/dist/
+

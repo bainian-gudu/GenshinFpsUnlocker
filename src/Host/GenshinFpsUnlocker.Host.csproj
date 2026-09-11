@@ -32,5 +32,14 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+  <!-- Web UI 构建产物（Vite singlefile）随宿主发布 -->
+  <ItemGroup>
+    <Content Include="..\Ui\dist\**\*" Condition="Exists('..\Ui\dist\index.html')">
+      <Link>ui\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 </Project>

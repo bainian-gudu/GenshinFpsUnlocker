@@ -32,6 +32,28 @@ $hostSelfContained = [bool]$SelfContained
 $hostLabel = if ($hostSelfContained) { "self-contained" } else { "framework-dependent" }
 Write-Host "==> Host publish mode: $hostLabel" -ForegroundColor Cyan
 
+Write-Host "==> Building Web UI (Vite)" -ForegroundColor Cyan
+$uiDir = Join-Path $Root "src/Ui"
+$uiDist = Join-Path $uiDir "dist/index.html"
+$npm = Get-Command npm -ErrorAction SilentlyContinue
+if ($npm) {
+    Push-Location $uiDir
+    try {
+        if (-not (Test-Path (Join-Path $uiDir "node_modules"))) {
+            & npm install --no-fund --no-audit
+            if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+        }
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+    } finally { Pop-Location }
+    if (-not (Test-Path $uiDist)) { throw "UI dist missing: $uiDist" }
+    Write-Host "    UI: $uiDist" -ForegroundColor Green
+} elseif (Test-Path $uiDist) {
+    Write-Host "    npm not found — using prebuilt src/Ui/dist" -ForegroundColor DarkYellow
+} else {
+    throw "npm not found and src/Ui/dist missing. Install Node.js or commit a prebuilt UI."
+}
+
 Write-Host "==> Building FpsUnlockerStub.dll" -ForegroundColor Cyan
 $StubBuild = Join-Path $Root "build/stub"
 New-Item -ItemType Directory -Force -Path $StubBuild | Out-Null

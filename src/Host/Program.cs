@@ -210,14 +210,9 @@ internal static class Program
         if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
         AppLog.Info($"配置已保存 targetFps={config.TargetFps} master={config.MasterEnabled} enabled={config.Enabled} autoWatch={config.AutoWatch}");
 
-        // ---- 安全声明：开机自启不弹窗 ----
-        var needNotice = !config.SafetyNoticeAcknowledged
-                         || (config.ShowSafetyNoticeOnStartup && !isAutostart);
-        if (needNotice && !quiet && !isAutostart)
-        {
-            AppLog.Info("显示安全声明对话框");
-            SafetyDialog.Show(null, config, force: true);
-        }
+        // 安全声明改由 Web UI 呈现（开机自启/quiet 不打断）
+        if (!config.SafetyNoticeAcknowledged && !quiet && !isAutostart)
+            AppLog.Info("首次运行：将由界面展示安全声明");
 
         using var service = new UnlockService(config);
         service.Start();

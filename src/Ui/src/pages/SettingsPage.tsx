@@ -1,0 +1,82 @@
+import { Check, ChevronRight, Download, FileJson, FolderOpen, Info, RotateCcw, Settings2, ShieldCheck, SlidersHorizontal, Upload } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { LogLevel, UnlockerConfig, UpdateConfig } from '../lib/config';
+import { FpsControl } from '../components/FpsControl';
+import { PageHeading, ToggleRow } from '../components/ui';
+
+function NumberSetting({ title, description, value, min, max, unit, onChange }: {
+  title: string; description: string; value: number; min: number; max: number; unit: string; onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState(false);
+  useEffect(() => { setDraft(String(value)); setError(false); }, [value]);
+  const commit = () => {
+    const next = Number(draft);
+    if (!draft || !Number.isInteger(next) || next < min || next > max) { setError(true); return; }
+    setDraft(String(next)); setError(false); onChange(next);
+  };
+  return <div className="setting-row"><div><span className="row-title">{title}</span><p className={error ? 'field-error' : ''}>{error ? `请输入 ${min} 至 ${max} 之间的整数` : description}</p></div><div className="number-setting"><input aria-label={title} type="number" min={min} max={max} value={draft} aria-invalid={error} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{unit}</span></div></div>;
+}
+
+export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative }: {
+  config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; onUninstall?: () => void; busy: boolean; isNative?: boolean;
+}) {
+  const [tab, setTab] = useState<'game' | 'behavior' | 'advanced'>('game');
+  const tabs = [{ id: 'game', label: '游戏与解锁', icon: SlidersHorizontal }, { id: 'behavior', label: '启动与行为', icon: Settings2 }, { id: 'advanced', label: '高级设置', icon: FileJson }] as const;
+
+  function handleTabKey(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const current = tabs.findIndex((item) => item.id === tab);
+    const next = event.key === 'ArrowRight' ? (current + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (current - 1 + tabs.length) % tabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    setTab(tabs[next].id);
+    document.getElementById(`tab-${tabs[next].id}`)?.focus();
+  }
+
+  return <>
+    <PageHeading title="游戏设置" description="按你的习惯，配置每一次启动。"><span className="autosave-label"><Check size={14} />更改自动保存</span></PageHeading>
+    <div className="tabs" role="tablist" aria-label="设置分类" onKeyDown={handleTabKey}>
+      {tabs.map(({ id, label, icon: Icon }) => (
+        <button role="tab" key={id} id={`tab-${id}`} tabIndex={tab === id ? 0 : -1}
+          aria-controls={tab === id ? `settings-${id}` : undefined} aria-selected={tab === id}
+          className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+          <Icon size={16} />{label}
+        </button>
+      ))}
+    </div>
+    <div role="tabpanel" id={`settings-${tab}`} aria-labelledby={`tab-${tab}`} className="settings-tab-content" key={tab}>
+      {tab === 'game' && <>
+        <div className="settings-game-grid">
+          <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
+          <section className="control-panel settings-control"><div className="panel-heading"><h2><ShieldCheck size={18} />解锁行为</h2></div>
+            <ToggleRow title="解锁服务总开关" description="关闭后暂停所有注入与帧率解锁行为" checked={config.masterEnabled} onChange={(value) => updateConfig('masterEnabled', value)} />
+            <ToggleRow title="自动解锁" description="检测到游戏启动后，自动应用帧率设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} />
+            <p className="settings-small-note"><Info size={14} />总开关与帧率解锁同时开启时，目标帧率才会生效。</p>
+          </section>
+        </div>
+        <section className="control-panel settings-path-panel"><div className="panel-heading"><h2><FolderOpen size={18} />游戏安装位置</h2><button className="text-button" onClick={onPath} disabled={busy}>更改路径<ChevronRight size={15} /></button></div><p className="path-display">{config.gamePath || '尚未设置游戏路径'}</p><p className="input-help">请选择游戏本体，而非米哈游启动器。支持国服和国际服客户端。</p></section>
+      </>}
+      {tab === 'behavior' && <section className="control-panel setting-list"><div className="section-intro"><h2>更安静，也更顺手</h2><p>让解锁器融入你的游戏习惯，无需每次重复操作。</p></div>
+        <ToggleRow title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} />
+        <ToggleRow title="启动后最小化" description="启动时直接驻留系统托盘，不打断当前工作" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} />
+        <ToggleRow title="维护桌面快捷方式" description="桌面版安装或启动时，确保桌面快捷方式可用" checked={config.createDesktopShortcut} onChange={(value) => updateConfig('createDesktopShortcut', value)} />
+        <ToggleRow title="启动时显示安全声明" description="每次手动启动时提醒第三方工具的使用风险" checked={config.showSafetyNoticeOnStartup} onChange={(value) => updateConfig('showSafetyNoticeOnStartup', value)} />
+      </section>}
+      {tab === 'advanced' && <>
+        <section className="control-panel setting-list"><div className="section-intro"><h2>后台与诊断</h2><p>默认值适用于日常使用，仅在需要时调整。</p></div>
+          <NumberSetting title="进程检测间隔" description="检测游戏进程的时间间隔，范围 200 - 10000 ms" min={200} max={10000} unit="ms" value={config.pollIntervalMs} onChange={(value) => updateConfig('pollIntervalMs', value)} />
+          <ToggleRow title="调试日志" description="在桌面版中记录详细诊断信息，帮助排查运行问题" checked={config.debugLogging} onChange={(value) => updateConfig('debugLogging', value)} />
+          <div className="setting-row"><div><label className="row-title" htmlFor="log-level-setting">最低日志级别</label><p>此偏好用于桌面日志，网页会话日志始终保留交互记录</p></div><select id="log-level-setting" className="select-input" value={config.logLevel} onChange={(event) => updateConfig('logLevel', event.target.value as LogLevel)}>{['Trace', 'Debug', 'Info', 'Warn', 'Error'].map((level) => <option key={level}>{level}</option>)}</select></div>
+          <NumberSetting title="日志保留时间" description="桌面版自动清理超过保留时间的日志，范围 1 - 90 天" min={1} max={90} unit="天" value={config.logRetainDays} onChange={(value) => updateConfig('logRetainDays', value)} />
+        </section>
+        <section className="control-panel config-tools"><div className="section-intro"><h2>配置管理</h2><p>在不同设备间迁移偏好，或保留一份熟悉的配置。</p></div><div className="config-tool-buttons"><button className="button button-secondary" onClick={onImport} disabled={busy}><Upload size={16} />导入配置</button><button className="button button-secondary" onClick={onExport}><Download size={16} />导出配置</button><button className="button button-quiet reset-button" onClick={onReset} disabled={busy}><RotateCcw size={15} />恢复默认</button></div><p className="input-help">{busy ? '请稍候再导入或恢复配置。导出仍可正常使用。' : isNative ? '导入/导出与桌面版 config.json 字段兼容。' : '导出为原项目兼容的 config.json。'}</p></section>
+      </>}
+      {isNative
+        ? <div className="settings-native-note"><Info size={16} /><p>当前已连接桌面服务。配置写入 %LocalAppData%\GenshinFpsUnlocker\config.json；自启、托盘与注入由宿主进程管理。{onUninstall && <> <button className="text-button" onClick={onUninstall}>卸载本软件</button></>}</p></div>
+        : <div className="settings-native-note"><Info size={16} /><p>当前为网页预览，所有更改保存在此浏览器中。Windows 自启、托盘与进程检测等系统功能，需要连接桌面服务后生效。</p></div>}
+    </div>
+  </>;
+}

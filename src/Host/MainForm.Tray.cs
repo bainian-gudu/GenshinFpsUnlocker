@@ -1,11 +1,10 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 主窗体 — 系统托盘菜单与最小化行为（partial）。
+/// 主窗体 — 系统托盘菜单（partial）。Web UI 为主界面；托盘仍可完成全部设置。
 /// </summary>
 internal sealed partial class MainForm
 {
-    /// <summary>构建托盘图标与右键菜单（含 FPS 预设、路径、日志、卸载等）。</summary>
     private void BuildTray()
     {
         _tray = new NotifyIcon
@@ -17,18 +16,17 @@ internal sealed partial class MainForm
 
         var menu = new ContextMenuStrip();
 
-        menu.Items.Add("显示主窗口", null, (_, _) => RestoreFromTray());
+        menu.Items.Add("显示主窗口", null, (_, _) => RestoreFromTrayPublic());
         menu.Items.Add(new ToolStripSeparator());
 
         _trayMasterItem = new ToolStripMenuItem("总开关") { CheckOnClick = true, Checked = _config.MasterEnabled };
         _trayMasterItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _syncingUi = true;
-            _masterBox.Checked = _trayMasterItem.Checked;
-            _syncingUi = false;
             _service.SetMasterEnabled(_trayMasterItem.Checked);
-            UpdateStatusUi();
+            _config.TrySave(out _);
+            _bridge.PushState();
+            UpdateTrayTip();
         };
         menu.Items.Add(_trayMasterItem);
 
@@ -36,11 +34,10 @@ internal sealed partial class MainForm
         _trayEnabledItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _syncingUi = true;
-            _enabledBox.Checked = _trayEnabledItem.Checked;
-            _syncingUi = false;
             _service.SetEnabled(_trayEnabledItem.Checked);
-            UpdateStatusUi();
+            _config.TrySave(out _);
+            _bridge.PushState();
+            UpdateTrayTip();
         };
         menu.Items.Add(_trayEnabledItem);
 
@@ -48,11 +45,10 @@ internal sealed partial class MainForm
         _trayAutoWatchItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _syncingUi = true;
-            _autoWatchBox.Checked = _trayAutoWatchItem.Checked;
-            _syncingUi = false;
             _service.SetAutoWatch(_trayAutoWatchItem.Checked);
-            UpdateStatusUi();
+            _config.TrySave(out _);
+            _bridge.PushState();
+            UpdateTrayTip();
         };
         menu.Items.Add(_trayAutoWatchItem);
 
@@ -60,11 +56,10 @@ internal sealed partial class MainForm
         _trayAutoStartItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _syncingUi = true;
-            _autoStartBox.Checked = _trayAutoStartItem.Checked;
-            _syncingUi = false;
             _service.SetAutoStartWithWindows(_trayAutoStartItem.Checked);
-            UpdateStatusUi();
+            _config.TrySave(out _);
+            _bridge.PushState();
+            UpdateTrayTip();
         };
         menu.Items.Add(_trayAutoStartItem);
 
@@ -102,8 +97,10 @@ internal sealed partial class MainForm
             dlg.AcceptButton = ok;
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
-                _fpsInput.Value = num.Value;
-                PersistAll(showTip: false);
+                _service.ApplyFps((int)num.Value);
+                _config.TrySave(out _);
+                BuildTrayFpsItems();
+                _bridge.PushState();
                 _tray.ShowBalloonTip(1200, "帧率", $"目标 FPS = {_config.TargetFps}", ToolTipIcon.Info);
             }
         };
@@ -117,31 +114,38 @@ internal sealed partial class MainForm
                 _tray.ShowBalloonTip(2000, "启动游戏", msg, ToolTipIcon.Info);
             else
                 _tray.ShowBalloonTip(2500, "启动游戏", msg, ToolTipIcon.Warning);
+            _bridge.PushState();
         });
 
         menu.Items.Add("自动查找游戏路径", null, (_, _) =>
         {
             var r = _service.AutoLocateGamePath();
-            _gamePathBox.Text = _config.GamePath ?? "";
+            if (r.Ok) _config.TrySave(out _);
             _tray.ShowBalloonTip(2500, "自动查找",
                 r.Ok ? $"已找到\n{r.Path}" : (r.Detail ?? "失败"),
                 r.Ok ? ToolTipIcon.Info : ToolTipIcon.Warning);
-            UpdateStatusUi();
+            _bridge.PushState();
+            UpdateTrayTip();
         });
 
         menu.Items.Add("手动选择游戏路径…", null, (_, _) =>
         {
-            RestoreFromTray();
+            RestoreFromTrayPublic();
             var r = _service.SetGamePathManual(this);
             if (r.Ok)
             {
-                _gamePathBox.Text = r.Path ?? "";
-                PersistAll(showTip: false);
+                _config.TrySave(out _);
+                _bridge.PushState();
             }
         });
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("查看安全声明…", null, (_, _) => ShowSafetyDialog(force: true));
+        menu.Items.Add("查看安全声明…", null, (_, _) =>
+        {
+            RestoreFromTrayPublic();
+            SafetyDialog.Show(this, _config, force: true);
+            _bridge.PushState();
+        });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("打开配置目录", null, (_, _) =>
         {
@@ -164,13 +168,11 @@ internal sealed partial class MainForm
         _trayLogItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _syncingUi = true;
-            _logBox.Checked = _trayLogItem.Checked;
-            _syncingUi = false;
             _config.DebugLogging = _trayLogItem.Checked;
             if (!_config.TrySave(out var logSaveErr))
                 AppLog.Error("配置保存失败: " + logSaveErr);
             AppLog.ApplyConfig(_config);
+            _bridge.PushState();
         };
         menu.Items.Add(_trayLogItem);
         menu.Items.Add("创建/刷新快捷方式", null, (_, _) =>
@@ -197,12 +199,13 @@ internal sealed partial class MainForm
         });
 
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => RestoreFromTray();
+        _tray.DoubleClick += (_, _) => RestoreFromTrayPublic();
+        UpdateTrayTip();
     }
 
-    /// <summary>重建托盘“目标帧率”子菜单勾选状态。</summary>
     private void BuildTrayFpsItems()
     {
+        if (_trayFpsRoot is null) return;
         _trayFpsRoot.DropDownItems.Clear();
         foreach (var preset in new[] { 30, 60, 90, 120, 144, 165, 180, 240, 360 })
         {
@@ -213,103 +216,13 @@ internal sealed partial class MainForm
             };
             item.Click += (_, _) =>
             {
-                _fpsInput.Value = p;
-                PersistAll(showTip: false);
+                _service.ApplyFps(p);
+                _config.TrySave(out _);
+                BuildTrayFpsItems();
+                _bridge.PushState();
                 _tray.ShowBalloonTip(1000, "帧率", $"目标 FPS = {p}", ToolTipIcon.Info);
             };
             _trayFpsRoot.DropDownItems.Add(item);
         }
     }
-
-    /// <summary>把界面控件写回配置、推送 IPC、同步托盘；可选气球提示。</summary>
-    private void PersistAll(bool showTip)
-    {
-        _config.TargetFps = (int)_fpsInput.Value;
-        _config.MasterEnabled = _masterBox.Checked;
-        _config.Enabled = _enabledBox.Checked;
-        _config.AutoWatch = _autoWatchBox.Checked;
-        _config.StartMinimized = _startMinBox.Checked;
-        _config.AutoStartWithWindows = _autoStartBox.Checked;
-        _config.DebugLogging = _logBox.Checked;
-        _config.CreateDesktopShortcut = _desktopShortcutBox.Checked;
-        if (!_config.TrySave(out var saveErr))
-        {
-            AppLog.Error("配置保存失败: " + saveErr);
-            if (showTip)
-            {
-                MessageBox.Show(this,
-                    "配置保存失败：\n" + saveErr + "\n\n路径：\n" + AppConfig.ConfigPath,
-                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-        }
-        AppLog.ApplyConfig(_config);
-        _service.PushConfigToIpc();
-        Autostart.SetEnabled(_config.AutoStartWithWindows);
-        if (_config.CreateDesktopShortcut)
-        {
-            try { ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory); }
-            catch (Exception ex) { AppLog.Warn("desktop shortcut: " + ex.Message); }
-        }
-        SyncTrayChecks();
-        BuildTrayFpsItems();
-        UpdateStatusUi();
-        if (showTip)
-            _tray.ShowBalloonTip(1500, "已保存", $"目标 FPS = {_config.TargetFps} | 总开关={_config.MasterEnabled}", ToolTipIcon.Info);
-    }
-
-    /// <summary>主界面 ↔ 托盘勾选双向同步（_syncingUi 防递归）。</summary>
-    private void SyncTrayChecks()
-    {
-        _syncingUi = true;
-        try
-        {
-            _trayMasterItem.Checked = _config.MasterEnabled;
-            _trayEnabledItem.Checked = _config.Enabled;
-            _trayAutoWatchItem.Checked = _config.AutoWatch;
-            _trayAutoStartItem.Checked = _config.AutoStartWithWindows;
-            _masterBox.Checked = _config.MasterEnabled;
-            _enabledBox.Checked = _config.Enabled;
-            _autoWatchBox.Checked = _config.AutoWatch;
-            _autoStartBox.Checked = _config.AutoStartWithWindows;
-            _fpsInput.Value = Math.Clamp(_config.TargetFps, 1, 540);
-            _gamePathBox.Text = _config.GamePath ?? "";
-        }
-        finally
-        {
-            _syncingUi = false;
-        }
-    }
-
-    /// <summary>刷新状态标签与托盘提示文字（最长 63 字符）。</summary>
-    private void UpdateStatusUi()
-    {
-        if (IsDisposed) return;
-        _statusLabel.Text = $"状态: {_service.StatusText}";
-        _pathStatusLabel.Text = _service.GamePathStatus;
-        _gamePathBox.Text = _config.GamePath ?? _gamePathBox.Text;
-        _tray.Text = Truncate(
-            $"FPS {_config.TargetFps} | {(_config.MasterEnabled ? "开" : "关")} | {_service.StatusText}",
-            63);
-    }
-
-    /// <summary>隐藏主窗口到托盘（任务栏不显示）。</summary>
-    private void HideToTray()
-    {
-        Hide();
-        ShowInTaskbar = false;
-    }
-
-    /// <summary>从托盘恢复主窗口。</summary>
-    private void RestoreFromTray()
-    {
-        Show();
-        ShowInTaskbar = true;
-        WindowState = FormWindowState.Normal;
-        Activate();
-        SyncTrayChecks();
-        UpdateStatusUi();
-    }
-
-
 }

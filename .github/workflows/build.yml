@@ -40,6 +40,13 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/Ui/package-lock.json
+
       - name: Add MSVC Developer environment
         uses: ilammy/msvc-dev-cmd@v1
         with:

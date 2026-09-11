@@ -2,13 +2,14 @@
 
 自定义目标 FPS · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（无 UAC）
 
-界面字体与浅色/深色主题跟随 Windows 系统设置。
+界面为设计稿一比一实现的 Web UI（WebView2 嵌入）：概览 / 设置 / 日志 / 指南 / 关于；深浅色切换；托盘仍可完整操作。
 
 ## 要求
 
 - **操作系统**：64 位 **Windows 10**（1607 / 版本 14393 及以上）或 **Windows 11**
 - **架构**：x64（与游戏客户端一致）
-- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）；安装包另需 [kachina-builder](https://github.com/YuehaiTeam/kachina-installer/releases)
+- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）、**Node.js 20+**（界面）；安装包另需 [kachina-builder](https://github.com/YuehaiTeam/kachina-installer/releases)
+- 运行界面：系统需安装 **Microsoft Edge WebView2 Runtime**（Win10/11 通常已自带）
 - 运行依赖策略：
   - **应用自身**（托管 DLL、`FpsUnlockerStub.dll`、MinHook 静态编入 Stub 等）随安装包**自包含**
   - **无** Node / Python 等其它编程语言运行时依赖
