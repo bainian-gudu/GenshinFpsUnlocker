@@ -363,9 +363,9 @@ internal sealed class UiBridge : IDisposable
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
             if (p["startMinimized"] is JsonNode min)
                 _config.StartMinimized = min.GetValue<bool>();
-            if (p["createDesktopShortcut"] is JsonNode desk)
+            if (p["createDesktopShortcut"] is JsonNode createDeskNode)
             {
-                _config.CreateDesktopShortcut = desk.GetValue<bool>();
+                _config.CreateDesktopShortcut = createDeskNode.GetValue<bool>();
                 try
                 {
                     ShortcutHelper.CleanupDuplicateShortcuts();
@@ -374,20 +374,20 @@ internal sealed class UiBridge : IDisposable
                     else
                     {
                         // 关闭维护：移除桌面中英文快捷方式，保留开始菜单
-                        foreach (var desk in new[]
+                        foreach (var desktopDir in new[]
                                  {
                                      Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
                                      Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                                  })
                         {
-                            if (string.IsNullOrEmpty(desk)) continue;
+                            if (string.IsNullOrEmpty(desktopDir)) continue;
                             foreach (var n in new[]
                                      {
                                          AppPaths.ProductDisplayName + ".lnk",
                                          AppPaths.ProductName + ".lnk",
                                      })
                             {
-                                var f = Path.Combine(desk, n);
+                                var f = Path.Combine(desktopDir, n);
                                 if (File.Exists(f)) File.Delete(f);
                             }
                         }
