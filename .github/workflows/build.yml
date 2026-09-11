@@ -1,17 +1,25 @@
 name: Build
 
+# 仅手动触发，不在 push / PR / release 时自动跑
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
-  release:
-    types: [published]
+    inputs:
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Release
+          - Debug
+      self_contained:
+        description: "Also build self-contained setup package"
+        required: true
+        default: true
+        type: boolean
 
 env:
   DOTNET_VERSION: "8.0.x"
-  CONFIGURATION: Release
 
 jobs:
   build-windows:
@@ -36,6 +44,8 @@ jobs:
 
       - name: Build (stub + host + setup)
         shell: pwsh
+        env:
+          CONFIGURATION: ${{ inputs.configuration }}
         run: |
           $ErrorActionPreference = "Stop"
           .\build.ps1 -Configuration $env:CONFIGURATION -SelfContained:$false
@@ -57,7 +67,6 @@ jobs:
           $out = "artifacts"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-          # Portable: host publish folder (no nested Setup)
           $portableDir = Join-Path $out "GenshinFpsUnlocker-portable-win-x64"
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
           Get-ChildItem dist -Force | Where-Object { $_.Name -ne "Setup" } | ForEach-Object {
@@ -65,7 +74,6 @@ jobs:
           }
           Compress-Archive -Path $portableDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-portable-win-x64.zip") -Force
 
-          # GUI installer folder (Setup.exe + Payload)
           $setupDir = Join-Path $out "GenshinFpsUnlocker-setup-win-x64"
           New-Item -ItemType Directory -Force -Path $setupDir | Out-Null
           Copy-Item "dist\Setup\*" $setupDir -Recurse -Force
@@ -86,8 +94,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
-    # 仅 main 推送 / 手工 / release 打自包含包，PR 只跑上面的 FDD 构建以省时间
-    if: github.event_name != 'pull_request'
+    if: ${{ inputs.self_contained }}
 
     steps:
       - name: Checkout
@@ -105,6 +112,8 @@ jobs:
 
       - name: Build self-contained
         shell: pwsh
+        env:
+          CONFIGURATION: ${{ inputs.configuration }}
         run: |
           $ErrorActionPreference = "Stop"
           .\build.ps1 -Configuration $env:CONFIGURATION -SelfContained
