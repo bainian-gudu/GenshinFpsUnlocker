@@ -1,7 +1,11 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
+<<<<<<< HEAD
 /// 应用图标（AI 生成派蒙主题 app.ico / app.png）。
+=======
+/// 应用图标（派蒙主题 app.ico / app.png）。
+>>>>>>> ff5972c (chore: AppIcon comment for AI Paimon assets)
 /// 用于窗体、托盘、快捷方式（exe 内嵌 ApplicationIcon）。
 /// </summary>
 internal static class AppIcon
