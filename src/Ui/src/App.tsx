@@ -1,14 +1,16 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import {
-  ArrowUpRight, BookOpen, Check, ChevronRight, Info, LayoutGrid, LoaderCircle,
-  Menu, Moon, PanelBottomClose, PanelsTopLeft, Shield, ShieldAlert, ShieldCheck,
+  ArrowRight, ArrowUpRight, BookOpen, Check, ChevronRight, CircleHelp, Folder,
+  FolderOpen, Info, LayoutGrid, LoaderCircle, Menu, Moon, PanelBottomClose,
+  PanelsTopLeft, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck,
   SlidersHorizontal, SquareTerminal, Sun, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { Brand, GithubIcon } from './components/Brand';
+import { Brand, BrandMark, GithubIcon } from './components/Brand';
 import { ConfirmDialog, LaunchDialog, PathDialog, SafetyDialog } from './components/Dialogs';
-import { Toasts } from './components/ui';
+import { FpsControl } from './components/FpsControl';
+import { PageHeading, Toasts, ToggleRow } from './components/ui';
 import type { ToastItem } from './components/ui';
 import {
   CONFIG_LABELS, DEFAULT_CONFIG, downloadFile, getPage, loadConfig,
@@ -19,7 +21,6 @@ import {
   isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeState,
 } from './lib/native';
 import type { NativeState } from './lib/native';
-import { OverviewDashboard } from './components/OverviewDashboard';
 import { AboutPage } from './pages/AboutPage';
 import { GuidePage } from './pages/GuidePage';
 import { LogsPage } from './pages/LogsPage';
@@ -27,9 +28,9 @@ import { SettingsPage } from './pages/SettingsPage';
 
 type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
 type LaunchState = 'idle' | 'launching' | 'running';
-const PAGE_NAMES: Record<Page, string> = { overview: '概览', settings: '设置', logs: '日志', guide: '指南', about: '关于' };
-const NAV_ITEMS = [{ page: 'overview', label: '概览', icon: LayoutGrid }, { page: 'settings', label: '设置', icon: SlidersHorizontal }, { page: 'logs', label: '日志', icon: SquareTerminal }] as const;
-const SECONDARY_NAV = [{ page: 'guide', label: '指南', icon: BookOpen }, { page: 'about', label: '关于', icon: Info }] as const;
+const PAGE_NAMES: Record<Page, string> = { overview: '游戏概览', settings: '游戏设置', logs: '运行日志', guide: '使用指南', about: '关于项目' };
+const NAV_ITEMS = [{ page: 'overview', label: '游戏概览', icon: LayoutGrid }, { page: 'settings', label: '游戏设置', icon: SlidersHorizontal }, { page: 'logs', label: '运行日志', icon: SquareTerminal }] as const;
+const SECONDARY_NAV = [{ page: 'guide', label: '使用指南', icon: BookOpen }, { page: 'about', label: '关于项目', icon: Info }] as const;
 
 export default function App() {
   const native = isNativeHost();
@@ -160,7 +161,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#120f18' : '#faf5fc');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#121319' : '#f5f5f8');
     try { localStorage.setItem('genshin-fps-unlocker.theme', theme); } catch { /* ignore */ }
     // 桌面宿主：标题栏 / 窗体底色与 UI 深浅一致（Win11 caption color）
     if (native) {
@@ -406,7 +407,7 @@ export default function App() {
         <AnimatePresence>{sidebarOpen && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}</AnimatePresence>
         <aside ref={sidebarRef} id="app-navigation" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="主导航" role={sidebarOpen ? 'dialog' : undefined} aria-modal={sidebarOpen || undefined}>
           <div className="sidebar-brand-row"><button className="brand-button" aria-label="返回游戏概览" onClick={() => navigate('overview')}><Brand /></button><button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="关闭导航"><X size={19} /></button></div>
-          <div className="nav-group-label">导航</div>
+          <div className="nav-group-label">工作空间</div>
           <nav className="primary-nav" aria-label="工作空间">
             {NAV_ITEMS.map(({ page: itemPage, label, icon: Icon }, index) => (
               <a key={itemPage} href={`#${itemPage}`} aria-label={label} title={`${label} (Alt+${index + 1})`}
@@ -456,20 +457,27 @@ export default function App() {
           <AnimatePresence mode="wait" initial={false}>
             <motion.main id="main-content" tabIndex={-1} className={`main-content page-${page}`} key={page} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
               {page === 'overview' && <>
-                <OverviewDashboard
-                  config={config}
-                  updateConfig={updateConfig}
-                  launchState={launchState}
-                  attachedPid={attachedPid}
-                  currentFps={currentFps}
-                  statusText={statusText}
-                  readiness={readiness}
-                  effectiveEnabled={effectiveEnabled}
-                  onLaunch={handleLaunch}
-                  onPath={() => setModal('path')}
-                  onNavigateSettings={() => navigate('settings')}
-                  onSafety={() => setModal('safety')}
-                />
+                <PageHeading title="游戏概览" description="准备好，以更流畅的方式探索提瓦特。"><div className={`readiness ${!effectiveEnabled || !config.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedPid > 0 && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
+                <section className="overview-hero" aria-label="Genshin FPS Unlocker">
+                  <motion.img className="hero-image" src="/images/teyvat-landscape.jpg" alt="阳光下的璃月风格山峦、亭台与碧水" initial={{ scale: 1.045 }} animate={{ scale: 1 }} transition={{ duration: 1.8, ease: 'easeOut' }} />
+                  <div className="hero-shade" />
+                  <motion.div className="hero-copy" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}><h2>Genshin FPS Unlocker</h2><h3>让每一帧，都不被设限。</h3><p>更高帧率，更自在的冒险。以你喜欢的节奏，探索提瓦特。</p><button className="hero-guide" onClick={() => navigate('guide')}>初次使用？从这里开始<ArrowRight size={14} /></button></motion.div>
+                </section>
+                <motion.div className="overview-controls" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
+                  <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
+                  <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows"><ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后自动应用设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} /><ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后在后台运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} /><ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后下次启动直接进托盘；关窗/最小化始终会藏到托盘" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} /></div></section>
+                </motion.div>
+                <motion.section className={`game-launch-panel ${launchState !== 'idle' || attachedPid > 0 ? 'session-active' : ''}`} aria-label="游戏与启动" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
+                  <div className="game-art" aria-hidden="true"><BrandMark className="game-art-star" /><span>原神</span></div>
+                  <div className="game-info"><div className="game-info-title"><h2>原神</h2><span className="region-label">{config.gamePath?.toLowerCase().includes('genshinimpact.exe') ? '国际服' : '国服'}</span><span className={`game-state ${attachedPid > 0 ? 'game-state-active' : ''}`}>{attachedPid > 0 ? `已附加 · PID ${attachedPid}` : launchState === 'launching' ? '正在启动…' : statusText || '等待启动'}</span></div><div className="game-path"><Folder size={12} /><span title={config.gamePath ?? undefined}>{config.gamePath ?? '请先设置游戏主程序路径'}</span></div></div>
+                  <div className="launch-actions">
+                    <button className="button button-secondary path-button" onClick={() => setModal('path')} disabled={launchState === 'launching'}><FolderOpen size={15} />更改路径</button>
+                    <button className={`button button-primary launch-button ${attachedPid > 0 ? 'is-running' : ''}`} onClick={handleLaunch} disabled={launchState === 'launching'}>
+                      {launchState === 'launching' ? <LoaderCircle size={17} className="spin" /> : <Play size={16} fill="currentColor" />}
+                      <span>{launchState === 'launching' ? '启动中' : attachedPid > 0 ? '再次启动' : '启动游戏'}</span>
+                    </button>
+                  </div>
+                </motion.section>
                 {native && needsAdmin && !config.suppressAdminHint && (
                   <div className="admin-banner" role="status">
                     <ShieldAlert size={18} strokeWidth={1.6} />
@@ -495,6 +503,7 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                <div className="overview-tip"><ShieldCheck size={16} strokeWidth={1.6} /><p><span>冒险小贴士</span>请先关闭游戏内垂直同步（V-Sync）。第三方工具存在使用风险，使用前请阅读<button onClick={() => setModal('safety')}>用户协议<ArrowUpRight size={12} /></button></p><button className="icon-button tip-help" onClick={() => navigate('guide')} aria-label="查看使用帮助"><CircleHelp size={16} /></button></div>
               </>}
               {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} />}
               {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} onOpenFolder={native ? () => { void nativeInvoke('openLogFolder').catch(() => undefined); } : undefined} />}
