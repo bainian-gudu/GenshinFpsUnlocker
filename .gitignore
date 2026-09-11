@@ -1,19 +1,35 @@
+# Build outputs
 build/
 dist/
 bin/
 obj/
+artifacts/
 .vs/
 *.user
 *.suo
 *.sdf
 *.opensdf
 cmake-build-*/
+
+# Local config / logs
 config.json
+*.log
+
+# Compiled binaries in tree (CI produces under dist/)
 *.dll
+*.exe
+*.pdb
 !third_party/**
+
+# OS / editor
 .arena/
 .cache/
 .local/
-*.log
 .DS_Store
 Thumbs.db
+*~
+
+# Extra docs (do not track)
+docs/
+*.md
+!README.md

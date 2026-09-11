@@ -1,0 +1,133 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  CONFIGURATION: Release
+
+jobs:
+  build-windows:
+    name: Windows x64
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Add MSVC Developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build (stub + host + setup)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\build.ps1 -Configuration $env:CONFIGURATION -SelfContained:$false
+          if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) {
+            throw "Host exe missing"
+          }
+          if (-not (Test-Path "dist\FpsUnlockerStub.dll")) {
+            throw "Stub dll missing"
+          }
+          if (-not (Test-Path "dist\Setup\GenshinFpsUnlocker.Setup.exe")) {
+            throw "Setup exe missing"
+          }
+          Get-ChildItem dist -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Pack portable zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = "artifacts"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          # Portable: host publish folder (no nested Setup)
+          $portableDir = Join-Path $out "GenshinFpsUnlocker-portable-win-x64"
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Get-ChildItem dist -Force | Where-Object { $_.Name -ne "Setup" } | ForEach-Object {
+            Copy-Item $_.FullName $portableDir -Recurse -Force
+          }
+          Compress-Archive -Path $portableDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-portable-win-x64.zip") -Force
+
+          # GUI installer folder (Setup.exe + Payload)
+          $setupDir = Join-Path $out "GenshinFpsUnlocker-setup-win-x64"
+          New-Item -ItemType Directory -Force -Path $setupDir | Out-Null
+          Copy-Item "dist\Setup\*" $setupDir -Recurse -Force
+          Compress-Archive -Path $setupDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-setup-win-x64.zip") -Force
+
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GenshinFpsUnlocker-win-x64
+          path: artifacts/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  build-self-contained:
+    name: Windows x64 (self-contained)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    # 仅 main 推送 / 手工 / release 打自包含包，PR 只跑上面的 FDD 构建以省时间
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Add MSVC Developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build self-contained
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\build.ps1 -Configuration $env:CONFIGURATION -SelfContained
+          if (-not (Test-Path "dist\Setup\GenshinFpsUnlocker.Setup.exe")) {
+            throw "Setup exe missing"
+          }
+
+      - name: Pack self-contained setup zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = "artifacts"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $setupDir = Join-Path $out "GenshinFpsUnlocker-setup-sc-win-x64"
+          New-Item -ItemType Directory -Force -Path $setupDir | Out-Null
+          Copy-Item "dist\Setup\*" $setupDir -Recurse -Force
+          Compress-Archive -Path $setupDir -DestinationPath (Join-Path $out "GenshinFpsUnlocker-setup-sc-win-x64.zip") -Force
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: Upload self-contained artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GenshinFpsUnlocker-setup-sc-win-x64
+          path: artifacts/*.zip
+          if-no-files-found: error
+          retention-days: 30
