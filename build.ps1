@@ -171,7 +171,10 @@ if (-not $SkipSetup) {
         $updaterName = "$appName.update.exe"
         $updaterPath = Join-Path $appDir $updaterName
         Write-Host "    pack updater → $updaterName" -ForegroundColor DarkCyan
-        & $builder pack -c $config -o $updaterPath
+        $eulaCss = Join-Path $buildDir "installer-eula.css"
+        $packExtra = @()
+        if (Test-Path $eulaCss) { $packExtra += @("-t", $eulaCss) }
+        & $builder pack -c $config -o $updaterPath @packExtra
         if ($LASTEXITCODE -ne 0) { throw "kachina pack updater failed" }
 
         $meta = Join-Path $work "metadata.json"
@@ -186,7 +189,7 @@ if (-not $SkipSetup) {
             $installName = "$appName.Install.$ver.exe"
             $installOut = Join-Path $work $installName
             Write-Host "    pack offline installer → $installName" -ForegroundColor DarkCyan
-            & $builder pack -c $config -m "metadata.json" -d "hashed" -o $installName
+            & $builder pack -c $config -m "metadata.json" -d "hashed" -o $installName @packExtra
             if ($LASTEXITCODE -ne 0) { throw "kachina pack install failed" }
         } finally {
             Pop-Location
