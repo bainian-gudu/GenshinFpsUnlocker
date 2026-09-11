@@ -101,6 +101,19 @@ if (-not $stub) {
 }
 Copy-Item $stub (Join-Path $dist "FpsUnlockerStub.dll") -Force
 
+# 确保 Web UI 在 publish 输出中（csproj Content 可能因路径/条件漏拷）
+$uiDistDir = Join-Path $uiDir "dist"
+$uiOut = Join-Path $dist "ui"
+if (Test-Path (Join-Path $uiDistDir "index.html")) {
+    if (Test-Path $uiOut) { Remove-Item $uiOut -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $uiOut | Out-Null
+    Copy-Item (Join-Path $uiDistDir "*") $uiOut -Recurse -Force
+    Write-Host "    UI copied -> $uiOut" -ForegroundColor Green
+} else {
+    Write-Warning "src/Ui/dist missing after build — host may fail to load UI"
+}
+
+
 foreach ($extra in @("LICENSE", "config.example.json")) {
     $p = Join-Path $Root $extra
     if (Test-Path $p) {

@@ -43,7 +43,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: src/Ui/package-lock.json
 
@@ -59,13 +59,19 @@ jobs:
           HOST_MODE: ${{ inputs.host_mode }}
         run: |
           $ErrorActionPreference = "Stop"
-          $args = @("-Configuration", $env:CONFIGURATION, "-SkipSetup")
-          if ($env:HOST_MODE -eq "self-contained") {
-            $args += "-SelfContained"
+          # 勿用 $args（PowerShell 自动变量）；改用 hashtable splat
+          $buildParams = @{
+            Configuration = $env:CONFIGURATION
+            SkipSetup     = $true
           }
-          .\build.ps1 @args
+          if ($env:HOST_MODE -eq "self-contained") {
+            $buildParams.SelfContained = $true
+          }
+          Write-Host "build.ps1 params: $($buildParams | ConvertTo-Json -Compress)"
+          & .\build.ps1 @buildParams
           if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "Host exe missing" }
           if (-not (Test-Path "dist\FpsUnlockerStub.dll")) { throw "Stub dll missing" }
+          if (-not (Test-Path "dist\ui\index.html")) { throw "Web UI missing under dist\ui\" }
 
           $hasCore = (Test-Path "dist\coreclr.dll") -or (Test-Path "dist\hostfxr.dll")
           if ($env:HOST_MODE -eq "self-contained") {
