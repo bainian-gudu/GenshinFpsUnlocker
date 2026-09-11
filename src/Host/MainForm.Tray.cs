@@ -1,7 +1,8 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 系统托盘：文案与开关与 Web UI 设计稿对齐；打开菜单时从配置/服务全量同步。
+/// 系统托盘：精简右键菜单（主界面 / 启动游戏 / 帧率解锁 / 自动解锁 / 修改帧率 / 退出），
+/// 外观跟随 Web UI 深浅色，避免系统默认灰白菜单。
 /// </summary>
 internal sealed partial class MainForm
 {
@@ -9,7 +10,10 @@ internal sealed partial class MainForm
     private static readonly int[] TrayFpsPresets = [60, 90, 120, 144, 165, 240];
 
     private ToolStripMenuItem? _trayStatusItem;
-    private ToolStripMenuItem? _trayStartMinItem;
+    private ToolStripMenuItem? _trayEnabledItem;
+    private ToolStripMenuItem? _trayAutoWatchItem;
+    private ToolStripMenuItem? _trayFpsRoot;
+    private ContextMenuStrip? _trayMenu;
     private Icon? _trayIconOwned;
     private bool _trayTipShownThisSession;
     /// <summary>主窗是否已藏入托盘（气泡/提示文案用）。</summary>
@@ -20,7 +24,6 @@ internal sealed partial class MainForm
 
     private void BuildTray()
     {
-        // BetterGI logo.ico（Assets/app.ico / exe 内嵌）
         _trayIconOwned = AppIcon.LoadClone();
         var icon = _trayIconOwned ?? SystemIcons.Application;
         _tray = new NotifyIcon
@@ -32,46 +35,46 @@ internal sealed partial class MainForm
         };
         AppLog.Info($"tray created visible={_tray.Visible} hasAppIcon={_trayIconOwned is not null}");
 
+        var dark = UiStyle.IsUiDark;
         var menu = new ContextMenuStrip
         {
+            Name = "TrayMenu",
             ShowImageMargin = false,
             ShowCheckMargin = true,
             AutoClose = true,
+            Font = UiStyle.UiFont,
+            Padding = new Padding(6, 8, 6, 8),
+            Renderer = new TrayMenuRenderer(dark),
+            BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA),
+            ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22),
         };
+        _trayMenu = menu;
 
-        // 状态头（不可点，打开时刷新）
-        _trayStatusItem = new ToolStripMenuItem(BuildStatusHeaderText())
-        {
-            Enabled = false,
-            Font = new Font(SystemFonts.MenuFont ?? SystemFonts.DefaultFont, FontStyle.Bold),
-        };
+        // —— 状态头 ——
+        _trayStatusItem = MakeHeaderItem(BuildStatusHeaderText());
         menu.Items.Add(_trayStatusItem);
-        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(MakeSep());
 
-        menu.Items.Add("显示主窗口", null, (_, _) => RestoreFromTrayPublic());
-        menu.Items.Add(new ToolStripSeparator());
+        // —— 主界面 ——
+        menu.Items.Add(MakeActionItem("显示主界面", (_, _) => RestoreFromTrayPublic()));
+        menu.Items.Add(MakeSep());
 
-        // —— 与概览「快捷设置 / 帧率解锁」对齐 ——
-        _trayMasterItem = new ToolStripMenuItem("解锁服务总开关")
+        // —— 启动游戏 ——
+        menu.Items.Add(MakeActionItem("启动游戏", (_, _) =>
         {
-            CheckOnClick = true,
-            Checked = _config.MasterEnabled,
-            ToolTipText = "关闭后暂停所有注入与帧率解锁",
-        };
-        _trayMasterItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _service.SetMasterEnabled(_trayMasterItem.Checked);
-            AfterTrayConfigChange("解锁服务总开关");
-        };
-        menu.Items.Add(_trayMasterItem);
+            if (_service.TryLaunchGame(out var msg))
+                ShowTrayBalloon("启动游戏", msg, ToolTipIcon.Info);
+            else
+                ShowTrayBalloon("启动游戏", msg, ToolTipIcon.Warning);
+            PushUiAndRefreshTray();
+        }));
+        menu.Items.Add(MakeSep());
 
-        _trayEnabledItem = new ToolStripMenuItem("帧率解锁")
-        {
-            CheckOnClick = true,
-            Checked = _config.Enabled,
-            ToolTipText = "与总开关同时开启时目标帧率才会生效",
-        };
+        // —— 帧率解锁 ——
+        _trayEnabledItem = MakeCheckItem(
+            "帧率解锁",
+            _config.Enabled,
+            "开启后按目标帧率注入；关闭则暂停解锁");
         _trayEnabledItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
@@ -80,12 +83,11 @@ internal sealed partial class MainForm
         };
         menu.Items.Add(_trayEnabledItem);
 
-        _trayAutoWatchItem = new ToolStripMenuItem("自动解锁")
-        {
-            CheckOnClick = true,
-            Checked = _config.AutoWatch,
-            ToolTipText = "检测到游戏启动后自动应用设置",
-        };
+        // —— 自动解锁 ——
+        _trayAutoWatchItem = MakeCheckItem(
+            "自动解锁",
+            _config.AutoWatch,
+            "检测到游戏启动后自动应用帧率设置");
         _trayAutoWatchItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
@@ -93,184 +95,30 @@ internal sealed partial class MainForm
             AfterTrayConfigChange("自动解锁");
         };
         menu.Items.Add(_trayAutoWatchItem);
+        menu.Items.Add(MakeSep());
 
-        _trayAutoStartItem = new ToolStripMenuItem("开机自启动")
+        // —— 修改帧率（预设 + 自定义）——
+        _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {_config.TargetFps} FPS")
         {
-            CheckOnClick = true,
-            Checked = _config.AutoStartWithWindows,
-            ToolTipText = "登录 Windows 后在后台运行",
+            ToolTipText = "选择预设或自定义目标帧率",
+            Padding = new Padding(4, 4, 4, 4),
         };
-        _trayAutoStartItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _service.SetAutoStartWithWindows(_trayAutoStartItem.Checked);
-            AfterTrayConfigChange("开机自启动");
-        };
-        menu.Items.Add(_trayAutoStartItem);
-
-        _trayStartMinItem = new ToolStripMenuItem("启动后最小化到托盘")
-        {
-            CheckOnClick = true,
-            Checked = _config.StartMinimized,
-            ToolTipText = "开启后：下次启动直接进托盘。关闭主窗口 / 点最小化 始终会藏到托盘（托盘「退出」才结束进程）。",
-        };
-        _trayStartMinItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _config.StartMinimized = _trayStartMinItem.Checked;
-            _config.TrySave(out _);
-            AfterTrayConfigChange("启动后最小化");
-        };
-        menu.Items.Add(_trayStartMinItem);
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        _trayFpsRoot = new ToolStripMenuItem($"目标帧率  {_config.TargetFps} FPS");
         menu.Items.Add(_trayFpsRoot);
         BuildTrayFpsItems();
+        menu.Items.Add(MakeSep());
 
-        var fpsCustom = new ToolStripMenuItem("自定义帧率…");
-        fpsCustom.Click += (_, _) => ShowCustomFpsDialog();
-        menu.Items.Add(fpsCustom);
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        menu.Items.Add("启动游戏", null, (_, _) =>
-        {
-            if (_service.TryLaunchGame(out var msg))
-                ShowTrayBalloon("启动游戏", msg, ToolTipIcon.Info);
-            else
-                ShowTrayBalloon("启动游戏", msg, ToolTipIcon.Warning);
-            PushUiAndRefreshTray();
-        });
-
-        menu.Items.Add("自动查找游戏路径", null, (_, _) =>
-        {
-            var r = _service.AutoLocateGamePath();
-            if (r.Ok) _config.TrySave(out _);
-            ShowTrayBalloon(
-                "自动查找",
-                r.Ok ? $"已找到\n{r.Path}" : (r.Detail ?? "失败"),
-                r.Ok ? ToolTipIcon.Info : ToolTipIcon.Warning);
-            PushUiAndRefreshTray();
-        });
-
-        menu.Items.Add("手动选择游戏路径…", null, (_, _) =>
-        {
-            RestoreFromTrayPublic();
-            var r = _service.SetGamePathManual(this);
-            if (r.Ok)
-            {
-                _config.TrySave(out _);
-                PushUiAndRefreshTray();
-                ShowTrayBalloon("游戏路径", r.Path ?? "已更新", ToolTipIcon.Info);
-            }
-        });
-
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("查看用户协议…", null, (_, _) =>
-        {
-            RestoreFromTrayPublic();
-            // Web UI 内也有声明；托盘路径用原生对话框保证托盘-only 可用
-            SafetyDialog.Show(this, _config, force: true);
-            PushUiAndRefreshTray();
-        });
-
-        if (!Elevation.IsAdministrator())
-        {
-            menu.Items.Add("以管理员身份重新启动…", null, (_, _) =>
-            {
-                var confirm = MessageBox.Show(
-                    "帧率解锁向游戏进程注入模块时，通常需要管理员权限。\n\n" +
-                    "将弹出系统 UAC 提示；同意后本程序会关闭并以管理员重新打开。\n" +
-                    "开机自启动仍为普通权限，不会每天弹 UAC。\n\n" +
-                    "是否继续？",
-                    AppPaths.ProductDisplayName,
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question);
-                if (confirm != DialogResult.Yes) return;
-                if (!TryRestartElevated(out var err))
-                {
-                    MessageBox.Show(
-                        "未能以管理员启动：\n" + err,
-                        AppPaths.ProductDisplayName,
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-            });
-        }
-        else
-        {
-            var adminMark = new ToolStripMenuItem("已以管理员运行")
-            {
-                Enabled = false,
-            };
-            menu.Items.Add(adminMark);
-        }
-
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("打开配置目录", null, (_, _) =>
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = AppPaths.DataDirectory,
-                    UseShellExecute = true,
-                });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "打开配置目录", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        });
-        menu.Items.Add("打开日志目录", null, (_, _) => AppLog.OpenLogFolder());
-        menu.Items.Add("打开当前日志文件", null, (_, _) => AppLog.OpenCurrentLogFile());
-
-        _trayLogItem = new ToolStripMenuItem("调试日志")
-        {
-            CheckOnClick = true,
-            Checked = _config.DebugLogging,
-            ToolTipText = "记录详细诊断信息",
-        };
-        _trayLogItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _config.DebugLogging = _trayLogItem.Checked;
-            if (!_config.TrySave(out var logSaveErr))
-                AppLog.Error("配置保存失败: " + logSaveErr);
-            AppLog.ApplyConfig(_config);
-            AfterTrayConfigChange("调试日志");
-        };
-        menu.Items.Add(_trayLogItem);
-
-        menu.Items.Add("创建/刷新快捷方式", null, (_, _) =>
-        {
-            try
-            {
-                ShortcutHelper.CreateAll();
-                ShowTrayBalloon("快捷方式", "开始菜单与桌面快捷方式已更新", ToolTipIcon.Info);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "快捷方式", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        });
-
-        menu.Items.Add("卸载并清理全部数据…", null, (_, _) =>
-        {
-            InstallUninstall.RunUninstallInteractive(quiet: false);
-        });
-
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) =>
+        // —— 退出 ——
+        menu.Items.Add(MakeActionItem("退出", (_, _) =>
         {
             _reallyExit = true;
             Close();
-        });
+        }));
 
-        // 每次打开菜单：与 UI / 服务状态对齐
-        menu.Opening += (_, _) => SyncTrayFromConfig();
+        menu.Opening += (_, _) =>
+        {
+            try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
+            SyncTrayFromConfig();
+        };
 
         _tray.ContextMenuStrip = menu;
         _tray.DoubleClick += (_, _) =>
@@ -280,7 +128,6 @@ internal sealed partial class MainForm
         };
         _tray.MouseClick += (_, e) =>
         {
-            // 左键单击恢复主窗口
             if (e.Button != MouseButtons.Left) return;
             try { RestoreFromTrayPublic(); }
             catch (Exception ex) { AppLog.Error(ex, "tray MouseClick restore"); }
@@ -293,6 +140,65 @@ internal sealed partial class MainForm
 
         _service.StateChanged += OnServiceStateForTray;
         UpdateTrayTip();
+    }
+
+    private static ToolStripMenuItem MakeHeaderItem(string text) =>
+        new(text)
+        {
+            Enabled = false,
+            Font = new Font(UiStyle.UiFont, FontStyle.Bold),
+            Padding = new Padding(4, 6, 4, 6),
+        };
+
+    private static ToolStripMenuItem MakeActionItem(string text, EventHandler onClick)
+    {
+        var item = new ToolStripMenuItem(text)
+        {
+            Padding = new Padding(4, 5, 4, 5),
+        };
+        item.Click += onClick;
+        return item;
+    }
+
+    private static ToolStripMenuItem MakeCheckItem(string text, bool checkedState, string tip)
+    {
+        return new ToolStripMenuItem(text)
+        {
+            CheckOnClick = true,
+            Checked = checkedState,
+            ToolTipText = tip,
+            Padding = new Padding(4, 5, 4, 5),
+        };
+    }
+
+    private static ToolStripSeparator MakeSep() =>
+        new() { Margin = new Padding(8, 4, 8, 4) };
+
+    private void ApplyTrayMenuTheme()
+    {
+        if (_trayMenu is null) return;
+        var dark = UiStyle.IsUiDark;
+        _trayMenu.Renderer = new TrayMenuRenderer(dark);
+        _trayMenu.BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
+        _trayMenu.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
+        _trayMenu.Font = UiStyle.UiFont;
+        foreach (ToolStripItem it in _trayMenu.Items)
+            StyleTrayItem(it, dark);
+        if (_trayFpsRoot is not null)
+        {
+            foreach (ToolStripItem it in _trayFpsRoot.DropDownItems)
+                StyleTrayItem(it, dark);
+            _trayFpsRoot.DropDown.Renderer = new TrayMenuRenderer(dark);
+            _trayFpsRoot.DropDown.BackColor = _trayMenu.BackColor;
+            _trayFpsRoot.DropDown.ForeColor = _trayMenu.ForeColor;
+        }
+    }
+
+    private static void StyleTrayItem(ToolStripItem it, bool dark)
+    {
+        it.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
+        if (it is ToolStripMenuItem mi && !mi.Enabled)
+            it.ForeColor = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
     }
 
     private void OnServiceStateForTray()
@@ -322,39 +228,75 @@ internal sealed partial class MainForm
 
     private void ShowCustomFpsDialog()
     {
+        var dark = UiStyle.IsUiDark;
         using var dlg = new Form
         {
-            Text = "自定义目标帧率",
-            Width = 300,
-            Height = 160,
+            Text = "修改目标帧率",
+            Width = 340,
+            Height = 188,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.CenterScreen,
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false,
+            BackColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg,
+            ForeColor = dark ? UiStyle.UiDarkText : UiStyle.UiLightText,
+            Font = UiStyle.UiFont,
         };
         UiStyle.ApplyToForm(dlg);
+        UiStyle.ApplyTitleBarChrome(dlg, dark);
+
         var label = new Label
         {
             Text = "目标帧率（1 – 540）",
-            Left = 20,
-            Top = 18,
+            Left = 22,
+            Top = 22,
             AutoSize = true,
+            ForeColor = dark ? Color.FromArgb(0xB0, 0xAF, 0xBE) : Color.FromArgb(0x55, 0x52, 0x64),
         };
         var num = new NumericUpDown
         {
             Minimum = 1,
             Maximum = 540,
             Value = Math.Clamp(_config.TargetFps, 1, 540),
-            Left = 20,
-            Top = 48,
-            Width = 120,
+            Left = 22,
+            Top = 52,
+            Width = 140,
+            Font = UiStyle.UiFontBold(2f),
+            BorderStyle = BorderStyle.FixedSingle,
         };
-        var ok = new Button { Text = "确定", Left = 160, Top = 46, Width = 90, DialogResult = DialogResult.OK };
+        var ok = new Button
+        {
+            Text = "确定",
+            Left = 200,
+            Top = 50,
+            Width = 100,
+            Height = 32,
+            DialogResult = DialogResult.OK,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = dark ? Color.FromArgb(0xBD, 0xA2, 0xF2) : Color.FromArgb(0x90, 0x6A, 0xC7),
+            ForeColor = dark ? Color.FromArgb(0x25, 0x1B, 0x36) : Color.White,
+        };
+        ok.FlatAppearance.BorderSize = 0;
+        var cancel = new Button
+        {
+            Text = "取消",
+            Left = 200,
+            Top = 96,
+            Width = 100,
+            Height = 30,
+            DialogResult = DialogResult.Cancel,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = dark ? Color.FromArgb(0x22, 0x24, 0x2E) : Color.FromArgb(0xEE, 0xEC, 0xF4),
+            ForeColor = dlg.ForeColor,
+        };
+        cancel.FlatAppearance.BorderColor = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xD8, 0xD4, 0xE4);
         dlg.Controls.Add(label);
         dlg.Controls.Add(num);
         dlg.Controls.Add(ok);
+        dlg.Controls.Add(cancel);
         dlg.AcceptButton = ok;
+        dlg.CancelButton = cancel;
         if (dlg.ShowDialog(Visible ? this : null) == DialogResult.OK)
         {
             _service.ApplyFps((int)num.Value);
@@ -367,8 +309,9 @@ internal sealed partial class MainForm
     private void BuildTrayFpsItems()
     {
         if (_trayFpsRoot is null) return;
-        _trayFpsRoot.Text = $"目标帧率  {_config.TargetFps} FPS";
+        _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";
         _trayFpsRoot.DropDownItems.Clear();
+
         foreach (var preset in TrayFpsPresets)
         {
             var p = preset;
@@ -376,7 +319,10 @@ internal sealed partial class MainForm
             {
                 Checked = _config.TargetFps == p,
                 ToolTipText = p == 120 ? "推荐" : null,
+                Padding = new Padding(4, 4, 4, 4),
             };
+            if (p == 120)
+                item.Text = "120 FPS  · 推荐";
             item.Click += (_, _) =>
             {
                 _service.ApplyFps(p);
@@ -386,24 +332,31 @@ internal sealed partial class MainForm
             };
             _trayFpsRoot.DropDownItems.Add(item);
         }
+
+        _trayFpsRoot.DropDownItems.Add(MakeSep());
+        var custom = new ToolStripMenuItem("自定义…")
+        {
+            Padding = new Padding(4, 4, 4, 4),
+            ToolTipText = "输入 1–540 之间的目标帧率",
+        };
+        custom.Click += (_, _) => ShowCustomFpsDialog();
+        _trayFpsRoot.DropDownItems.Add(custom);
+
+        try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
     }
 
     private string BuildStatusHeaderText()
     {
         var effective = _config.MasterEnabled && _config.Enabled;
         var pid = _service.AttachedPid;
-        var trayMark = _inTray ? " · 托盘" : "";
-        var adminMark = Elevation.IsAdministrator() ? " · 管理员" : "";
         if (pid > 0)
             return effective
-                ? $"运行中 · PID {pid} · {_config.TargetFps} FPS{adminMark}{trayMark}"
-                : $"已附加 · 解锁暂停 · PID {pid}{adminMark}{trayMark}";
-        if (!_config.MasterEnabled) return "解锁服务已暂停" + adminMark + trayMark;
-        if (!_config.Enabled) return "帧率解锁已关闭" + adminMark + trayMark;
-        if (!Elevation.IsAdministrator())
-            return $"标准权限 · 目标 {_config.TargetFps} FPS{trayMark}";
-        if (_config.AutoWatch) return $"自动监视中 · 目标 {_config.TargetFps} FPS{adminMark}{trayMark}";
-        return $"已就绪 · 目标 {_config.TargetFps} FPS{adminMark}{trayMark}";
+                ? $"运行中  ·  PID {pid}  ·  {_config.TargetFps} FPS"
+                : $"已附加  ·  解锁已关  ·  PID {pid}";
+        if (!_config.MasterEnabled) return "解锁服务已暂停";
+        if (!_config.Enabled) return $"帧率解锁已关闭  ·  {_config.TargetFps} FPS";
+        if (_config.AutoWatch) return $"自动监视中  ·  {_config.TargetFps} FPS";
+        return $"已就绪  ·  {_config.TargetFps} FPS";
     }
 
     private string BuildTrayTipText()
@@ -415,9 +368,6 @@ internal sealed partial class MainForm
         var core = pid > 0
             ? $"FPS {_config.TargetFps} | {effective} | PID {pid} | {mode}"
             : $"FPS {_config.TargetFps} | {effective} | {watch} | {mode}";
-        var status = _service.StatusText;
-        if (!string.IsNullOrWhiteSpace(status) && status.Length < 24)
-            core += " | " + status;
         return Truncate(core, 63);
     }
 
@@ -431,5 +381,150 @@ internal sealed partial class MainForm
             _tray.ShowBalloonTip(2200);
         }
         catch { /* ignore */ }
+    }
+
+    /// <summary>托盘菜单绘制：圆角选中条 + 设计稿紫强调色。</summary>
+    private sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
+    {
+        private readonly bool _dark;
+        private readonly Color _bg;
+        private readonly Color _hover;
+        private readonly Color _accent;
+        private readonly Color _text;
+        private readonly Color _muted;
+        private readonly Color _sep;
+
+        public TrayMenuRenderer(bool dark)
+            : base(new TrayColorTable(dark))
+        {
+            _dark = dark;
+            _bg = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
+            _hover = dark ? Color.FromArgb(0x25, 0x26, 0x31) : Color.FromArgb(0xEE, 0xEA, 0xF6);
+            _accent = dark ? Color.FromArgb(0xBD, 0xA2, 0xF2) : Color.FromArgb(0x90, 0x6A, 0xC7);
+            _text = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
+            _muted = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
+            _sep = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xE0, 0xDC, 0xEA);
+            RoundedEdges = false;
+        }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            using var b = new SolidBrush(_bg);
+            e.Graphics.FillRectangle(b, e.AffectedBounds);
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            using var pen = new Pen(_sep);
+            var r = e.AffectedBounds;
+            r.Width -= 1;
+            r.Height -= 1;
+            e.Graphics.DrawRectangle(pen, r);
+        }
+
+        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+        {
+            // 无左侧图标栏
+        }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var rc = e.ImageRectangle;
+            if (rc.Width < 8) rc = new Rectangle(e.Item.ContentRectangle.X + 4, e.Item.ContentRectangle.Y + (e.Item.Height - 14) / 2, 14, 14);
+            using var pen = new Pen(_accent, 1.8f);
+            // 简单对勾
+            var x = rc.Left + 2;
+            var y = rc.Top + rc.Height / 2;
+            g.DrawLines(pen, new[]
+            {
+                new Point(x, y),
+                new Point(x + 4, y + 4),
+                new Point(x + 10, y - 4),
+            });
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var item = e.Item;
+            var bounds = new Rectangle(4, 1, item.Width - 8, item.Height - 2);
+
+            if (!item.Selected && !item.Pressed)
+            {
+                using var b = new SolidBrush(_bg);
+                g.FillRectangle(b, item.ContentRectangle);
+                return;
+            }
+
+            if (!item.Enabled) return;
+
+            using var path = RoundRect(bounds, 6);
+            using var brush = new SolidBrush(_hover);
+            g.FillPath(brush, path);
+            // 左侧强调条
+            using var accent = new SolidBrush(_accent);
+            g.FillRectangle(accent, new Rectangle(bounds.X, bounds.Y + 4, 3, bounds.Height - 8));
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Enabled
+                ? (e.Item.Selected ? _accent : _text)
+                : _muted;
+            if (e.Item is ToolStripMenuItem { Checked: true, CheckOnClick: true })
+                e.TextColor = _accent;
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            var y = e.Item.ContentRectangle.Top + e.Item.ContentRectangle.Height / 2;
+            using var pen = new Pen(_sep);
+            e.Graphics.DrawLine(pen, 12, y, e.Item.Width - 12, y);
+        }
+
+        private static System.Drawing.Drawing2D.GraphicsPath RoundRect(Rectangle bounds, int radius)
+        {
+            var path = new System.Drawing.Drawing2D.GraphicsPath();
+            var d = radius * 2;
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
+    private sealed class TrayColorTable : ProfessionalColorTable
+    {
+        private readonly Color _bg;
+        private readonly Color _hover;
+
+        public TrayColorTable(bool dark)
+        {
+            _bg = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
+            _hover = dark ? Color.FromArgb(0x25, 0x26, 0x31) : Color.FromArgb(0xEE, 0xEA, 0xF6);
+        }
+
+        public override Color MenuBorder => _bg;
+        public override Color MenuItemBorder => Color.Transparent;
+        public override Color MenuItemSelected => _hover;
+        public override Color MenuItemSelectedGradientBegin => _hover;
+        public override Color MenuItemSelectedGradientEnd => _hover;
+        public override Color MenuStripGradientBegin => _bg;
+        public override Color MenuStripGradientEnd => _bg;
+        public override Color ToolStripDropDownBackground => _bg;
+        public override Color ImageMarginGradientBegin => _bg;
+        public override Color ImageMarginGradientMiddle => _bg;
+        public override Color ImageMarginGradientEnd => _bg;
+        public override Color SeparatorDark => _bg;
+        public override Color SeparatorLight => _bg;
+        public override Color CheckBackground => _bg;
+        public override Color CheckSelectedBackground => _hover;
+        public override Color CheckPressedBackground => _hover;
     }
 }

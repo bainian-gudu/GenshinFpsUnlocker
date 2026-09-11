@@ -14,12 +14,6 @@ internal sealed partial class MainForm : Form
     private readonly WebView2 _webView;
     private NotifyIcon _tray = null!;
 
-    private ToolStripMenuItem _trayMasterItem = null!;
-    private ToolStripMenuItem _trayEnabledItem = null!;
-    private ToolStripMenuItem _trayAutoWatchItem = null!;
-    private ToolStripMenuItem _trayAutoStartItem = null!;
-    private ToolStripMenuItem _trayFpsRoot = null!;
-    private ToolStripMenuItem _trayLogItem = null!;
 
     private bool _reallyExit;
     private bool _syncingUi;
@@ -76,7 +70,7 @@ internal sealed partial class MainForm : Form
                     Icon = AppIcon.LoadClone() ?? SystemIcons.Application,
                     ContextMenuStrip = new ContextMenuStrip(),
                 };
-                _tray.ContextMenuStrip.Items.Add("显示主窗口", null, (_, _) => RestoreFromTrayPublic());
+                _tray.ContextMenuStrip.Items.Add("显示主界面", null, (_, _) => RestoreFromTrayPublic());
                 _tray.ContextMenuStrip.Items.Add("退出", null, (_, _) => { _reallyExit = true; Close(); });
                 _tray.DoubleClick += (_, _) => RestoreFromTrayPublic();
             }
@@ -643,6 +637,7 @@ internal sealed partial class MainForm : Form
                 }
                 catch { /* ignore */ }
                 UiStyle.ApplyTitleBarChrome(this, dark);
+                try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
             }
             catch (Exception ex) { AppLog.Debug("ApplyWebChromeTheme: " + ex.Message); }
         }
@@ -697,21 +692,34 @@ internal sealed partial class MainForm : Form
                 if (_trayStatusItem is not null)
                     _trayStatusItem.Text = BuildStatusHeaderText();
 
-                if (_trayMasterItem is not null) _trayMasterItem.Checked = _config.MasterEnabled;
-                if (_trayEnabledItem is not null) _trayEnabledItem.Checked = _config.Enabled;
-                if (_trayAutoWatchItem is not null) _trayAutoWatchItem.Checked = _config.AutoWatch;
-                if (_trayAutoStartItem is not null) _trayAutoStartItem.Checked = _config.AutoStartWithWindows;
-                if (_trayStartMinItem is not null) _trayStartMinItem.Checked = _config.StartMinimized;
-                if (_trayLogItem is not null) _trayLogItem.Checked = _config.DebugLogging;
-
-                // 总开关关闭时，帧率项视觉上仍可改，但状态头会提示暂停（与 UI 一致）
                 if (_trayEnabledItem is not null)
+                {
+                    _trayEnabledItem.Checked = _config.Enabled;
+                    // 总开关关闭时仍允许改勾选，但状态头会提示暂停
                     _trayEnabledItem.Enabled = true;
+                }
+                if (_trayAutoWatchItem is not null)
+                    _trayAutoWatchItem.Checked = _config.AutoWatch;
 
-                BuildTrayFpsItems();
+                if (_trayFpsRoot is not null)
+                {
+                    _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";
+                    foreach (ToolStripItem it in _trayFpsRoot.DropDownItems)
+                    {
+                        if (it is not ToolStripMenuItem mi) continue;
+                        // "120 FPS  · 推荐" / "60 FPS"
+                        var txt = mi.Text ?? "";
+                        var numPart = txt.Split(' ')[0];
+                        if (int.TryParse(numPart, out var fps))
+                            mi.Checked = fps == _config.TargetFps;
+                    }
+                }
                 UpdateTrayTip();
             }
-            finally { _syncingUi = false; }
+            finally
+            {
+                _syncingUi = false;
+            }
         }
 
         if (InvokeRequired) BeginInvoke(work);
