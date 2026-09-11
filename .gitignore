@@ -1,5 +1,6 @@
 # Build outputs (cmake / intermediate; capital Build\ holds tracked Kachina config)
 build/
+out/
 dist/
 bin/
 obj/

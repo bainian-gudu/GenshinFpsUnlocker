@@ -1,15 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <!-- Windows 10 1809+/Windows 11 平台标注；实际运行检测见 OsCompatibility（1607+） -->
-    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <!-- 必须带 Windows 版本号，否则 TargetPlatformVersion 默认为 7.0，与 SupportedOSPlatformVersion 冲突 (NETSDK1135) -->
+    <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- FDD：不打包 .NET 运行时（减小包体）；应用程序集仍随 publish 输出。安装器负责下载 Runtime。 -->
+    <!-- FDD：不打包 .NET 运行时（减小包体）；应用程序集仍随 publish 输出。 -->
     <SelfContained>false</SelfContained>
     <PublishSelfContained>false</PublishSelfContained>
     <PublishReadyToRun>false</PublishReadyToRun>

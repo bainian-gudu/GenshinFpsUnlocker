@@ -55,7 +55,8 @@ if ($npm) {
 }
 
 Write-Host "==> Building FpsUnlockerStub.dll" -ForegroundColor Cyan
-$StubBuild = Join-Path $Root "build/stub"
+# 勿用 build/：Windows 上与仓库 Build/（Kachina 配置）路径冲突
+$StubBuild = Join-Path $Root "out/stub"
 New-Item -ItemType Directory -Force -Path $StubBuild | Out-Null
 
 $cmakeArgs = @("-S", "src/Stub", "-B", $StubBuild)
