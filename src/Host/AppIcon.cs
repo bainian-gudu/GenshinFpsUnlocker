@@ -1,8 +1,8 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 应用图标（AI 生成八重神子主题 app.ico / app.png）。
-/// 用于窗体、托盘、快捷方式（exe 内嵌 ApplicationIcon）。
+/// 应用图标（Assets/app.ico，与安装包内嵌 ApplicationIcon 一致）。
+/// 用于窗体、托盘、快捷方式。
 /// </summary>
 internal static class AppIcon
 {

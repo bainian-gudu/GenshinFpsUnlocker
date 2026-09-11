@@ -21,6 +21,11 @@ internal sealed partial class MainForm : Form
     private bool _suppressResizeHide;
     /// <summary>正在执行最小化→托盘，防止 Resize 重入导致闪烁/连弹。</summary>
     private bool _hidingToTray;
+    /// <summary>
+    /// 启动时若「最小化到托盘」：在 Web 就绪前拦截 Show，避免主窗闪几秒再消失。
+    /// </summary>
+    private bool _allowVisible = true;
+    private bool _startupTrayPending;
 
     public MainForm(AppConfig config, UnlockService service)
     {
@@ -38,6 +43,15 @@ internal sealed partial class MainForm : Form
         MinimizeBox = true;
         ShowInTaskbar = true;
         BackColor = UiStyle.IsUiDark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+
+        // 启动进托盘：先不真正显示主窗（Application.Run 仍会创建句柄）
+        if (_config.StartMinimized)
+        {
+            _allowVisible = false;
+            _startupTrayPending = true;
+            _inTray = true;
+            ShowInTaskbar = false;
+        }
         try
         {
             var ico = AppIcon.LoadClone();
@@ -128,9 +142,21 @@ internal sealed partial class MainForm : Form
             }
 
             // 默认打开显示主窗口；仅当勾选「启动后最小化到托盘」且 Web UI 正常时才启动进托盘
-            if (webOk && _config.StartMinimized)
+            if (webOk && (_config.StartMinimized || _startupTrayPending))
             {
-                BeginInvoke(() => HideToTrayPublic(showTip: true, fromStartup: true));
+                BeginInvoke(() =>
+                {
+                    try
+                    {
+                        // 从未真正显示过：直接完成托盘驻留，不先 Show 再 Hide（避免闪窗）
+                        FinishStartupToTray();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warn("startup tray: " + ex.Message);
+                        try { HideToTrayPublic(showTip: true, fromStartup: true); } catch { /* ignore */ }
+                    }
+                });
             }
             else if (!webOk)
             {
@@ -140,6 +166,8 @@ internal sealed partial class MainForm : Form
                     {
                         // 强制前台，避免黑窗/无托盘
                         _config.StartMinimized = false;
+                        _startupTrayPending = false;
+                        _allowVisible = true;
                         RestoreFromTrayPublic();
                         if (_tray is not null)
                         {
@@ -160,6 +188,8 @@ internal sealed partial class MainForm : Form
                 {
                     try
                     {
+                        _startupTrayPending = false;
+                        _allowVisible = true;
                         if (!Visible || WindowState == FormWindowState.Minimized)
                             RestoreFromTrayPublic();
                     }
@@ -393,25 +423,103 @@ internal sealed partial class MainForm : Form
     }
 
     /// <summary>
+    /// 拦截启动期 Show：StartMinimized 时只创建句柄、不把窗口画到屏幕上。
+    /// </summary>
+    protected override void SetVisibleCore(bool value)
+    {
+        if (!_allowVisible)
+        {
+            if (!IsHandleCreated)
+            {
+                try { CreateHandle(); } catch { /* ignore */ }
+            }
+            value = false;
+        }
+        base.SetVisibleCore(value);
+    }
+
+    /// <summary>
+    /// 启动配置为进托盘：Web 已初始化后调用。窗口从未 Show，故无闪现。
+    /// </summary>
+    private void FinishStartupToTray()
+    {
+        if (_reallyExit || IsDisposed) return;
+        _startupTrayPending = false;
+        _allowVisible = false; // 仍禁止误 Show，直到用户点「显示主界面」
+        _inTray = true;
+        _suppressResizeHide = true;
+        try
+        {
+            try { Opacity = 1; } catch { /* ignore */ }
+            ShowInTaskbar = false;
+            try
+            {
+                if (IsHandleCreated && Visible)
+                    Hide();
+            }
+            catch { /* ignore */ }
+            try
+            {
+                if (WindowState != FormWindowState.Normal)
+                    WindowState = FormWindowState.Normal;
+            }
+            catch { /* ignore */ }
+
+            UpdateTrayTip();
+            try
+            {
+                if (_tray is not null)
+                {
+                    _tray.Visible = true;
+                    _tray.Text = BuildTrayTipText();
+                }
+            }
+            catch { /* ignore */ }
+
+            if (!_trayTipShownThisSession)
+            {
+                _trayTipShownThisSession = true;
+                ShowTrayBalloon(
+                    AppPaths.ProductDisplayName,
+                    "已在后台运行。若托盘区看不到图标，请点任务栏 ^ 展开「显示隐藏的图标」。左键打开主窗口，右键可设置。",
+                    ToolTipIcon.Info);
+            }
+            AppLog.Info("startup → tray (no flash)");
+        }
+        finally
+        {
+            _suppressResizeHide = false;
+        }
+    }
+
+    /// <summary>
     /// 隐藏到托盘：不占任务栏。禁止用 Opacity=0（恢复后易残留透明 → 任务栏有图标、桌面无窗）。
     /// </summary>
     public void HideToTrayPublic(bool showTip = false, bool fromStartup = false)
     {
         if (_reallyExit || IsDisposed) return;
         // 已在托盘则不再走一遍
-        if (_inTray && !Visible) return;
+        if (_inTray && !Visible && !_startupTrayPending) return;
 
         void work()
         {
             if (_reallyExit || IsDisposed) return;
             if (_hidingToTray) return;
-            if (_inTray && !Visible) return;
+            if (_inTray && !Visible && !_startupTrayPending) return;
+
+            // 启动路径优先走无闪现逻辑
+            if (fromStartup || _startupTrayPending)
+            {
+                FinishStartupToTray();
+                return;
+            }
 
             _hidingToTray = true;
             _suppressResizeHide = true;
             try
             {
                 _inTray = true;
+                _allowVisible = false;
 
                 // 保证不残留透明（历史路径 / 异常）
                 try { Opacity = 1; } catch { /* ignore */ }
@@ -445,13 +553,11 @@ internal sealed partial class MainForm : Form
                     _trayTipShownThisSession = true;
                     ShowTrayBalloon(
                         AppPaths.ProductDisplayName,
-                        fromStartup
-                            ? "已在后台运行。若托盘区看不到图标，请点任务栏 ^ 展开「显示隐藏的图标」。左键打开主窗口，右键可设置。"
-                            : "已在后台运行。左键单击或双击托盘图标可打开主窗口；右键可调整设置。",
+                        "已在后台运行。左键单击或双击托盘图标可打开主窗口；右键可调整设置。",
                         ToolTipIcon.Info);
                 }
 
-                AppLog.Info(fromStartup ? "startup → tray" : "window → tray");
+                AppLog.Info("window → tray");
             }
             finally
             {
@@ -479,6 +585,8 @@ internal sealed partial class MainForm : Form
             try
             {
                 _inTray = false;
+                _startupTrayPending = false;
+                _allowVisible = true; // 允许 SetVisibleCore 真正显示
 
                 // 1) 彻底取消透明 / 最小化残留
                 try { Opacity = 1; } catch { /* ignore */ }

@@ -39,11 +39,12 @@ internal sealed partial class MainForm
         var menu = new ContextMenuStrip
         {
             Name = "TrayMenu",
+            // 统一左侧留白：勾选画在同一槽位，文字左对齐（避免默认 CheckMargin 把字顶歪）
             ShowImageMargin = false,
-            ShowCheckMargin = true,
+            ShowCheckMargin = false,
             AutoClose = true,
             Font = UiStyle.UiFont,
-            Padding = new Padding(6, 8, 6, 8),
+            Padding = new Padding(4, 6, 4, 6),
             Renderer = new TrayMenuRenderer(dark),
             BackColor = dark ? Color.FromArgb(0x1C, 0x17, 0x26) : Color.FromArgb(0xFA, 0xF5, 0xFC),
             ForeColor = dark ? Color.FromArgb(0xF3, 0xEE, 0xF8) : Color.FromArgb(0x2A, 0x1F, 0x35),
@@ -101,7 +102,8 @@ internal sealed partial class MainForm
         _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {_config.TargetFps} FPS")
         {
             ToolTipText = "选择预设或自定义目标帧率",
-            Padding = new Padding(4, 4, 4, 4),
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
         };
         menu.Items.Add(_trayFpsRoot);
         BuildTrayFpsItems();
@@ -142,19 +144,24 @@ internal sealed partial class MainForm
         UpdateTrayTip();
     }
 
+    /// <summary>菜单项统一内边距：左侧留给勾选槽，文字与动作项对齐。</summary>
+    private static Padding TrayItemPadding => new(4, 4, 10, 4);
+
     private static ToolStripMenuItem MakeHeaderItem(string text) =>
         new(text)
         {
             Enabled = false,
             Font = new Font(UiStyle.UiFont, FontStyle.Bold),
-            Padding = new Padding(4, 6, 4, 6),
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
         };
 
     private static ToolStripMenuItem MakeActionItem(string text, EventHandler onClick)
     {
         var item = new ToolStripMenuItem(text)
         {
-            Padding = new Padding(4, 5, 4, 5),
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
         };
         item.Click += onClick;
         return item;
@@ -167,12 +174,13 @@ internal sealed partial class MainForm
             CheckOnClick = true,
             Checked = checkedState,
             ToolTipText = tip,
-            Padding = new Padding(4, 5, 4, 5),
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
         };
     }
 
     private static ToolStripSeparator MakeSep() =>
-        new() { Margin = new Padding(8, 4, 8, 4) };
+        new() { Margin = new Padding(10, 3, 10, 3) };
 
     private void ApplyTrayMenuTheme()
     {
@@ -318,8 +326,10 @@ internal sealed partial class MainForm
             var item = new ToolStripMenuItem($"{p} FPS")
             {
                 Checked = _config.TargetFps == p,
+                CheckOnClick = false,
                 ToolTipText = p == 120 ? "推荐" : null,
-                Padding = new Padding(4, 4, 4, 4),
+                Padding = TrayItemPadding,
+                TextAlign = ContentAlignment.MiddleLeft,
             };
             if (p == 120)
                 item.Text = "120 FPS  · 推荐";
@@ -336,7 +346,8 @@ internal sealed partial class MainForm
         _trayFpsRoot.DropDownItems.Add(MakeSep());
         var custom = new ToolStripMenuItem("自定义…")
         {
-            Padding = new Padding(4, 4, 4, 4),
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
             ToolTipText = "输入 1–540 之间的目标帧率",
         };
         custom.Click += (_, _) => ShowCustomFpsDialog();
@@ -422,27 +433,18 @@ internal sealed partial class MainForm
             e.Graphics.DrawRectangle(pen, r);
         }
 
+        /// <summary>左侧勾选槽宽度（所有菜单项文字从同一 X 起排）。</summary>
+        private const int CheckGutter = 26;
+        private const int TextLeft = 30;
+
         protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
         {
-            // 无左侧图标栏
+            // 无系统图标栏
         }
 
         protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
         {
-            var g = e.Graphics;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var rc = e.ImageRectangle;
-            if (rc.Width < 8) rc = new Rectangle(e.Item.ContentRectangle.X + 4, e.Item.ContentRectangle.Y + (e.Item.Height - 14) / 2, 14, 14);
-            using var pen = new Pen(_accent, 1.8f);
-            // 简单对勾
-            var x = rc.Left + 2;
-            var y = rc.Top + rc.Height / 2;
-            g.DrawLines(pen, new[]
-            {
-                new Point(x, y),
-                new Point(x + 4, y + 4),
-                new Point(x + 10, y - 4),
-            });
+            // 不使用系统默认勾选绘制；在 OnRenderItemText 前由 DrawCheckMark 绘制
         }
 
         protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
@@ -450,40 +452,87 @@ internal sealed partial class MainForm
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             var item = e.Item;
-            var bounds = new Rectangle(4, 1, item.Width - 8, item.Height - 2);
+            var bounds = new Rectangle(3, 1, Math.Max(0, item.Width - 6), Math.Max(0, item.Height - 2));
 
-            if (!item.Selected && !item.Pressed)
-            {
-                using var b = new SolidBrush(_bg);
-                g.FillRectangle(b, item.ContentRectangle);
-                return;
-            }
+            using (var b = new SolidBrush(_bg))
+                g.FillRectangle(b, new Rectangle(0, 0, item.Width, item.Height));
 
             if (!item.Enabled) return;
+            if (!item.Selected && !item.Pressed) return;
 
             using var path = RoundRect(bounds, 6);
             using var brush = new SolidBrush(_hover);
             g.FillPath(brush, path);
-            // 左侧强调条
             using var accent = new SolidBrush(_accent);
-            g.FillRectangle(accent, new Rectangle(bounds.X, bounds.Y + 4, 3, bounds.Height - 8));
+            g.FillRectangle(accent, new Rectangle(bounds.X + 1, bounds.Y + 5, 3, Math.Max(4, bounds.Height - 10)));
         }
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
-            e.TextColor = e.Item.Enabled
-                ? (e.Item.Selected ? _accent : _text)
-                : _muted;
-            if (e.Item is ToolStripMenuItem { Checked: true, CheckOnClick: true })
-                e.TextColor = _accent;
-            base.OnRenderItemText(e);
+            var g = e.Graphics;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            var item = e.Item;
+            var isCheck = item is ToolStripMenuItem { CheckOnClick: true };
+            var isChecked = item is ToolStripMenuItem { Checked: true };
+
+            // 勾选标记：固定画在 gutter 内垂直居中
+            if (isChecked)
+                DrawCheckMark(g, item);
+
+            e.TextColor = !item.Enabled
+                ? _muted
+                : isChecked && isCheck
+                    ? _accent
+                    : item.Selected
+                        ? _accent
+                        : _text;
+
+            // 强制文字左对齐到同一基线（修正 CheckMargin/ImageMargin 造成的错位）
+            var font = e.TextFont ?? item.Font ?? SystemFonts.MenuFont ?? SystemFonts.DefaultFont;
+            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+            var textH = TextRenderer.MeasureText(e.Text ?? item.Text ?? "", font, new Size(int.MaxValue, int.MaxValue), flags).Height;
+            var y = item.ContentRectangle.Y + Math.Max(0, (item.Height - textH) / 2);
+            var textRect = new Rectangle(
+                TextLeft,
+                y,
+                Math.Max(8, item.Width - TextLeft - 12),
+                Math.Max(textH, item.Height - 4));
+
+            TextRenderer.DrawText(
+                g,
+                e.Text ?? item.Text ?? "",
+                font,
+                textRect,
+                e.TextColor,
+                flags | TextFormatFlags.VerticalCenter);
+            // 不再调用 base，避免系统再画一次偏移文字
+        }
+
+        private void DrawCheckMark(Graphics g, ToolStripItem item)
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var cx = 8 + CheckGutter / 2 - 6;
+            var cy = item.ContentRectangle.Y + item.Height / 2;
+            using var pen = new Pen(_accent, 1.9f)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+                LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
+            };
+            g.DrawLines(pen, new[]
+            {
+                new Point(cx, cy),
+                new Point(cx + 4, cy + 4),
+                new Point(cx + 11, cy - 5),
+            });
         }
 
         protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
         {
             var y = e.Item.ContentRectangle.Top + e.Item.ContentRectangle.Height / 2;
             using var pen = new Pen(_sep);
-            e.Graphics.DrawLine(pen, 12, y, e.Item.Width - 12, y);
+            e.Graphics.DrawLine(pen, TextLeft, y, Math.Max(TextLeft + 8, e.Item.Width - 12), y);
         }
 
         private static System.Drawing.Drawing2D.GraphicsPath RoundRect(Rectangle bounds, int radius)
