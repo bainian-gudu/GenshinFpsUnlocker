@@ -1,8 +1,8 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 系统托盘：精简右键菜单（主界面 / 启动游戏 / 帧率解锁 / 自动解锁 / 修改帧率 / 退出），
-/// 外观跟随 Web UI 深浅色，避免系统默认灰白菜单。
+/// 系统托盘：精简右键菜单，按「窗口与游戏操作 → 帧率解锁组 → 反虚化组 → 退出」
+/// 的顺序排列；外观跟随 Web UI 深浅色，避免系统默认灰白菜单。
 /// </summary>
 internal sealed partial class MainForm
 {
@@ -12,6 +12,8 @@ internal sealed partial class MainForm
     private ToolStripMenuItem? _trayStatusItem;
     private ToolStripMenuItem? _trayEnabledItem;
     private ToolStripMenuItem? _trayAutoWatchItem;
+    private ToolStripMenuItem? _trayAntiBlurPerspectiveItem;
+    private ToolStripMenuItem? _trayAntiBlurDiveMosaicItem;
     private ToolStripMenuItem? _trayFpsRoot;
     private ContextMenuStrip? _trayMenu;
     private Icon? _trayIconOwned;
@@ -56,11 +58,8 @@ internal sealed partial class MainForm
         menu.Items.Add(_trayStatusItem);
         menu.Items.Add(MakeSep());
 
-        // —— 主界面 ——
+        // —— 窗口与游戏操作 ——
         menu.Items.Add(MakeActionItem("显示主界面", (_, _) => RestoreFromTrayPublic()));
-        menu.Items.Add(MakeSep());
-
-        // —— 启动游戏 ——
         menu.Items.Add(MakeActionItem("启动游戏", (_, _) =>
         {
             if (_service.TryLaunchGame(out var msg))
@@ -71,7 +70,7 @@ internal sealed partial class MainForm
         }));
         menu.Items.Add(MakeSep());
 
-        // —— 帧率解锁 ——
+        // —— 帧率解锁组 ——
         _trayEnabledItem = MakeCheckItem(
             "帧率解锁",
             _config.Enabled,
@@ -84,7 +83,16 @@ internal sealed partial class MainForm
         };
         menu.Items.Add(_trayEnabledItem);
 
-        // —— 自动解锁 ——
+        // 修改帧率（预设 + 自定义）：紧随帧率解锁
+        _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {_config.TargetFps} FPS")
+        {
+            ToolTipText = "选择预设或自定义目标帧率",
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+        menu.Items.Add(_trayFpsRoot);
+        BuildTrayFpsItems();
+
         _trayAutoWatchItem = MakeCheckItem(
             "自动解锁",
             _config.AutoWatch,
@@ -98,15 +106,30 @@ internal sealed partial class MainForm
         menu.Items.Add(_trayAutoWatchItem);
         menu.Items.Add(MakeSep());
 
-        // —— 修改帧率（预设 + 自定义）——
-        _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {_config.TargetFps} FPS")
+        // —— 反虚化组（画面效果注入，随游戏进程即时生效；联机/UGC 玩法勿开）——
+        _trayAntiBlurPerspectiveItem = MakeCheckItem(
+            "反角色虚化",
+            _config.AntiBlurPerspective,
+            "镜头拉近时角色不再透明化（仅供单机体验）");
+        _trayAntiBlurPerspectiveItem.CheckedChanged += (_, _) =>
         {
-            ToolTipText = "选择预设或自定义目标帧率",
-            Padding = TrayItemPadding,
-            TextAlign = ContentAlignment.MiddleLeft,
+            if (_syncingUi) return;
+            _service.SetAntiBlurPerspective(_trayAntiBlurPerspectiveItem.Checked);
+            AfterTrayConfigChange("反角色虚化");
         };
-        menu.Items.Add(_trayFpsRoot);
-        BuildTrayFpsItems();
+        menu.Items.Add(_trayAntiBlurPerspectiveItem);
+
+        _trayAntiBlurDiveMosaicItem = MakeCheckItem(
+            "移除水下马赛克",
+            _config.AntiBlurDiveMosaic,
+            "角色入水时不再显示马赛克虚化（仅供单机体验）");
+        _trayAntiBlurDiveMosaicItem.CheckedChanged += (_, _) =>
+        {
+            if (_syncingUi) return;
+            _service.SetAntiBlurDiveMosaic(_trayAntiBlurDiveMosaicItem.Checked);
+            AfterTrayConfigChange("移除水下马赛克");
+        };
+        menu.Items.Add(_trayAntiBlurDiveMosaicItem);
         menu.Items.Add(MakeSep());
 
         // —— 退出 ——

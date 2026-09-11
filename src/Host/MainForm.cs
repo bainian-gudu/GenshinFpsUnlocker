@@ -934,6 +934,10 @@ internal sealed partial class MainForm : Form
                 }
                 if (_trayAutoWatchItem is not null)
                     _trayAutoWatchItem.Checked = _config.AutoWatch;
+                if (_trayAntiBlurPerspectiveItem is not null)
+                    _trayAntiBlurPerspectiveItem.Checked = _config.AntiBlurPerspective;
+                if (_trayAntiBlurDiveMosaicItem is not null)
+                    _trayAntiBlurDiveMosaicItem.Checked = _config.AntiBlurDiveMosaic;
 
                 if (_trayFpsRoot is not null)
                 {
