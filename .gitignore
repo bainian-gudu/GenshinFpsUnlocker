@@ -1,10 +1,12 @@
-# Build outputs (cmake / intermediate; capital Build\ holds tracked Kachina config)
+# Build outputs (cmake / intermediate)
 build/
 out/
 dist/
 bin/
 obj/
+target/
 artifacts/
+node_modules/
 .vs/
 *.user
 *.suo
@@ -16,7 +18,7 @@ cmake-build-*/
 config.json
 *.log
 
-# Compiled binaries in tree (CI produces under dist/)
+# Compiled binaries in tree (CI produces under dist/ ; installer/tools/)
 *.dll
 *.exe
 *.pdb
@@ -30,18 +32,28 @@ config.json
 Thumbs.db
 *~
 
-# Extra docs (do not track)
+# Extra docs (do not track) — installer/ 下的说明文档例外
 docs/
 *.md
 !README.md
+!installer/README.md
+!installer/kachina/README.md
+!installer/kachina/UPSTREAM.md
 
-# Kachina local tools / intermediate (CI downloads builder)
-Build/kachina-builder.exe
-Build/dist/
-Build/hashed/
-Build/metadata.json
-Build/*.7z
-# keep: Build/kachina.config.json, Build/setup_build.cmd
+# ---------------------------------------------------------------------------
+# 安装器打包（installer/）
+#   kachina/         上游 kachina-installer 源码快照 —— 需要进版本库
+#   tools/           由 installer/build-kachina.ps1 构建出的 kachina-builder.exe
+#   其余为构建中间产物
+# ---------------------------------------------------------------------------
+installer/tools/
+installer/kachina/node_modules/
+installer/kachina/dist/
+installer/kachina/.cache/
+installer/kachina/src-tauri/target/
+installer/kachina/src-tauri/gen/
+installer/kachina/tests/fixtures/
+# keep: installer/kachina.config.json, installer/pack.ps1, installer/build-kachina.ps1
 
 # Web UI
 src/Ui/node_modules/

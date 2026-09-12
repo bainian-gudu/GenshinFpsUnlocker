@@ -10,7 +10,8 @@
 
 - **操作系统**：64 位 **Windows 10**（1607 / 版本 14393 及以上）或 **Windows 11**
 - **架构**：x64（与游戏客户端一致）
-- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）、**Node.js 20+**（界面）；安装包另需 [kachina-builder](https://github.com/YuehaiTeam/kachina-installer/releases)
+- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）、**Node.js 20+**（界面）
+- 打包安装器：源码已随仓库提供（[`installer/kachina/`](installer/kachina/)），另需 **Rust nightly + `rust-src`** 与 **pnpm 10**；CI 会自动装
 - 运行界面：系统需安装 **Microsoft Edge WebView2 Runtime**（Win10/11 通常已自带）
 - 运行依赖策略：
   - **应用自身**（托管 DLL、`FpsUnlockerStub.dll`、MinHook 静态编入 Stub 等）随安装包**自包含**
@@ -20,52 +21,67 @@
 
 ## 构建
 
-默认：**主程序框架依赖（包体小）**。安装包由 **Kachina**（`kachina-builder`）生成：
+默认：**主程序框架依赖（包体小）**。安装器由项目内的 **Kachina** 源码构建出的
+`kachina-builder.exe` 生成，全部打包代码集中在 [`installer/`](installer/)：
 
 ```powershell
-# 仅编译主程序 + Stub
+# 仅编译 UI + Stub + 主程序（不打包）
 .\build.ps1 -Configuration Release -SkipSetup
 
-# 完整：编译 + Kachina 离线安装器（需 Build\kachina-builder.exe）
+# 完整：编译 + 打包 Kachina 离线安装器（首次会从源码构建 kachina-builder）
 .\build.ps1 -Configuration Release
 
-# 或
-.\Build\setup_build.cmd
+# 只重新打包（dist\ 已存在）
+.\installer\pack.ps1
+
+# kachina-builder 已构建过 / 强制重建
+.\build.ps1 -SkipKachinaBuild
+.\build.ps1 -ForceKachinaBuild
 
 # 可选：主程序也自包含
 .\build.ps1 -Configuration Release -SelfContained
 ```
-
-首次打包前，从 [kachina-installer Releases](https://github.com/YuehaiTeam/kachina-installer/releases) 下载 `kachina-builder.exe` 放到 `Build\`。CI 会自动下载。
 
 产物：
 
 ```text
 dist\GenshinFpsUnlocker.exe
 dist\FpsUnlockerStub.dll
-dist\GenshinFpsUnlocker.Install.{ver}.exe   # Kachina 离线安装器
-dist\GenshinFpsUnlocker\                    # 便携目录（含 .update.exe）
-dist\GenshinFpsUnlocker_v{ver}.7z           # 可选便携 7z
+dist\ui\index.html
+
+artifacts\GenshinFpsUnlocker.Install.{ver}.exe        # Kachina 离线安装器
+artifacts\GenshinFpsUnlocker-portable-win-x64.zip    # 便携包（含 .update.exe）
+artifacts\GenshinFpsUnlocker_v{ver}.7z               # 便携 7z（本机有 7-Zip 时）
 ```
 
-配置见 `Build/kachina.config.json`（默认安装目录 `Program Files\GenshinFpsUnlocker`、GitHub 在线源、运行库列表）。
+Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.json)
+（默认安装目录 `Program Files\GenshinFpsUnlocker`、GitHub 在线源、运行库列表）。
+上游源码快照的来源、版本与构建前置见 [`installer/kachina/UPSTREAM.md`](installer/kachina/UPSTREAM.md)。
 
 ## 安装 / 卸载
 
+安装与卸载**只有 Kachina 一种方式**。主程序自身不带任何安装/卸载入口：
+`--install`、`--uninstall`、`Uninstall.cmd` 垫片、自写 ARP 卸载注册表项、
+内置白名单删目录、程序内「卸载本软件」按钮均已移除。
+
 ```powershell
-.\dist\GenshinFpsUnlocker.Install.1.0.0.exe
+.\artifacts\GenshinFpsUnlocker.Install.1.0.0.exe
 ```
 
 - 可选安装目录（默认 `C:\Program Files\GenshinFpsUnlocker\`）
-- 安装时按 UAC 策略提权；装完后日常与开机自启不再弹 UAC
+- 安装时按 UAC 策略提权；装完后日常运行与开机自启不再弹 UAC
 - 可自动处理 .NET Desktop Runtime 9 / VCRedist（见配置 `runtimes`）
 - 安装目录生成 **`GenshinFpsUnlocker.uninst.exe`**、**`GenshinFpsUnlocker.update.exe`**
 
-卸载：
+卸载（三选一，都是 Kachina 的卸载器）：
 
-- 开始菜单 / 「应用和功能」/ 安装目录 **`GenshinFpsUnlocker.uninst.exe`**
-- 程序内「卸载清理」与托盘：优先启动官方 uninst；便携无该文件时回退内置白名单清理
-- 配置与日志默认在 `%LocalAppData%\GenshinFpsUnlocker\`（程序内卸载会尽量清理）
+- 安装目录下的 **`GenshinFpsUnlocker.uninst.exe`**
+- 开始菜单「原神帧率解锁」文件夹里的「卸载 原神帧率解锁」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
+- Windows「设置 → 应用 → 安装的应用」/ 控制面板「应用和功能」（Kachina 写的 ARP 卸载项）
+
+卸载会按 `kachina.config.json` 的 `userDataPath` 一并清掉
+`%LocalAppData%\GenshinFpsUnlocker\`（配置、日志、WebView2 数据）。
+开机自启项（`HKCU\...\Run`）由主程序按配置维护，卸载前先在设置里关掉「开机自启动」即可。
 
 在线更新：已安装副本可使用 `GenshinFpsUnlocker.update.exe`，从配置的 GitHub Release 源拉取（需已发布对应 `Install` 包）。
 
@@ -93,9 +109,9 @@ dist\GenshinFpsUnlocker_v{ver}.7z           # 可选便携 7z
 {安装目录}\GenshinFpsUnlocker\     # 默认 Program Files 下
   GenshinFpsUnlocker.exe
   FpsUnlockerStub.dll
+  ui\index.html                   # Web UI（WebView2 加载）
   GenshinFpsUnlocker.uninst.exe    # Kachina 卸载
   GenshinFpsUnlocker.update.exe    # Kachina 更新（可选）
-  GenshinFpsUnlocker.install       # 可选标记（内置清理用）
 
 %LocalAppData%\GenshinFpsUnlocker\
   config.json
@@ -105,6 +121,13 @@ dist\GenshinFpsUnlocker_v{ver}.7z           # 可选便携 7z
 ## CI
 
 GitHub Actions **仅手动运行**（Actions → Build → Run workflow），不会在 push/PR 时自动执行。
+三个 job 并行/串行协作，**不再从上游 Release 下载 `kachina-builder.exe`**：
+
+1. `build-kachina` —— 用 `installer/kachina/` 源码构建 `kachina-builder.exe`。
+   源码未变时命中 `actions/cache`（key = `hashFiles('installer/kachina/**')`）直接复用；
+   输入 `rebuild_kachina=true` 可强制重建。
+2. `build-app` —— `build.ps1 -SkipSetup` 产出 `dist\`。
+3. `pack` —— `installer\pack.ps1 -SkipKachinaBuild` 产出最终安装包。
 
 产物：
 
@@ -130,7 +153,7 @@ Kachina 安装界面自带「我已阅读并同意用户协议」勾选（上游
 
 ## License
 
-MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（kachina-installer）按其上游许可使用
+MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（[kachina-installer](https://github.com/YuehaiTeam/kachina-installer)，源码快照见 `installer/kachina/`）按其上游许可使用 —— **注意：上游仓库未提供 LICENSE 文件**，详见 `installer/kachina/UPSTREAM.md`
 
 帧率解锁与反虚化（反角色虚化 / 移除水下马赛克）的特征码与 Hook/Patch 思路参考
 [DGP Studio 的 Snap.Hutao.Remastered.UnlockerIsland](https://github.com/SnapHutaoRemasteringProject/Snap.Hutao.Remastered.UnlockerIsland)（MIT），已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp`。

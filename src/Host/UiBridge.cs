@@ -282,10 +282,6 @@ internal sealed class UiBridge : IDisposable
                     fullText = SafetyNotice.FullText,
                 });
 
-            case "uninstall":
-                _form.BeginInvoke(() => InstallUninstall.RunUninstallInteractive(quiet: false));
-                return Task.FromResult<object?>(true);
-
             case "showWindow":
                 _form.BeginInvoke(() => _form.RestoreFromTrayPublic());
                 return Task.FromResult<object?>(true);

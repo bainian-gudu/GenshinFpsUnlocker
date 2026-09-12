@@ -20,22 +20,107 @@ on:
         options:
           - framework-dependent
           - self-contained
+      rebuild_kachina:
+        description: "强制从 installer/kachina 源码重建 kachina-builder（忽略缓存）"
+        required: false
+        default: false
+        type: boolean
 
 env:
   DOTNET_VERSION: "9.0.x"
+  NODE_VERSION: "22"
+  # 上游 kachina-installer 固定用 nightly + -Z build-std
+  RUST_TOOLCHAIN: "nightly"
   # 避免 runner 上 SDK 10 抢先解析 csproj（仍以 global.json rollForward 为准）
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  CARGO_TERM_COLOR: "always"
   # 第三方 action 若仍声明 node20，强制落到 runner 默认 Node 24，消减弃用告警
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  build-windows:
-    name: Windows x64 (host + Kachina)
+  # ---------------------------------------------------------------------------
+  # 项目内 kachina-installer 源码 → kachina-builder.exe
+  # 不再从上游 Release 下载二进制（robinraju/release-downloader 已移除）
+  # ---------------------------------------------------------------------------
+  build-kachina:
+    name: Kachina builder (from installer/kachina)
     runs-on: windows-latest
-    permissions:
-      contents: read
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
+      # 源码没变就直接复用上次的产物（Rust LTO + build-std + 静态 msquic 冷构建很慢）
+      - name: Cache kachina-builder.exe
+        if: ${{ !inputs.rebuild_kachina }}
+        id: kachina-cache
+        uses: actions/cache@v4
+        with:
+          path: installer/tools/kachina-builder.exe
+          key: kachina-builder-${{ runner.os }}-${{ hashFiles('installer/kachina/**') }}
+
+      - name: Install Rust nightly + rust-src
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal
+          rustup component add rust-src --toolchain $env:RUST_TOOLCHAIN
+          rustc --version; cargo --version
+
+      - name: Cache cargo / target
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "installer/kachina/src-tauri"
+          cache-targets: true
+          key: kachina-src
+
+      - name: Setup pnpm
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          # 仓库根目录没有 package.json；版本号（pnpm@10.17.0）从上游快照的
+          # packageManager 字段读取
+          package_json_file: installer/kachina/package.json
+
+      - name: Setup Node.js
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: installer/kachina/pnpm-lock.yaml
+
+      - name: Build kachina-builder from source
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\installer\build-kachina.ps1 -Toolchain $env:RUST_TOOLCHAIN
+          if (-not (Test-Path "installer\tools\kachina-builder.exe")) {
+            throw "kachina-builder.exe 未生成"
+          }
+          Get-Item installer\tools\kachina-builder.exe |
+            Select-Object FullName, @{n = "MB"; e = { [math]::Round($_.Length / 1MB, 2) }} |
+            Format-List
+
+      - name: Upload kachina-builder
+        uses: actions/upload-artifact@v6
+        with:
+          name: kachina-builder
+          path: installer/tools/kachina-builder.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 应用本体：Web UI + FpsUnlockerStub.dll + Host
+  # ---------------------------------------------------------------------------
+  build-app:
+    name: App (UI + stub + host)
+    runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -48,7 +133,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: src/Ui/package-lock.json
 
@@ -87,6 +172,38 @@ jobs:
           }
           Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
 
+      - name: Upload dist
+        uses: actions/upload-artifact@v6
+        with:
+          name: app-dist
+          path: dist/**
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 打包：调用项目内的 kachina-builder（installer/pack.ps1）
+  # ---------------------------------------------------------------------------
+  pack:
+    name: Pack Kachina installer
+    runs-on: windows-latest
+    needs: [build-kachina, build-app]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download kachina-builder
+        uses: actions/download-artifact@v6
+        with:
+          name: kachina-builder
+          path: installer/tools
+
+      - name: Download app dist
+        uses: actions/download-artifact@v6
+        with:
+          name: app-dist
+          path: dist
+
       - name: Read version
         id: ver
         shell: pwsh
@@ -98,67 +215,13 @@ jobs:
             "version=1.0.0" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
 
-      - name: Download kachina-builder
-        uses: robinraju/release-downloader@v1.13
-        with:
-          repository: "YuehaiTeam/kachina-installer"
-          latest: true
-          fileName: "kachina-builder.exe"
-
-      - name: Pack Kachina installer
+      - name: Pack
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $ver = "${{ steps.ver.outputs.version }}"
-          $app = "GenshinFpsUnlocker"
-          if (-not (Test-Path ".\kachina-builder.exe")) { throw "kachina-builder.exe missing" }
-
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          # 与 stub 一样避开 Build/（Windows 大小写不敏感）；Kachina 配置仍读 Build\kachina.config.json
-          $work = "out\kachina-ci"
-          if (Test-Path $work) { Remove-Item $work -Recurse -Force }
-          $appDir = Join-Path $work $app
-          New-Item -ItemType Directory -Force -Path $appDir | Out-Null
-          Copy-Item "dist\*" $appDir -Recurse -Force
-          if (Test-Path "USER_AGREEMENT.txt") {
-            Copy-Item "USER_AGREEMENT.txt" (Join-Path $appDir "USER_AGREEMENT.txt") -Force
-          }
-
-          $config = "Build\kachina.config.json"
-          $updater = Join-Path $appDir "$app.update.exe"
-          Write-Host "==> pack updater"
-          .\kachina-builder.exe pack -c $config -o $updater
-          if ($LASTEXITCODE -ne 0) { throw "pack updater failed" }
-
-          Write-Host "==> gen metadata"
-          Push-Location $work
-          try {
-            ..\..\kachina-builder.exe gen -j 6 -i $app -m metadata.json -o hashed `
-              -r bainian-gudu/GenshinFpsUnlocker -t $ver -u ".\$app\$app.update.exe"
-            if ($LASTEXITCODE -ne 0) { throw "gen failed" }
-
-            $installName = "$app.Install.$ver.exe"
-            Write-Host "==> pack offline install $installName"
-            ..\..\kachina-builder.exe pack -c ..\..\Build\kachina.config.json `
-              -m metadata.json -d hashed -o $installName
-            if ($LASTEXITCODE -ne 0) { throw "pack install failed" }
-
-            Copy-Item $installName "..\..\artifacts\$installName" -Force
-          } finally {
-            Pop-Location
-          }
-
-          # 便携 zip（含 update.exe）
-          $portableDir = "artifacts\$app-portable-win-x64"
-          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-          Copy-Item "$work\$app\*" $portableDir -Recurse -Force
-          Compress-Archive -Path $portableDir -DestinationPath "artifacts\$app-portable-win-x64.zip" -Force
-
-          # 便携 7z
-          if (Get-Command 7z -ErrorAction SilentlyContinue) {
-            7z a -t7z "artifacts\${app}_v$ver.7z" "$work\$app" -mx=5 -mf=BCJ2 -r -y
-          }
-
+          if (-not (Test-Path "installer\tools\kachina-builder.exe")) { throw "kachina-builder.exe missing" }
+          if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "dist payload missing" }
+          & .\installer\pack.ps1 -SkipKachinaBuild -Version "${{ steps.ver.outputs.version }}"
           Get-ChildItem artifacts | Format-Table Name, Length
 
       - name: Upload artifacts

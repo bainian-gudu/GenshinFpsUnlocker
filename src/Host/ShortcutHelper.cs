@@ -89,18 +89,21 @@ internal static class ShortcutHelper
             description: AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
             iconPath: icon);
 
+        // 卸载快捷方式只指向 Kachina 安装器生成的 uninst.exe。
+        // 便携 / 开发目录没有该文件时不再回退到「主程序 --uninstall」
+        // （内置卸载路径已删除），而是把历史残留的卸载快捷方式一并清掉。
         var uninstExe = AppPaths.UninstExePath;
         if (!File.Exists(uninstExe))
         {
             var legacy = Path.Combine(workDir, "Uninst.exe");
-            if (File.Exists(legacy)) uninstExe = legacy;
-            else uninstExe = null;
+            uninstExe = File.Exists(legacy) ? legacy : null;
         }
 
-        if (uninstExe is not null && File.Exists(uninstExe))
+        var uninstLnk = Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk");
+        if (uninstExe is not null)
         {
             CreateShortcut(
-                Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"),
+                uninstLnk,
                 uninstExe,
                 arguments: null,
                 workDir,
@@ -109,13 +112,8 @@ internal static class ShortcutHelper
         }
         else
         {
-            CreateShortcut(
-                Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"),
-                exePath,
-                arguments: "--uninstall",
-                workDir,
-                description: "卸载 " + AppPaths.ProductDisplayName,
-                iconPath: icon);
+            TryDelete(uninstLnk);
+            AppLog.Info("未找到 Kachina 卸载程序（便携/开发目录）— 不创建卸载快捷方式");
         }
     }
 

@@ -26,7 +26,7 @@ import { GuidePage } from './pages/GuidePage';
 import { LogsPage } from './pages/LogsPage';
 import { SettingsPage } from './pages/SettingsPage';
 
-type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
+type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | null;
 type LaunchState = 'idle' | 'launching' | 'running';
 const PAGE_NAMES: Record<Page, string> = { overview: '游戏概览', settings: '游戏设置', logs: '运行日志', guide: '使用指南', about: '关于项目' };
 const NAV_ITEMS = [{ page: 'overview', label: '游戏概览', icon: LayoutGrid }, { page: 'settings', label: '游戏设置', icon: SlidersHorizontal }, { page: 'logs', label: '运行日志', icon: SquareTerminal }] as const;
@@ -505,10 +505,10 @@ export default function App() {
                 )}
                 <div className="overview-tip"><ShieldCheck size={16} strokeWidth={1.6} /><p><span>冒险小贴士</span>请先关闭游戏内垂直同步（V-Sync）。第三方工具存在使用风险，使用前请阅读<button onClick={() => setModal('safety')}>用户协议<ArrowUpRight size={12} /></button></p><button className="icon-button tip-help" onClick={() => navigate('guide')} aria-label="查看使用帮助"><CircleHelp size={16} /></button></div>
               </>}
-              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} />}
+              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} />}
               {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} onOpenFolder={native ? () => { void nativeInvoke('openLogFolder').catch(() => undefined); } : undefined} />}
               {page === 'guide' && <GuidePage navigate={navigate} onSafety={() => setModal('safety')} isNative={native} />}
-              {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} isNative={native} onUninstall={native ? () => setModal('uninstall') : undefined} />}
+              {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} />}
             </motion.main>
           </AnimatePresence>
 
@@ -572,7 +572,6 @@ export default function App() {
             notify('已恢复默认设置');
           }} />}
           {modal === 'clearLogs' && <ConfirmDialog key="clear-logs" title="清空日志列表？" description={`当前列表中的 ${logs.length} 条记录将从界面清除（桌面版不会删除磁盘日志文件）。`} action="清空列表" onClose={() => setModal(null)} onConfirm={() => { setLogs([]); setModal(null); notify('日志列表已清空'); }} />}
-          {modal === 'uninstall' && <ConfirmDialog key="uninstall" title="卸载并清理？" description="将启动官方卸载程序，清理安装文件与本软件配置/日志。此操作不可自动撤销。" action="开始卸载" onClose={() => setModal(null)} onConfirm={async () => { setModal(null); await nativeInvoke('uninstall'); }} />}
         </AnimatePresence>
       </div>
     </MotionConfig>

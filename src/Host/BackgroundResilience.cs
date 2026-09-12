@@ -8,7 +8,6 @@ namespace GenshinFpsUnlocker.Host;
 /// - 进程优先级 AboveNormal（不过度抬到 High/Realtime，避免显眼）
 /// - 关闭节电执行节流（Win10 1709+ / Win11 效率模式相关 power throttling，失败则忽略）
 /// - 请求系统执行状态，减少被休眠掐断
-/// - 可选：为安装目录添加 Defender 排除（需管理员，尽力而为）
 /// 不使用“关键进程”标志（崩溃会导致蓝屏，不安全）。
 /// </summary>
 internal static class BackgroundResilience
@@ -107,49 +106,4 @@ internal static class BackgroundResilience
         catch { /* ignore */ }
     }
 
-    /// <summary>
-    /// 尝试把安装目录与数据目录加入 Windows Defender 排除列表。
-    /// 需要管理员；失败仅记日志，不影响主流程。
-    /// </summary>
-    public static bool TryAddDefenderExclusions(out string message)
-    {
-        message = string.Empty;
-        try
-        {
-            var install = AppPaths.ExeDirectory;
-            var data = AppPaths.DataDirectory;
-            var ps =
-                $"Add-MpPreference -ExclusionPath '{install.Replace("'", "''")}' -ErrorAction SilentlyContinue; " +
-                $"Add-MpPreference -ExclusionPath '{data.Replace("'", "''")}' -ErrorAction SilentlyContinue";
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{ps}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var p = Process.Start(psi);
-            if (p is null)
-            {
-                message = "无法启动 PowerShell 添加 Defender 排除";
-                return false;
-            }
-
-            p.WaitForExit(15000);
-            message = p.ExitCode == 0
-                ? $"已尝试添加 Defender 排除: {install} ; {data}"
-                : $"Defender 排除可能失败 (exit={p.ExitCode})，可手动添加排除目录";
-            AppLog.Info(message);
-            return p.ExitCode == 0;
-        }
-        catch (Exception ex)
-        {
-            message = "Defender 排除异常: " + ex.Message;
-            AppLog.Warn(message);
-            return false;
-        }
-    }
 }

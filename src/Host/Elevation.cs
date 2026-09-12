@@ -4,8 +4,9 @@ using System.Security.Principal;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 权限辅助：日常运行 asInvoker（无 UAC）；安装/卸载与「用户主动」提权解锁时 runas。
+/// 权限辅助：日常运行 asInvoker（无 UAC）；仅「用户主动以管理员身份重启」时 runas。
 /// 开机自启路径绝不可触发 UAC 弹窗。
+/// 安装 / 卸载由 Kachina 安装器自行处理提权，宿主不再有任何安装用途的提权路径。
 /// </summary>
 internal static class Elevation
 {
@@ -55,34 +56,6 @@ internal static class Elevation
             AppLog.Warn("提权启动失败: " + ex.Message);
             return false;
         }
-    }
-
-    /// <summary>
-    /// 确保以管理员执行指定动作；若需提权则重启并返回 false（调用方应退出）。
-    /// alreadyElevatedOrContinue 为 true 表示当前已是管理员，可继续执行。
-    /// </summary>
-    public static bool EnsureAdminOrRelaunch(string arguments, bool quiet, out bool relaunched)
-    {
-        relaunched = false;
-        if (IsAdministrator())
-            return true;
-
-        if (!TryRelaunchElevated(arguments, out var err))
-        {
-            if (!quiet)
-            {
-                MessageBox.Show(
-                    "此操作需要管理员权限（写入 Program Files / 注册表等）。\n" +
-                    "您取消了授权，或系统拒绝了提权请求。\n\n" + err,
-                    AppPaths.ProductDisplayName,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-            }
-            return false;
-        }
-
-        relaunched = true;
-        return false; // 当前进程应退出，由提权实例继续
     }
 
     /// <summary>

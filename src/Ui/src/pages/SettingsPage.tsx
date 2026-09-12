@@ -19,8 +19,8 @@ function NumberSetting({ title, description, value, min, max, unit, onChange }: 
   return <div className="setting-row"><div><span className="row-title">{title}</span><p className={error ? 'field-error' : ''}>{error ? `请输入 ${min} 至 ${max} 之间的整数` : description}</p></div><div className="number-setting"><input aria-label={title} type="number" min={min} max={max} value={draft} aria-invalid={error} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{unit}</span></div></div>;
 }
 
-export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative, isElevated, onRestartElevated, elevating }: {
-  config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; onUninstall?: () => void; busy: boolean; isNative?: boolean;
+export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, busy, isNative, isElevated, onRestartElevated, elevating }: {
+  config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; busy: boolean; isNative?: boolean;
   isElevated?: boolean; onRestartElevated?: () => void; elevating?: boolean;
 }) {
   const [tab, setTab] = useState<'game' | 'behavior' | 'advanced'>('game');
@@ -98,7 +98,7 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
         <section className="control-panel config-tools"><div className="section-intro"><h2>配置管理</h2><p>在不同设备间迁移偏好，或保留一份熟悉的配置。</p></div><div className="config-tool-buttons"><button className="button button-secondary" onClick={onImport} disabled={busy}><Upload size={16} />导入配置</button><button className="button button-secondary" onClick={onExport}><Download size={16} />导出配置</button><button className="button button-quiet reset-button" onClick={onReset} disabled={busy}><RotateCcw size={15} />恢复默认</button></div><p className="input-help">{busy ? '请稍候再导入或恢复配置。导出仍可正常使用。' : isNative ? '导入/导出与桌面版 config.json 字段兼容。' : '导出为原项目兼容的 config.json。'}</p></section>
       </>}
       {isNative
-        ? <div className="settings-native-note"><Info size={16} /><p>当前已连接桌面服务。配置写入 %LocalAppData%\GenshinFpsUnlocker\config.json；自启、托盘与注入由宿主进程管理。{onUninstall && <> <button className="text-button" onClick={onUninstall}>卸载本软件</button></>}</p></div>
+        ? <div className="settings-native-note"><Info size={16} /><p>当前已连接桌面服务。配置写入 %LocalAppData%\GenshinFpsUnlocker\config.json；自启、托盘与注入由宿主进程管理。卸载请运行安装目录下的 GenshinFpsUnlocker.uninst.exe，或在 Windows「设置 → 应用 → 安装的应用」中卸载。</p></div>
         : <div className="settings-native-note"><Info size={16} /><p>当前为网页预览，所有更改保存在此浏览器中。Windows 自启、托盘与进程检测等系统功能，需要连接桌面服务后生效。</p></div>}
     </div>
   </>;

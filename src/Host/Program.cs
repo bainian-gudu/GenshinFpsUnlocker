@@ -1,14 +1,25 @@
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 进程入口：单实例、安装/卸载分支、运行时检测、启动监视服务与主窗体。
+/// 进程入口：单实例、运行时检测、启动监视服务与主窗体。
 /// 清单为 asInvoker：非管理员日常启动不弹 UAC，必须能显示主窗 + 托盘。
-/// 仅 --install / --uninstall 在需要时主动提权。
+///
+/// 安装 / 卸载只有一种实现：Kachina 安装器（installer/ 打包出的
+/// GenshinFpsUnlocker.Install.{ver}.exe，安装目录内自带 *.uninst.exe / *.update.exe）。
+/// 宿主自身不再提供 --install / --uninstall、Uninstall.cmd 垫片、自写 ARP 卸载项、
+/// 内置白名单删目录等任何「第二种安装卸载方式」；本进程也不会为安装目的主动提权。
 /// </summary>
 internal static class Program
 {
     /// <summary>当前持有的单实例互斥；提权重启前需释放。</summary>
     private static SingleInstance? _activeInstance;
+
+    /// <summary>
+    /// 旧版本内置安装逻辑写下的安装标记文件名。
+    /// 内置安装/卸载已移除（统一走 Kachina），这里仅用于向后兼容地识别历史安装副本，
+    /// 不再创建该文件。
+    /// </summary>
+    private const string LegacyInstallMarkerFileName = "GenshinFpsUnlocker.install";
 
     /// <summary>释放单实例锁，供「以管理员重新启动」在拉起新进程前调用。</summary>
     internal static void ReleaseSingleInstance()
@@ -83,8 +94,6 @@ internal static class Program
         ApplicationConfiguration.Initialize();
 
         var quiet = args.Any(a => a is "--quiet" or "/S" or "/s");
-        var isUninstall = args.Any(a => a is "--uninstall" or "/uninstall");
-        var isInstall = args.Any(a => a is "--install" or "/install");
         var isAutostart = args.Any(a => a is "--autostart");
 
         AppConfig? earlyConfig = null;
@@ -119,37 +128,26 @@ internal static class Program
             return;
         }
 
-        // ---- 卸载 ----
-        if (isUninstall)
+        // ---- 遗留的安装/卸载命令行 ----
+        // 安装卸载统一由 Kachina 完成（安装目录内的 GenshinFpsUnlocker.uninst.exe，
+        // 或「设置 → 应用和功能」里由 Kachina 注册的卸载项）。
+        // 这里只负责把老快捷方式/老命令行的调用引导过去，绝不自己动文件系统。
+        if (args.Any(a => a is "--install" or "/install" or "--uninstall" or "/uninstall"))
         {
-            AppLog.Info("收到卸载请求");
-            if (InstallUninstall.TryLaunchExternalUninstaller(quiet))
-                return;
-
-            if (!Elevation.IsAdministrator())
+            AppLog.Warn("已移除内置安装/卸载入口，忽略参数: " + string.Join(' ', args));
+            if (!quiet)
             {
-                var argLine = string.Join(' ', args.Select(QuoteIfNeeded));
-                if (!Elevation.EnsureAdminOrRelaunch(argLine, quiet, out var relaunched) && relaunched)
-                {
-                    AppLog.Info("已拉起提权卸载实例，本进程退出");
-                    return;
-                }
-                if (!Elevation.IsAdministrator())
-                    AppLog.Warn("无管理员权限，尝试有限卸载（用户数据/HKCU/快捷方式）");
+                MessageBox.Show(
+                    "本程序已不再自带安装 / 卸载功能。\n\n" +
+                    "• 卸载：运行安装目录下的 GenshinFpsUnlocker.uninst.exe，\n" +
+                    "  或在「设置 → 应用 → 安装的应用」里卸载「原神帧率解锁」。\n" +
+                    "• 安装 / 更新：使用 GenshinFpsUnlocker.Install.{版本}.exe，\n" +
+                    "  或安装目录下的 GenshinFpsUnlocker.update.exe。",
+                    AppPaths.ProductDisplayName,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
             }
-            InstallUninstall.RunUninstall(quiet);
             return;
-        }
-
-        // ---- 安装收尾按需提权 ----
-        if (isInstall && !Elevation.IsAdministrator())
-        {
-            var argLine = string.Join(' ', args.Select(QuoteIfNeeded));
-            if (!Elevation.EnsureAdminOrRelaunch(argLine, quiet, out var relaunched) && relaunched)
-            {
-                AppLog.Info("已拉起提权安装实例，本进程退出");
-                return;
-            }
         }
 
         // ---- 单实例：Global 失败自动 Local（非管理员关键路径）----
@@ -182,38 +180,6 @@ internal static class Program
             AppLog.Error("运行时前置条件不满足 — 退出" +
                          (isAutostart ? "（autostart launch：.NET Desktop Runtime / WebView2 缺失或损坏）" : ""));
             return;
-        }
-
-        // ---- 安装收尾 ----
-        if (isInstall)
-        {
-            AppLog.Info("安装收尾: 注册 ARP、快捷方式、Defender");
-            try { InstallUninstall.WriteInstallMarker(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
-            // 先生成 Uninstall.cmd（ARP 的 UninstallString 优先指向它，卸载时先清理自启/数据/快捷方式）
-            try { InstallUninstall.WriteUninstallCmdShim(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
-            try { InstallUninstall.RegisterUninstallInfo(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
-            try { ShortcutHelper.CreateAll(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
-            if (Elevation.IsAdministrator())
-            {
-                BackgroundResilience.TryAddDefenderExclusions(out var defMsg);
-                AppLog.Info(defMsg);
-            }
-
-            if (!quiet)
-            {
-                MessageBox.Show(
-                    $"安装完成。\n\n安装目录：\n{AppPaths.ExeDirectory}\n\n配置目录：\n{AppPaths.DataDirectory}\n\n" +
-                    $"日志目录：\n{AppPaths.LogDirectory}\n\n日常运行无需管理员，不会弹出 UAC。",
-                    AppPaths.ProductDisplayName,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-            }
-
-            if (args.Any(a => a is "--no-run"))
-            {
-                AppLog.Info("install --no-run，退出");
-                return;
-            }
         }
 
         if (!Elevation.IsAdministrator())
@@ -265,14 +231,21 @@ internal static class Program
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
         AppLog.Info($"autostart={config.AutoStartWithWindows} cmd={Autostart.GetCommand()}");
 
-        // 已安装副本：无管理员时写 PF/HKLM 会失败，全部吞掉
-        if (AppPaths.IsInstalledUnderProgramFiles()
-            || PathUtil.ExistsFile(Path.Combine(AppPaths.ExeDirectory, InstallUninstall.InstallMarkerFileName)))
+        // 快捷方式维护：Kachina 安装时会建快捷方式，但用的是英文 appName
+        // （GenshinFpsUnlocker.lnk），这里每次启动自愈一次——统一成中文显示名、
+        // 清理英文重复项、exe 路径漂移后重新指向当前路径。
+        // 标准用户写不了公共目录时 ShortcutHelper 内部会自动退回用户目录。
+        //
+        // 只对「Kachina 装出来的副本」做，便携/开发目录不要往桌面塞图标。
+        // 判据：安装目录里有 Kachina 的 uninst.exe，或位于 Program Files 下，
+        // 或存在旧版本写下的安装标记（向后兼容历史安装）。
+        var isInstalledCopy =
+            PathUtil.ExistsFile(AppPaths.UninstExePath)
+            || AppPaths.IsInstalledUnderProgramFiles()
+            || PathUtil.ExistsFile(Path.Combine(AppPaths.ExeDirectory, LegacyInstallMarkerFileName));
+
+        if (isInstalledCopy)
         {
-            try { InstallUninstall.WriteInstallMarker(); } catch { /* PF 无写权限 */ }
-            try { InstallUninstall.WriteUninstallCmdShim(); } catch { /* 无写权限则保留旧垫片 */ }
-            try { InstallUninstall.RegisterUninstallInfo(); } catch { /* HKLM */ }
-            // 统一中文快捷方式 + 清理 Kachina 英文重复（GenshinFpsUnlocker.lnk）
             try
             {
                 ShortcutHelper.CleanupDuplicateShortcuts();
@@ -306,13 +279,5 @@ internal static class Program
             try { ReleaseSingleInstance(); } catch { /* ignore */ }
             AppLog.Shutdown();
         }
-    }
-
-    private static string QuoteIfNeeded(string a)
-    {
-        if (string.IsNullOrEmpty(a)) return "\"\"";
-        if (a.Contains(' ') || a.Contains('\t'))
-            return "\"" + a.Replace("\"", "\\\"") + "\"";
-        return a;
     }
 }

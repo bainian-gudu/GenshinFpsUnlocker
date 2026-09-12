@@ -4,7 +4,8 @@ namespace GenshinFpsUnlocker.Host;
 /// 标准目录布局约定：
 ///   安装目录：C:\Program Files\GenshinFpsUnlocker\   （应用二进制，专用子目录）
 ///   数据目录：%LocalAppData%\GenshinFpsUnlocker\     （config.json、logs）
-///   安装包：Kachina 生成 Install.exe + 安装目录 *.uninst.exe / *.update.exe
+///   安装/卸载：只有 Kachina 一种（Install.exe + 安装目录 *.uninst.exe / *.update.exe）
+///              宿主自身不提供任何安装/卸载入口，也不写 ARP 卸载注册表
 ///   运行库：安装器可装 .NET Desktop；运行时仍可检测；无 Node/Python 等语言依赖
 /// 所有路径访问尽量经 <see cref="PathUtil"/> 规范化，兼容中文目录。
 /// </summary>
@@ -15,16 +16,6 @@ internal static class AppPaths
 
     /// <summary>面向用户的显示名。</summary>
     public const string ProductDisplayName = "原神帧率解锁";
-
-    /// <summary>发布者（ARP 显示）。</summary>
-    public const string Publisher = "GenshinFpsUnlocker";
-
-    /// <summary>控制面板“卸载程序”注册表键名。</summary>
-    public const string UninstallRegKeyName = "GenshinFpsUnlocker";
-
-    /// <summary>默认安装目录：%ProgramFiles%\GenshinFpsUnlocker。</summary>
-    public static string DefaultInstallDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), ProductName);
 
     /// <summary>当前运行中可执行文件所在目录（规范化）。</summary>
     public static string ExeDirectory
@@ -50,10 +41,7 @@ internal static class AppPaths
     /// <summary>与 Host 同目录的注入 Stub DLL。</summary>
     public static string StubDllPath => Path.Combine(ExeDirectory, "FpsUnlockerStub.dll");
 
-    /// <summary>安装目录下的卸载脚本垫片（双击即可卸载；便携/内置回退）。</summary>
-    public static string UninstallCmdPath => Path.Combine(ExeDirectory, "Uninstall.cmd");
-
-    /// <summary>Kachina 写入的卸载程序（若存在则优先）。</summary>
+    /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");
 
     /// <summary>Kachina 更新器（便携目录可选）。</summary>

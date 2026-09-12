@@ -42,7 +42,7 @@ internal static class AppLog
 
     /// <summary>
     /// 根据配置初始化日志目录、级别与定时刷盘。
-    /// 应在进程启动尽早调用（含 --install / --uninstall 路径）。
+    /// 应在进程启动尽早调用（含 --autostart 静默路径）。
     /// </summary>
     public static void Initialize(AppConfig config)
     {
