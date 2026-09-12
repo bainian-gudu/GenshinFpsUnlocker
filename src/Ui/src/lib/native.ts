@@ -1,5 +1,5 @@
-import type { LogEntry, LogLevel, UnlockerConfig } from './config';
-import { DEFAULT_CONFIG, parseConfig } from './config';
+import type { LogEntry, LogLevel, Page, UnlockerConfig } from './config';
+import { asPage, DEFAULT_CONFIG, parseConfig } from './config';
 
 export type NativeState = {
   config: UnlockerConfig;
@@ -43,6 +43,7 @@ let seq = 0;
 let listenersReady = false;
 const stateListeners = new Set<(state: NativeState) => void>();
 const logListeners = new Set<(entry: LogEntry) => void>();
+const navigateListeners = new Set<(page: Page) => void>();
 
 export function isNativeHost(): boolean {
   return Boolean(window.chrome?.webview) || Boolean(window.genshinNative);
@@ -92,6 +93,13 @@ function ensureListeners() {
     if (data.type === 'log' && data.entry) {
       const entry = normalizeLog(data.entry);
       logListeners.forEach((fn) => fn(entry));
+      return;
+    }
+
+    // 宿主主动切页（窗口进托盘后复位到概览页）；page 非法时 asPage 收敛为 overview
+    if (data.type === 'navigate') {
+      const page = asPage(data.page);
+      navigateListeners.forEach((fn) => fn(page));
     }
   };
 
@@ -136,6 +144,13 @@ export function onNativeLog(listener: (entry: LogEntry) => void): () => void {
   ensureListeners();
   logListeners.add(listener);
   return () => logListeners.delete(listener);
+}
+
+/** 宿主请求切换页面（见 UiBridge.ResetUiPage）。 */
+export function onNativeNavigate(listener: (page: Page) => void): () => void {
+  ensureListeners();
+  navigateListeners.add(listener);
+  return () => navigateListeners.delete(listener);
 }
 
 export function nativeInvoke<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {

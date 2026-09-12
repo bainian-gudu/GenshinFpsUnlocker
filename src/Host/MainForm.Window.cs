@@ -192,6 +192,9 @@ internal sealed partial class MainForm : Form
                         "已在后台运行。左键单击或双击托盘图标可打开主窗口；右键可调整设置。");
                 }
 
+                // 复位界面页签：下次从托盘打开停在「游戏概览」，而不是上次浏览的页面
+                _bridge.ResetUiPage();
+
                 AppLog.Info("window → tray");
             }
             finally

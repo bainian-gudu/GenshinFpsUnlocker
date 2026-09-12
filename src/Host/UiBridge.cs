@@ -65,6 +65,13 @@ internal sealed partial class UiBridge : IDisposable
     }
 
     /// <summary>
+    /// 让 Web UI 回到默认页（游戏概览）。窗口进托盘（最小化 / 关窗）时调用，
+    /// 这样下次从托盘打开主界面不会还停在上次浏览的页面。
+    /// 前端在 native.ts 的 onNativeNavigate 里监听；webview 未就绪时静默跳过。
+    /// </summary>
+    public void ResetUiPage() => Post(new { type = "navigate", page = "overview" });
+
+    /// <summary>
     /// 把一条宿主日志增量推给前端日志页。
     /// 前端（native.ts 的 onNativeLog）早就在监听了，缺的一直是宿主这边的接线：
     /// 旧实现里 PushLog 没有任何调用方，日志页只显示 getBootstrap 拿到的那一批，

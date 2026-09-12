@@ -3,7 +3,9 @@ export const STORAGE_KEY = 'genshin-fps-unlocker.config.v1';
 export const DEMO_GAME_PATH = 'D:\\Games\\Genshin Impact\\Genshin Impact Game\\YuanShen.exe';
 
 export type Theme = 'dark' | 'light';
-export type Page = 'overview' | 'settings' | 'logs' | 'guide' | 'about';
+/** 全部页面 id；顺序即侧栏主导航 + 次级导航的顺序。 */
+export const PAGES = ['overview', 'settings', 'logs', 'guide', 'about'] as const;
+export type Page = (typeof PAGES)[number];
 export type LogLevel = 'Info' | 'Warn' | 'Error' | 'Debug' | 'Trace';
 
 export interface UnlockerConfig {
@@ -164,7 +166,11 @@ export function formatTime(timestamp: string): string {
   return new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false });
 }
 
+/** 把任意来源（地址栏 hash、宿主消息）的值收敛成合法页面，非法一律回概览页。 */
+export function asPage(value: unknown): Page {
+  return (PAGES as readonly string[]).includes(value as string) ? (value as Page) : 'overview';
+}
+
 export function getPage(): Page {
-  const hash = window.location.hash.slice(1);
-  return ['overview', 'settings', 'logs', 'guide', 'about'].includes(hash) ? hash as Page : 'overview';
+  return asPage(window.location.hash.slice(1));
 }

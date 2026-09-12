@@ -5,7 +5,7 @@ import type { ToastItem } from '../components/ui';
 import type { LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
 import { CONFIG_LABELS, DEFAULT_CONFIG, STORAGE_KEY, downloadFile, getPage, loadConfig, makeLog, parseConfig } from '../lib/config';
 import type { NativeState } from '../lib/native';
-import { isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeState } from '../lib/native';
+import { isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeNavigate, onNativeState } from '../lib/native';
 
 export type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
 export type LaunchState = 'idle' | 'launching' | 'running';
@@ -113,6 +113,14 @@ export function useAppState() {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+
+  // 宿主在窗口进托盘（最小化 / 关窗）时发 navigate，把界面复位到「游戏概览」：
+  // 下次从托盘打开主界面不会还停在上次浏览的页面。
+  useEffect(() => {
+    if (!native) return;
+    const offNavigate = onNativeNavigate((next) => navigate(next));
+    return () => { offNavigate(); };
+  }, [native, navigate]);
 
   useEffect(() => {
     if (!sidebarOpen) return;
