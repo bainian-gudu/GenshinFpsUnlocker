@@ -51,6 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+
       # 源码没变就直接复用上次的产物（Rust LTO + build-std + 静态 msquic 冷构建很慢）
       - name: Cache kachina-builder.exe
         if: ${{ !inputs.rebuild_kachina }}
@@ -59,6 +60,22 @@ jobs:
         with:
           path: installer/tools/kachina-builder.exe
           key: kachina-builder-${{ runner.os }}-${{ hashFiles('installer/kachina/**') }}
+
+      # seera-msquic 的静态构建会在
+      #   <repo>\installer\kachina\src-tauri\target\<三元组>\release\build\seera-msquic\<hash>\out\build\
+      #   CMakeFiles\CMakeScratch\TryCompile-*\...\*.tlog
+      # 这种极深路径下写文件，超过 Windows 260 字符上限时 MSBuild 的 FileTracker 会报
+      #   FileTracker : error FTK1011: could not create the new file tracking log file
+      # 两道防线：打开系统长路径支持 + 下面把 cmake 生成器换成 Ninja（不写 .tlog）。
+      - name: Enable Windows long paths
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $key = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+          New-ItemProperty -Path $key -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force |
+            Out-Null
+          "LongPathsEnabled = " + (Get-ItemProperty -Path $key).LongPathsEnabled
 
       - name: Install Rust nightly + rust-src
         if: steps.kachina-cache.outputs.cache-hit != 'true'
@@ -93,11 +110,25 @@ jobs:
           cache: pnpm
           cache-dependency-path: installer/kachina/pnpm-lock.yaml
 
+      # Ninja 生成器不会像 MSBuild 那样自己去 VS 安装目录找 cl.exe，
+      # 必须先把 MSVC 开发环境注入 PATH / INCLUDE / LIB。
+      - name: Add MSVC Developer environment
+        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Build kachina-builder from source
         if: steps.kachina-cache.outputs.cache-hit != 'true'
+        env:
+          # cmake-rs 会读取 CMAKE_GENERATOR；Ninja 绕开 MSBuild 的 FileTracker（FTK1011）
+          CMAKE_GENERATOR: Ninja
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          "CMAKE_GENERATOR = $env:CMAKE_GENERATOR"
+          & cmake --version | Select-Object -First 1
+          & ninja --version
           & .\installer\build-kachina.ps1 -Toolchain $env:RUST_TOOLCHAIN
           if (-not (Test-Path "installer\tools\kachina-builder.exe")) {
             throw "kachina-builder.exe 未生成"
