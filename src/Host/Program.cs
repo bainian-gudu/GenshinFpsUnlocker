@@ -109,9 +109,13 @@ internal static class Program
             $"autostart={isAutostart} user={Environment.UserName} " +
             $"integrity={(Elevation.IsAdministrator() ? "high" : "medium")}");
 
+        // 开机自启（静默）：任何提前退出都必须留下可检索的日志
+        if (isAutostart)
+            AppLog.Info("autostart launch active (silent): 后续任何退出都会记录原因");
+
         if (!OsCompatibility.EnsureOrPrompt(quiet || isAutostart))
         {
-            AppLog.Error("OS 兼容性检查未通过 — 退出");
+            AppLog.Error("OS 兼容性检查未通过 — 退出" + (isAutostart ? "（autostart launch）" : ""));
             return;
         }
 
@@ -152,7 +156,8 @@ internal static class Program
         using var instance = new SingleInstance();
         if (!instance.TryAcquire())
         {
-            AppLog.Warn("已有实例在运行 — 尝试唤醒主实例后退出");
+            AppLog.Warn("已有实例在运行 — 尝试唤醒主实例后退出" +
+                        (isAutostart ? "（autostart launch 放弃二次启动，主实例仍在工作）" : ""));
             // 快捷方式二次点击：唤醒已有进程主窗，不再弹「已在运行」阻塞框
             var signaled = false;
             try { signaled = InstanceWake.TrySignal(); } catch { /* ignore */ }
@@ -174,7 +179,8 @@ internal static class Program
         // ---- 运行时依赖 ----
         if (!RuntimePrerequisite.EnsureOrPrompt(quiet || isAutostart))
         {
-            AppLog.Error("运行时前置条件不满足 — 退出");
+            AppLog.Error("运行时前置条件不满足 — 退出" +
+                         (isAutostart ? "（autostart launch：.NET Desktop Runtime / WebView2 缺失或损坏）" : ""));
             return;
         }
 
@@ -183,8 +189,9 @@ internal static class Program
         {
             AppLog.Info("安装收尾: 注册 ARP、快捷方式、Defender");
             try { InstallUninstall.WriteInstallMarker(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
-            try { InstallUninstall.RegisterUninstallInfo(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
+            // 先生成 Uninstall.cmd（ARP 的 UninstallString 优先指向它，卸载时先清理自启/数据/快捷方式）
             try { InstallUninstall.WriteUninstallCmdShim(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
+            try { InstallUninstall.RegisterUninstallInfo(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
             try { ShortcutHelper.CreateAll(); } catch (Exception ex) { AppLog.Warn(ex.Message); }
             if (Elevation.IsAdministrator())
             {
@@ -252,7 +259,9 @@ internal static class Program
         config.Sanitize();
         AppLog.ApplyConfig(config);
 
-        try { Autostart.SetEnabled(config.AutoStartWithWindows); }
+        // 自启项同步：配置为真 → 指向当前 exe（路径漂移自愈）；
+        // 配置读不到时不删除现有值，避免配置意外丢失导致「重启后自启失败」。
+        try { Autostart.SyncOnStartup(config.AutoStartWithWindows, config.LoadedFromDisk); }
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
         AppLog.Info($"autostart={config.AutoStartWithWindows} cmd={Autostart.GetCommand()}");
 
@@ -261,8 +270,8 @@ internal static class Program
             || PathUtil.ExistsFile(Path.Combine(AppPaths.ExeDirectory, InstallUninstall.InstallMarkerFileName)))
         {
             try { InstallUninstall.WriteInstallMarker(); } catch { /* PF 无写权限 */ }
+            try { InstallUninstall.WriteUninstallCmdShim(); } catch { /* 无写权限则保留旧垫片 */ }
             try { InstallUninstall.RegisterUninstallInfo(); } catch { /* HKLM */ }
-            try { InstallUninstall.WriteUninstallCmdShim(); } catch { /* ignore */ }
             // 统一中文快捷方式 + 清理 Kachina 英文重复（GenshinFpsUnlocker.lnk）
             try
             {

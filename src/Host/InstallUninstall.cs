@@ -92,12 +92,28 @@ internal static partial class InstallUninstall
 
             var exe = AppPaths.ExePath;
             var uninst = FindExternalUninstaller();
-            var uninstallCmd = uninst is not null
-                ? $"\"{uninst}\""
-                : $"\"{exe}\" --uninstall";
-            var quietUninstall = uninst is not null
-                ? $"\"{uninst}\" /S"
-                : $"\"{exe}\" --uninstall --quiet";
+            var shim = AppPaths.UninstallCmdPath;
+            string uninstallCmd;
+            string quietUninstall;
+
+            // 优先 Uninstall.cmd 垫片：先清理自启注册表/用户数据/快捷方式，
+            // 再启动 Kachina 卸载程序（Kachina 本身只删安装目录与 ARP）。
+            // 这样无论走「应用和功能」、开始菜单卸载项还是直接双击，清理行为一致。
+            if (PathUtil.ExistsFile(shim))
+            {
+                uninstallCmd = $"\"{shim}\"";
+                quietUninstall = $"\"{shim}\" /S";
+            }
+            else if (uninst is not null)
+            {
+                uninstallCmd = $"\"{uninst}\"";
+                quietUninstall = $"\"{uninst}\" /S";
+            }
+            else
+            {
+                uninstallCmd = $"\"{exe}\" --uninstall";
+                quietUninstall = $"\"{exe}\" --uninstall --quiet";
+            }
 
             key.SetValue("DisplayName", AppPaths.ProductDisplayName);
             key.SetValue("DisplayIcon", exe);
@@ -118,36 +134,64 @@ internal static partial class InstallUninstall
         }
     }
 
-    /// <summary>生成 Uninstall.cmd 垫片（UTF-8 BOM + chcp 65001，兼容中文路径）。</summary>
+    /// <summary>
+    /// 生成 Uninstall.cmd 垫片（UTF-8 BOM + chcp 65001，兼容中文路径）。
+    /// 先用 PowerShell 清理「安装包管不到的部分」——开机自启注册表值（HKCU Run）、
+    /// 用户数据（%LocalAppData%）、桌面/开始菜单快捷方式（Kachina 只删安装目录与 ARP），
+    /// 再启动安装器配套卸载程序（或内置 --uninstall）。
+    /// 控制面板「应用和功能」的卸载入口（ARP UninstallString）即指向本垫片，
+    /// 保证无论从哪个入口卸载，自启项/数据/快捷方式都会被清掉。
+    /// </summary>
     public static void WriteUninstallCmdShim()
     {
         try
         {
             var cmd = AppPaths.UninstallCmdPath;
             var uninst = FindExternalUninstaller();
-            string body;
-            if (uninst is not null)
-            {
-                body =
-                    "@echo off\r\n" +
-                    "chcp 65001 >nul\r\n" +
-                    "rem 启动安装器配套卸载程序\r\n" +
-                    $"start \"\" \"{uninst}\"\r\n";
-            }
-            else
-            {
-                body =
-                    "@echo off\r\n" +
-                    "chcp 65001 >nul\r\n" +
-                    "rem 由程序生成 — 启动内置卸载逻辑\r\n" +
-                    $"\"{AppPaths.ExePath}\" --uninstall\r\n";
-            }
+            var launch = uninst is not null
+                ? $"start \"\" \"{uninst}\" %*\r\n"
+                : $"\"{AppPaths.ExePath}\" --uninstall %*\r\n";
+
+            // 单行 PowerShell：只用单引号，且不含 cmd 特殊字符（% & ^ | < >），
+            // 可直接嵌入 cmd 双引号命令行，无需转义
+            var ps = BuildUninstallCleanupPs();
+
+            var body =
+                "@echo off\r\n" +
+                "chcp 65001 >nul\r\n" +
+                "rem 由程序生成 — 先清理自启/用户数据/快捷方式，再启动卸载程序\r\n" +
+                $"powershell -NoProfile -ExecutionPolicy Bypass -Command \"{ps}\"\r\n" +
+                launch;
             File.WriteAllText(cmd, body, new UTF8Encoding(true));
+            AppLog.Debug("Uninstall.cmd shim written: " + cmd);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            AppLog.Warn("write Uninstall.cmd: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 卸载前清理脚本（PowerShell，无 .NET 依赖）：
+    /// 1) HKCU\...\Run 下本产品自启值（精确值名）
+    /// 2) %LocalAppData%\GenshinFpsUnlocker（配置/日志/WebView2 数据）
+    /// 3) 公共+用户桌面与开始菜单中本产品相关 .lnk / 目录
+    /// </summary>
+    internal static string BuildUninstallCleanupPs()
+    {
+        return string.Join(";",
+            "$ErrorActionPreference='SilentlyContinue'",
+            "$runKey='HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'",
+            "if (Test-Path $runKey) { Remove-ItemProperty -Path $runKey -Name 'GenshinFpsUnlocker' }",
+            "$data=Join-Path $env:LOCALAPPDATA 'GenshinFpsUnlocker'",
+            "if (Test-Path -LiteralPath $data) { Remove-Item -LiteralPath $data -Recurse -Force }",
+            "$lnkNames=@('" + AppPaths.ProductDisplayName + ".lnk','" + AppPaths.ProductName + ".lnk','"
+                + AppPaths.ProductName + ".exe.lnk','Genshin FPS Unlocker.lnk')",
+            "$desks=@(Join-Path $env:PUBLIC 'Desktop',Join-Path $env:USERPROFILE 'Desktop')",
+            "foreach ($d in $desks) { foreach ($n in $lnkNames) { $p=Join-Path $d $n; if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force } } }",
+            "$menuRoot='Microsoft\\Windows\\Start Menu\\Programs\\'" + AppPaths.ProductName,
+            "$menus=@(Join-Path $env:ProgramData $menuRoot,Join-Path $env:APPDATA $menuRoot)",
+            "foreach ($m in $menus) { if (Test-Path -LiteralPath $m) { Remove-Item -LiteralPath $m -Recurse -Force } }");
     }
 
     /// <summary>
@@ -211,8 +255,10 @@ internal static partial class InstallUninstall
         try
         {
             AppLog.Info("launch external uninstaller: " + uninst);
-            // 先尽量清理本软件用户数据/自启（官方 uninst 主要负责安装目录 + ARP）
+            // 先尽量清理本软件用户数据/自启/快捷方式（官方 uninst 只负责安装目录 + ARP）
             try { Autostart.SetEnabled(false); } catch { /* ignore */ }
+            try { ShortcutHelper.RemoveCreatedShortcuts(); }
+            catch (Exception ex) { AppLog.Warn("pre-uninst shortcuts: " + ex.Message); }
             try
             {
                 if (TryGetSafeDataDirectory(out var data) && PathUtil.ExistsDir(data))

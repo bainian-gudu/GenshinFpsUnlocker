@@ -50,11 +50,26 @@ internal static class ShortcutHelper
     /// <summary>
     /// 开始菜单：仅「原神帧率解锁」主项 + 卸载。
     /// 文件夹名仍用 ProductName（与安装目录/注册表一致）；.lnk 文件名为中文显示名。
+    /// 位置策略：公共（所有用户）开始菜单若已有本产品目录即为规范位置——
+    /// 即使当前进程（标准用户）无写权限，也不在用户开始菜单再建一份，
+    /// 避免开始菜单出现两个一模一样条目。
     /// </summary>
     public static void CreateStartMenuShortcuts(string exePath, string workDir)
     {
-        var programsRoot = GetProgramsRoot();
-        var dir = Path.Combine(programsRoot, AppPaths.ProductName);
+        var (root, writable) = PickProgramsRoot();
+        var dir = Path.Combine(root, AppPaths.ProductName);
+        var otherDir = Path.Combine(OtherProgramsRoot(root), AppPaths.ProductName);
+
+        // 另一侧（用户/公共）的历史重复项一律清理
+        CleanupOtherStartMenuDir(otherDir);
+
+        if (!writable)
+        {
+            AppLog.Info("公共开始菜单已有 " + AppPaths.ProductName
+                        + "，当前进程无写权限 — 保留公共项，不写用户开始菜单");
+            return;
+        }
+
         Directory.CreateDirectory(dir);
 
         // 清同目录下英文主快捷方式 / 错误命名
@@ -104,63 +119,77 @@ internal static class ShortcutHelper
         }
     }
 
-    /// <summary>桌面仅保留一个中文主快捷方式（有图标）。</summary>
+    /// <summary>
+    /// 桌面仅保留一个中文主快捷方式（有图标）。
+    /// 公共桌面（C:\Users\Public\Desktop，所有用户桌面可见）若已有本快捷方式，
+    /// 即为规范位置——绝不在用户桌面再写第二份（历史上「公共+用户」双写
+    /// 导致桌面出现两个一模一样图标，且每次启动都会重建）；
+    /// 仅当公共桌面没有、且当前进程写不了公共桌面时，才写用户桌面。
+    /// </summary>
     public static void CreateDesktopShortcut(string exePath, string workDir)
     {
         var icon = ResolveIconPath(exePath, workDir);
-        var written = false;
-        // 优先公共桌面（安装器常写这里），失败再写用户桌面；避免同一用户桌面出现多个
-        foreach (var desktop in DesktopRoots())
+        const string desc = " — 自定义 FPS · 后台注入";
+
+        var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        var user = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+
+        // 两侧英文命名历史残留（Kachina 默认名等）一律清理
+        CleanDesktopAliases(common);
+        CleanDesktopAliases(user);
+
+        var commonLnk = string.IsNullOrEmpty(common) ? null : Path.Combine(common, AppPaths.ProductDisplayName + ".lnk");
+        var userLnk = string.IsNullOrEmpty(user) ? null : Path.Combine(user, AppPaths.ProductDisplayName + ".lnk");
+
+        // 1) 公共桌面已有 → 规范位置：移除用户桌面第二份，管理员则刷新目标
+        if (commonLnk is not null && PathUtil.ExistsFile(commonLnk))
         {
-            if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop)) continue;
-
-            TryDelete(Path.Combine(desktop, AppPaths.ProductName + ".lnk"));
-            TryDelete(Path.Combine(desktop, AppPaths.ProductName + ".exe.lnk"));
-            TryDelete(Path.Combine(desktop, "Genshin FPS Unlocker.lnk"));
-
-            var dest = Path.Combine(desktop, AppPaths.ProductDisplayName + ".lnk");
-            try
+            if (userLnk is not null) TryDelete(userLnk);
+            if (CanWriteDir(common))
             {
-                CreateShortcut(
-                    dest,
-                    exePath,
-                    arguments: null,
-                    workDir,
-                    description: AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
-                    iconPath: icon);
-                written = true;
-                AppLog.Info("桌面快捷方式 → " + dest);
-                // 已成功写公共桌面时，仍清理用户桌面上的英文重复，但不再强制再写第二份中文
-                // 若公共与用户都需要一份中文（多用户），仅当尚未成功时继续
-                if (desktop == Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory))
-                {
-                    // 清理用户桌面英文，并同步一份中文（覆盖），保证当前用户可见
-                    var userDesk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                    if (!string.IsNullOrEmpty(userDesk) && Directory.Exists(userDesk)
-                        && !string.Equals(userDesk, desktop, StringComparison.OrdinalIgnoreCase))
-                    {
-                        TryDelete(Path.Combine(userDesk, AppPaths.ProductName + ".lnk"));
-                        TryDelete(Path.Combine(userDesk, AppPaths.ProductName + ".exe.lnk"));
-                        try
-                        {
-                            CreateShortcut(
-                                Path.Combine(userDesk, AppPaths.ProductDisplayName + ".lnk"),
-                                exePath, null, workDir,
-                                AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
-                                icon);
-                        }
-                        catch (Exception ex) { AppLog.Debug("user desktop lnk: " + ex.Message); }
-                    }
-                    break;
-                }
+                CreateShortcut(commonLnk, exePath, null, workDir,
+                    AppPaths.ProductDisplayName + desc, icon);
+                AppLog.Info("桌面快捷方式（公共，规范）→ " + commonLnk);
             }
-            catch (Exception ex)
+            else
             {
-                AppLog.Warn("写桌面快捷方式失败 " + desktop + ": " + ex.Message);
+                AppLog.Debug("公共桌面快捷方式已存在，当前进程无写权限 — 保留，不写用户桌面");
             }
+            return;
         }
-        if (!written)
-            throw new IOException("无法写入任何桌面目录的快捷方式");
+
+        // 2) 公共桌面没有且可写（管理员）→ 写公共桌面，并移除用户桌面旧副本
+        if (!string.IsNullOrEmpty(common) && Directory.Exists(common) && CanWriteDir(common))
+        {
+            CreateShortcut(commonLnk!, exePath, null, workDir,
+                AppPaths.ProductDisplayName + desc, icon);
+            if (userLnk is not null) TryDelete(userLnk);
+            AppLog.Info("桌面快捷方式（公共）→ " + commonLnk);
+            return;
+        }
+
+        // 3) 标准用户 → 只写用户桌面一份
+        if (userLnk is not null)
+        {
+            CreateShortcut(userLnk, exePath, null, workDir,
+                AppPaths.ProductDisplayName + desc, icon);
+            AppLog.Info("桌面快捷方式（用户）→ " + userLnk);
+            return;
+        }
+
+        throw new IOException("无法写入任何桌面目录的快捷方式");
+    }
+
+    private static void CleanDesktopAliases(string? desktop)
+    {
+        if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop)) return;
+        foreach (var name in new[]
+                 {
+                     AppPaths.ProductName + ".lnk",
+                     AppPaths.ProductName + ".exe.lnk",
+                     "Genshin FPS Unlocker.lnk",
+                 })
+            TryDelete(Path.Combine(desktop, name));
     }
 
     /// <summary>
@@ -303,24 +332,79 @@ internal static class ShortcutHelper
         return PathUtil.Normalize(exePath);
     }
 
-    private static string GetProgramsRoot()
+    /// <summary>
+    /// 开始菜单根目录选择：公共（所有用户）开始菜单已有本产品目录 → 视为规范位置
+    /// （即便当前进程无写权限，也不在用户侧再建一份）；否则可写公共用公共，再退回用户侧。
+    /// </summary>
+    private static (string root, bool writable) PickProgramsRoot()
     {
+        var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms);
+        var user = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+
+        if (!string.IsNullOrEmpty(common))
+        {
+            var commonDir = Path.Combine(common, AppPaths.ProductName);
+            if (Directory.Exists(commonDir))
+                return (common, CanWriteDir(commonDir));
+
+            try
+            {
+                Directory.CreateDirectory(commonDir);
+                return (common, true);
+            }
+            catch
+            {
+                // 无管理员权限写公共目录时回退
+            }
+        }
+
+        return (user, true);
+    }
+
+    private static string OtherProgramsRoot(string root)
+    {
+        var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms);
+        return string.Equals(root, common, StringComparison.OrdinalIgnoreCase)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.Programs)
+            : common;
+    }
+
+    /// <summary>清理「另一侧」开始菜单目录（历史双写 / 英文命名残留）。</summary>
+    private static void CleanupOtherStartMenuDir(string? dir)
+    {
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+        foreach (var name in new[]
+                 {
+                     AppPaths.ProductName + ".lnk",
+                     AppPaths.ProductName + ".exe.lnk",
+                     AppPaths.ProductDisplayName + ".lnk",
+                     "卸载 " + AppPaths.ProductDisplayName + ".lnk",
+                     "打开日志目录.lnk",
+                 })
+        {
+            try
+            {
+                if (File.Exists(Path.Combine(dir, name))) File.Delete(Path.Combine(dir, name));
+            }
+            catch (Exception ex) { AppLog.Debug("delete other start menu lnk " + name + ": " + ex.Message); }
+        }
+    }
+
+    /// <summary>探测目录可写（写临时文件后删除）。</summary>
+    private static bool CanWriteDir(string? dir)
+    {
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return false;
         try
         {
-            var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms);
-            if (!string.IsNullOrEmpty(common))
-            {
-                var testDir = Path.Combine(common, AppPaths.ProductName);
-                Directory.CreateDirectory(testDir);
-                return common;
-            }
+            var probe = Path.Combine(dir, ".gfu_write_test");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return true;
         }
         catch
         {
-            // 无管理员权限写公共目录时回退
+            return false;
         }
-
-        return Environment.GetFolderPath(Environment.SpecialFolder.Programs);
     }
 
     private static void TryDelete(string path)

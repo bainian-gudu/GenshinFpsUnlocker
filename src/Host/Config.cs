@@ -96,6 +96,14 @@ internal sealed class AppConfig
     [JsonIgnore]
     public static string ConfigPath => AppPaths.ConfigPath;
 
+    /// <summary>
+    /// 本实例是否成功反序列化自磁盘配置文件。
+    /// false = 走的是默认值（文件缺失/残损），调用方不得把默认值当成
+    /// 「用户明确关闭了某项」去执行破坏性同步（例如删除开机自启注册表项）。
+    /// </summary>
+    [JsonIgnore]
+    public bool LoadedFromDisk { get; internal set; }
+
     [JsonIgnore]
     private static string BackupPath => ConfigPath + ".bak";
 
@@ -138,6 +146,7 @@ internal sealed class AppConfig
                     if (cfg is null) continue;
 
                     cfg.Sanitize();
+                    cfg.LoadedFromDisk = true;
                     AppLog.Info($"config loaded from {path}");
 
                     // 若是从备份/临时恢复，立刻写回主路径巩固

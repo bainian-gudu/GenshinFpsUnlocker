@@ -17,7 +17,7 @@
   "description": "自定义 FPS · 后台注入 · 托盘设置",
   "windowTitle": "原神帧率解锁 安装程序",
   "ignoreFolderPath": [],
-  "userDataPath": [],
+  "userDataPath": ["%LOCALAPPDATA%/GenshinFpsUnlocker"],
   "extraUninstallPath": [],
   "uacStrategy": "prefer-admin",
   "runtimes": [
