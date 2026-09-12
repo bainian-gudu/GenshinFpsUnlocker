@@ -41,6 +41,20 @@ $BuiltBuilder  = Join-Path $ReleaseDir "kachina-builder.exe"
 function Step([string]$msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Ok([string]$msg)   { Write-Host "    $msg" -ForegroundColor Green }
 
+# 找出比 $reference（现有 builder）更新的 kachina 源码文件；没有则返回 $null。
+# 用来避免「改了 installer\kachina 里的源码，却仍在用旧的 kachina-builder.exe」。
+# 只看源码，跳过依赖与构建产物目录。
+function Get-NewerKachinaSource([string]$reference) {
+    if (-not (Test-Path $reference)) { return $null }
+    $refTime = (Get-Item $reference).LastWriteTimeUtc
+    # 分隔符两种都认：脚本只在 Windows 上跑，但这样便于在别处单测
+    $skip = '[\\/](node_modules|dist|target|gen|\.cache)([\\/]|$)'
+    return Get-ChildItem -Path $KachinaDir -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch $skip -and $_.LastWriteTimeUtc -gt $refTime } |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
 function Require([string]$name, [string]$hint) {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue
     if (-not $cmd) { throw "缺少 $name。$hint" }
@@ -56,8 +70,13 @@ if (-not (Test-Path (Join-Path $KachinaDir "package.json"))) {
 }
 
 if ((Test-Path $BuilderOut) -and -not $Force) {
-    Ok("已存在 $BuilderOut（用 -Force 重新构建）")
-    return $BuilderOut
+    $newer = Get-NewerKachinaSource $BuilderOut
+    if (-not $newer) {
+        Ok("已存在且比源码新：$BuilderOut（用 -Force 强制重建）")
+        return $BuilderOut
+    }
+    Step "kachina 源码比现有 builder 新，需要重建"
+    Write-Host "    触发文件：$newer" -ForegroundColor DarkGray
 }
 
 New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null

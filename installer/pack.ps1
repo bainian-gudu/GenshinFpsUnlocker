@@ -85,11 +85,13 @@ if (-not $Version) {
 Write-Host "==> 版本 $Version / 仓库 $RepoId" -ForegroundColor Cyan
 
 # ------------------------------------------------------------------ kachina-builder
-if (-not (Test-Path $Builder) -or $ForceKachinaBuild) {
-    if ($SkipKachinaBuild) {
+if ($SkipKachinaBuild) {
+    if (-not (Test-Path $Builder)) {
         throw "installer\tools\kachina-builder.exe 不存在，且指定了 -SkipKachinaBuild"
     }
-    Step "构建项目内 kachina-builder（installer\kachina）"
+} else {
+    # 交给 build-kachina.ps1 判断：builder 缺失、或 kachina 源码比它新才重建
+    Step "检查 / 构建项目内 kachina-builder（installer\kachina）"
     $buildArgs = @{}
     if ($ForceKachinaBuild) { $buildArgs.Force = $true }
     & (Join-Path $InstallerDir "build-kachina.ps1") @buildArgs | Out-Null

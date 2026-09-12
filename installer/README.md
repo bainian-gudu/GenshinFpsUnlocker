@@ -31,12 +31,19 @@ installer/
 ```
 
 首次执行会从源码构建 `kachina-builder.exe`（需要 Rust nightly + Node/pnpm + MSVC，
-详见 `kachina/UPSTREAM.md`）。之后 `installer\tools\kachina-builder.exe` 存在就跳过：
+详见 `kachina/UPSTREAM.md`）。之后 `installer\tools\kachina-builder.exe` 存在**且不比
+`installer\kachina\` 里的源码旧**才跳过——改了 kachina 源码（例如本仓库对上游的
+本地修改）会自动触发重建，不会拿着旧 builder 打包：
 
 ```powershell
-.\build.ps1 -SkipKachinaBuild    # 要求 tools\kachina-builder.exe 已存在
+.\build.ps1 -SkipKachinaBuild    # 要求 tools\kachina-builder.exe 已存在，且完全不做检查
 .\build.ps1 -ForceKachinaBuild   # 强制重建
 ```
+
+> 判据是文件修改时间（跳过 `node_modules` / `dist` / `target` / `gen` / `.cache`），
+> 所以 `git checkout` 触碰过的文件可能触发一次多余的重建；确定不需要时用
+> `-SkipKachinaBuild`。CI 里 `build-kachina` 命中缓存时根本不会调用该脚本，
+> 不受影响。
 
 ## 产物
 
