@@ -145,7 +145,8 @@ function Invoke-Native {
         [Parameter(Mandatory)][string]$FilePath,
         [string[]]$Arguments = @(),
         [string]$WorkingDirectory = $RepoRoot,
-        [int]$Tail = 40
+        [int]$Tail = 40,
+        [int]$TimeoutSec = 600
     )
     Write-Info "`$ $(Split-Path -Leaf $FilePath) $($Arguments -join ' ')"
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -157,9 +158,20 @@ function Invoke-Native {
     foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
 
     $proc = [System.Diagnostics.Process]::Start($psi)
-    $stdout = $proc.StandardOutput.ReadToEnd()
-    $stderr = $proc.StandardError.ReadToEnd()
-    $proc.WaitForExit()
+    # stdout / stderr 必须并发读。串行读（先 ReadToEnd stdout 再读 stderr）在 Windows 上
+    # 会死锁：命名管道缓冲区只有 4 KB，而 cargo / dotnet 把进度和诊断都写进 stderr，
+    # 写满后子进程阻塞在 write(stderr)，父进程阻塞在 read(stdout)，两边永远等下去
+    # （Linux 管道缓冲 64 KB，所以同样的代码在 Linux 上「碰巧」不会挂）。
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+        try { $proc.Kill($true) } catch { }
+        throw ("{0} 超过 {1} 秒仍未结束，已终止（疑似卡死或在等交互输入）" -f
+            (Split-Path -Leaf $FilePath), $TimeoutSec)
+    }
+    $stdout = ''; $stderr = ''
+    try { $stdout = $outTask.Result } catch { }
+    try { $stderr = $errTask.Result } catch { }
 
     $all = (($stdout + "`n" + $stderr).Trim())
     if ($all) {

@@ -121,6 +121,28 @@ tools/devcheck/
 - `src/Stub` 的 C++、任何**运行期**行为（注册表真的删没删、UAC、符号链接属性位）
 - `.vue` 里的**类型**错误（SFC 编译只查语法；完整类型检查要 `vue-tsc` + kachina 全部依赖）
 
+## 跨平台的坑（都在 CI 上真实踩过，别再踩一遍）
+
+- **`Invoke-Native` 必须并发读 stdout 和 stderr。** 先 `ReadToEnd()` stdout、再读 stderr
+  的串行写法在 Windows 上会**死锁**：Windows 命名管道缓冲区只有约 4 KB，而
+  `cargo` / `dotnet` 把进度和诊断都写进 stderr，写满后子进程阻塞在 `write(stderr)`、
+  父进程阻塞在 `read(stdout)`，两边永远互等（CI 表现为某一步卡住直到 job 超时）。
+  Linux 管道缓冲是 64 KB，所以同一段代码在本地 Ubuntu 上「碰巧」跑得过 —— 本地复现：
+  让子进程往 stderr 灌 300 KB 再写 stdout，串行版必挂。现在用两个
+  `ReadToEndAsync()` 任务并发读，并带 `-TimeoutSec`（默认 600 秒）兜底：超时就
+  `Kill($true)` 杀整个进程树并抛错，而不是无声地等到 CI 超时。
+- **`Get-Tool` 在 Windows 上要避开 `.ps1` shim。** npm/npx 会同时装 `npm.cmd` 和
+  `npm.ps1`，而 `ProcessStartInfo`（`UseShellExecute=false`）执行不了 `.ps1`，
+  执行策略也可能拦；所以同名时优先 `.cmd`。
+- `$IsWindows` 是 PowerShell 7 才有的自动变量，脚本要兼容 5.1 就用 `$env:OS -eq 'Windows_NT'`。
+- `pwsh -File devcheck.ps1 -Layer a,b` 传进来的是**一个**字符串 `"a,b"`，
+  不能靠 `[string[]]` + `ValidateSet` 拆开；参数声明成 `[string]` 再按 `[,\s]+` 手动 split。
+- Rust 侧 `#[path]` 挂载点：把生成的文件挂到 crate 根（`#[path = "gen/x.rs"]`）再
+  `pub use` 到目标命名空间。挂在内联 `pub mod` 里面时 rustc 会去找
+  `src/<mod>/../gen/x.rs`，中间目录不存在就 ENOENT；而且挂在 crate 根意味着
+  生成文件里的 `super::` 指向 crate 根，不是它「逻辑上」的上游模块路径
+  （所以 `error.rs` 里 `super::sentry` 的桩要放在 crate 根）。
+
 ## 维护约定
 
 - 在 `uninstall.rs` 里新增/重命名安全阀函数 → 同步 `lib/Generate.ps1` 的
