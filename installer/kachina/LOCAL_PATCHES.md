@@ -346,10 +346,14 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 ### `src-tauri/src/installer/uninstall.rs`
 
-- `fn expand_env_vars(input: &str) -> String`：用
-  `windows::Win32::System::Environment::ExpandEnvironmentStringsW` 展开 `%VAR%`
-  （Windows 原生的子串语法 `%VAR:~a,b%` 也一并支持）。展开失败、结果为空或
-  不是绝对路径时**原样返回**，交给后面的安全阀拒绝，不做任何猜测。
+- `fn expand_env_vars(input: &str) -> String`：手写展开 `%NAME%` → `std::env::var(NAME)`。
+  **不调 Win32 API**，为的是同一份实现能在 devcheck 的 Linux harness 上真跑
+  （`ExpandEnvironmentStringsW` 就得再加一个桩，测的就不再是真代码了）。规则：
+  - 未知变量**原样保留** `%NAME%`（宁可少删，也不要拼出半个路径去删）；
+  - `%%` 当一个字面 `%`；末尾落单的 `%` 原样输出（`"100% done"` 不变）；
+  - 不支持 Windows 的子串语法 `%VAR:~a,b%`（会被当成未知变量名保留）；
+  - Windows 上 `std::env::var` 本身大小写不敏感，`%localappdata%` 一样能展开；
+  - 展开后**不做**绝对路径校验，交给后面的 `is_safe_delete_target` 判。
 - `fn expand_path_list(paths: &[String]) -> Vec<String>`：逐项展开 + 大小写不敏感去重。
   在 `run_uninstall` 里对 `to_be_delete`（`userDataPath` + `extraUninstallPath`）
   与 `extra_uninstall_shortcuts` 各调一次，位置**必须在 `is_safe_delete_target` 之前**——
@@ -364,7 +368,8 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
     （公共开始菜单、安装目录本身），本来就已经被上游逻辑处理了；
   - `fn loaded_profile_roots() -> Vec<PathBuf>`：枚举
     `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList` 下的 SID，
-    读 `ProfileImagePath` 后再 `expand_env_vars` 一次，跳过 `*_Classes` / `.DEFAULT` /
+    读 `ProfileImagePath` 后再 `expand_env_vars` 一次（注册表里存的常是
+    `%SystemDrive%\Users\xxx` 这种形式），跳过 `*_Classes` / `.DEFAULT` /
     `S-1-5-18`，只保留绝对路径，用上游已有的 `path_eq` 去重。打不开的配置单元
     （未加载的用户）静默跳过；
   - `fn collect_all_users_cleanup_targets(paths: &[String]) -> Vec<PathBuf>`：把尾巴
@@ -475,8 +480,14 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 > 形状与 `Desktop` 白名单、多用户重放、`%TEMP%` 条目的命中与放行边界），其中
 > `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
 > `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`、
-> `ExpandEnvironmentStringsW`、ProfileList）在 harness 里用桩替代；
+> ProfileList）在 harness 里用桩替代；
 > `clean_installer_temp_files` / `clean_per_user_leftovers` 是纯 IO 包装，只断言其
 > 判定函数（`is_installer_temp_artifact` / `profile_relative_tail`）。
 > 前端侧的 `killRunningAppForUninstall` 只有 `tsc --strict` + SFC 编译 + prettier 把关。
+>
+> 写断言时的一个坑（CI 的 windows job 抓到过）：夹具路径必须用
+> `std::env::temp_dir()` 拼，不能写死 `/tmp/...` —— 后者在 Windows 上**不是**绝对路径
+> （没有盘符前缀），会被 `is_absolute()` / `is_safe_delete_target` 先拦掉，
+> 于是断言测不到它本来想测的那条规则（当时表现为 `expand_path_list` 与
+> 「展开前拦掉、展开后放行」两条在 Windows 上假失败，Linux 上却全过）。
 > 整套逻辑**没有**在 Windows 上实机验证过。

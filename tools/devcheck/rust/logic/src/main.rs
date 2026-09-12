@@ -344,20 +344,26 @@ fn delete_target_cases() {
     println!("[6] 用户数据 / 额外目录安全阀 is_safe_delete_target");
     let lad = std::env::temp_dir().join("kcheck-lad");
     std::env::set_var("LOCALAPPDATA", &lad);
-    std::env::set_var("PUBLIC", "/tmp/kcheck-public");
+    // 一律用平台相关的临时目录拼：写死 /tmp/... 在 Windows 上不是绝对路径
+    // （没有盘符），会被「必须绝对路径」这条先拦掉，断言就测不到它想测的规则。
+    let public = std::env::temp_dir().join("kcheck-public");
+    std::env::set_var("PUBLIC", &public);
     let cases: Vec<(String, bool)> = vec![
         // 正常：产品自己的数据目录
         (p(&lad.join("GenshinFpsUnlocker")), true),
         (p(&lad.join("GenshinFpsUnlocker").join("logs")), true),
         // 受保护根本身
         (p(&lad), false),
-        ("/tmp/kcheck-public".to_string(), false),
+        (p(&public), false),
         // 层级太浅 / 根
         ("/tmp".to_string(), false),
         ("/".to_string(), false),
         // 形状不合法
         ("AppData/Local/X".to_string(), false),
-        ("/tmp/a/../b".to_string(), false),
+        (
+            p(&std::env::temp_dir().join("a").join("..").join("b")),
+            false,
+        ),
         // 系统目录（桩：含 /windows/）
         ("/windows/system32/drivers".to_string(), false),
         // 符号链接（桩：含 REPARSE）
@@ -387,20 +393,30 @@ fn path_eq_cases() {
 
 fn expand_env_cases() {
     println!("[8] %VAR% 展开（配置里的用户数据路径）");
-    std::env::set_var("KCHECK_LAD", "/tmp/kcheck-expand/AppData/Local");
-    let cases: Vec<(&str, &str)> = vec![
+    // 同上：期望值必须是「本平台认得的绝对路径」，否则 is_safe_delete_target
+    // 与断言里的 is_absolute() 在 Windows 上会假失败。
+    let lad = std::env::temp_dir()
+        .join("kcheck-expand")
+        .join("AppData")
+        .join("Local");
+    let lad_str = p(&lad);
+    std::env::set_var("KCHECK_LAD", &lad_str);
+    let cases: Vec<(String, String)> = vec![
         (
-            "%KCHECK_LAD%/GenshinFpsUnlocker",
-            "/tmp/kcheck-expand/AppData/Local/GenshinFpsUnlocker",
+            "%KCHECK_LAD%/GenshinFpsUnlocker".to_string(),
+            format!("{lad_str}/GenshinFpsUnlocker"),
         ),
         // 未知变量原样保留：宁可少删，也不要拼出半个路径去删
-        ("%KCHECK_NOPE%/GenshinFpsUnlocker", "%KCHECK_NOPE%/GenshinFpsUnlocker"),
-        ("C:\\a\\b", "C:\\a\\b"),
-        ("100% done", "100% done"),
-        ("a%%b", "a%b"),
+        (
+            "%KCHECK_NOPE%/GenshinFpsUnlocker".to_string(),
+            "%KCHECK_NOPE%/GenshinFpsUnlocker".to_string(),
+        ),
+        ("C:\\a\\b".to_string(), "C:\\a\\b".to_string()),
+        ("100% done".to_string(), "100% done".to_string()),
+        ("a%%b".to_string(), "a%b".to_string()),
     ];
     for (input, want) in cases {
-        let got = expand_env_vars(input);
+        let got = expand_env_vars(&input);
         check(&format!("{input:?} => {want:?}"), got == want, format!("got {got:?}"));
     }
     // 回归：不展开 %VAR% 的话，安全阀会因为「不是绝对路径」把整条跳过 ——
