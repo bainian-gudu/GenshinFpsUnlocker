@@ -151,8 +151,35 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
   所以离线安装器、`update.exe`、`uninst.exe` 共用同一份协议，运行期不读文件、不联网。
 - 安装界面的「我已阅读并同意 **用户协议**」里，链接可点击，弹窗显示全文；
   弹窗底部「我已阅读并同意」会顺手勾上同意框。
+- **内联了协议正文就必须主动勾选**才能点「安装」（`acceptEula` 初始为 `false`）。
+  没有协议内容时保持上游默认（视为已同意）；`silent` / `non_interactive` 安装、
+  更新、卸载都不受影响。
+- 正文统一过 DOMPurify，且策略比上游更严：禁 `style/form/input/iframe/object/embed/
+  link/meta/base/svg/math` 等标签与 `style/srcdoc/formaction/data/background` 等属性，
+  URI 只放行 `http(s)` / `mailto` / 页内锚点。正文里的链接点击一律被拦截
+  （安装器窗口不能被导航走），`http(s)` 外链交给系统浏览器打开。
 - 读文件失败只打印 warning 并继续打包，此时链接退化为不可点击的纯文字
   （与上游行为一致）。
+
+## 卸载器的删除安全阀（防误删 / 防被利用提权）
+
+卸载器通常以管理员身份运行（`uacStrategy: "prefer-admin"`），而「删什么」来自
+打包配置。为了不让配置笔误或被篡改的安装目录被管理员权限放大，本地补丁加了
+几道安全阀（详见 `kachina/LOCAL_PATCHES.md` 第 3 节）：
+
+| 通道 | 规则 |
+| --- | --- |
+| `extraUninstallRegistry` 删值 | 子键至少两级，不碰任何根键的直属项 |
+| `extraUninstallRegistry` 删整棵子键 | 至少三级，且末级不能是共享容器（`Run`/`RunOnce`/`Uninstall`/`Policies`/`Explorer`/`Classes`/`Windows`/`Services`…）；`value` 写成空字符串视为配置错误，整条跳过 |
+| `extraUninstallLnkNames` 快捷方式 | 绝对路径、无 `..`、自身与所有父级都不是符号链接 / junction、不在 `%SystemRoot%` 内；目录只放行 `Programs\<产品名>`，文件只放行 `Desktop\*.lnk` 或 `Programs\<产品名>\*.lnk` |
+| `userDataPath` / `extraUninstallPath` | 同样的形状校验 + 至少两级 + 不能是受保护根目录本身（盘符根、`%SystemRoot%`、`%ProgramFiles%`、`%ProgramData%`、`%USERPROFILE%`、`%APPDATA%`、`%LOCALAPPDATA%`、`%PUBLIC%`、`%TEMP%`） |
+
+被拒绝的路径只记 `warn` 日志，卸载继续。本项目现有配置全部落在放行范围内。
+
+宿主侧（`src/Host/`）另有一道：程序内「卸载本软件」启动 `uninst.exe` 前会校验
+路径在自身目录内、文件名符合约定、不是符号链接、目录不是系统/配置根目录；
+**宿主已提权时还要求安装目录位于 `Program Files` 下**，否则拒绝启动
+（避免普通用户在可写目录放同名 exe 借管理员令牌执行）。
 
 ## CI
 

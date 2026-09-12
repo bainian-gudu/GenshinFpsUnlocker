@@ -117,8 +117,61 @@ pub async fn run_uninstall_with_args(args: RunUninstallArgs) -> TAResult<Vec<Str
     .await
 }
 
+/// 删整棵子键时禁止命中的「共享容器」键名（大写比较）。
+///
+/// 这些键下面挂着别的软件甚至系统自己的项，一旦 `remove_tree` 就是把别人的
+/// 自启动、卸载登记、策略一起端掉 —— 配置里少写一个 `value` 字段就可能触发，
+/// 所以在这里硬性拦掉。要删这些键下的东西，必须写明 `value`。
+const REG_TREE_DENY_LEAVES: &[&str] = &[
+    "RUN",
+    "RUNONCE",
+    "RUNSERVICES",
+    "RUNSERVICESONCE",
+    "UNINSTALL",
+    "POLICIES",
+    "EXPLORER",
+    "WINLOGON",
+    "SHELL",
+    "ENVIRONMENT",
+    "IMAGE FILE EXECUTION OPTIONS",
+    "CLASSES",
+    "SOFTWARE",
+    "MICROSOFT",
+    "WINDOWS",
+    "CURRENTVERSION",
+    "SYSTEM",
+    "SERVICES",
+    "DRIVERS",
+    "SESSION MANAGER",
+    "EXTENSIONS",
+];
+
+/// 注册表清理的安全阀：这条通道以卸载器权限（通常是管理员）运行，配置写错
+/// 就可能删掉系统关键项，因此对路径深度和键名做白/黑名单校验。
+///
+/// - 删值：子键至少两级（不碰任何根键的直属项）
+/// - 删整棵子键：至少三级，且最后一级不是共享容器（见 `REG_TREE_DENY_LEAVES`）
+fn is_safe_registry_target(key_path: &str, value: Option<&str>) -> bool {
+    let segments = key_path
+        .split('\\')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+    match value {
+        Some(_) => segments.len() >= 2,
+        None => {
+            if segments.len() < 3 {
+                return false;
+            }
+            let leaf = segments[segments.len() - 1].to_ascii_uppercase();
+            !REG_TREE_DENY_LEAVES.contains(&leaf.as_str())
+        }
+    }
+}
+
 /// 对单个根键执行「删值」或「删整棵子键」。失败一律忽略：卸载不应因为某个
 /// 注册表项不存在（或当前权限不足）而中断。
+///
+/// 调用前必须已过 `is_safe_registry_target`。
 ///
 /// 注意 `windows_registry` 的 `LOCAL_MACHINE` / `CURRENT_USER` / `USERS` 等
 /// 预定义根键本身就是 `&'static Key`，直接传即可，不要再取引用。
@@ -157,14 +210,201 @@ fn apply_registry_cleanup_for_all_users(key_path: &str, value: Option<&str>) {
     }
 }
 
+/// 路径本身或任一父级是重解析点（符号链接 / junction）就返回 true。
+///
+/// 顺着链接删可能删到链接指向的任意位置，因此这类路径一律不动。
+/// 读不到属性时按「危险」处理。
+fn has_reparse_point(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+    let mut current = Some(path);
+    while let Some(p) = current {
+        let md = match std::fs::symlink_metadata(p) {
+            Ok(md) => md,
+            // 路径（或某个父级）压根不存在：没什么可删的，交给后面的 exists() 判断
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,
+            // 属性读不到就别动它
+            Err(_) => return true,
+        };
+        if md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return true;
+        }
+        current = p.parent();
+    }
+    false
+}
+
+/// 是否位于 `%SystemRoot%`（默认 `C:\Windows`）之内。
+fn is_under_system_root(path: &Path) -> bool {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+    let root = root.trim_end_matches(['\\', '/']).to_ascii_lowercase();
+    if root.is_empty() {
+        return true;
+    }
+    let target = path.to_string_lossy().to_ascii_lowercase();
+    target == root || target.starts_with(&format!("{root}\\"))
+}
+
+fn dir_leaf(path: Option<&Path>) -> Option<String> {
+    path?.file_name()?.to_str().map(|s| s.to_string())
+}
+
+fn name_matches(allowed: &[String], name: &str) -> bool {
+    allowed.iter().any(|n| n.eq_ignore_ascii_case(name))
+}
+
+/// 「尽力删除」通道的安全阀。
+///
+/// 这条通道的路径由配置 + 前端拼出来，而卸载器通常以管理员身份运行，
+/// 因此只放行**明确属于本产品**的快捷方式，其余一律跳过：
+///
+/// - 必须是绝对路径，不含 `..`
+/// - 路径本身与所有父级都不是符号链接 / junction
+/// - 不落在 `%SystemRoot%` 内
+/// - 目录：只允许「开始菜单 `Programs\` 下、名字属于本产品」的那一层
+/// - 文件：只允许 `.lnk`，且位于某个 `Desktop\` 目录下，或位于
+///   `Programs\<产品名>\` 之内
+///
+/// `allowed_names` 由调用方给出（`reg_name` 与安装目录名），用于判断
+/// 「属于本产品」。
+fn is_safe_shortcut_target(path: &Path, allowed_names: &[String]) -> bool {
+    if !path.is_absolute() {
+        return false;
+    }
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+    if has_reparse_point(path) || is_under_system_root(path) {
+        return false;
+    }
+    let leaf = match dir_leaf(Some(path)) {
+        Some(leaf) => leaf,
+        None => return false,
+    };
+    let parent_leaf = dir_leaf(path.parent());
+    let grandparent_leaf = dir_leaf(path.parent().and_then(|p| p.parent()));
+
+    if path.is_dir() {
+        return name_matches(allowed_names, &leaf)
+            && parent_leaf
+                .as_deref()
+                .is_some_and(|p| p.eq_ignore_ascii_case("Programs"));
+    }
+
+    if !leaf.to_ascii_lowercase().ends_with(".lnk") {
+        return false;
+    }
+    if parent_leaf
+        .as_deref()
+        .is_some_and(|p| p.eq_ignore_ascii_case("Desktop"))
+    {
+        return true;
+    }
+    parent_leaf
+        .as_deref()
+        .is_some_and(|p| name_matches(allowed_names, p))
+        && grandparent_leaf
+            .as_deref()
+            .is_some_and(|g| g.eq_ignore_ascii_case("Programs"))
+}
+
+/// 路径相等比较：统一分隔符、去掉尾部斜杠、大小写不敏感（Windows 语义）。
+fn path_eq(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| -> String {
+        let s = p.to_string_lossy().replace('/', "\\");
+        let s = s.trim_end_matches('\\').to_ascii_lowercase();
+        if s.len() == 2 && s.as_bytes()[1] == b':' {
+            format!("{s}\\")
+        } else {
+            s
+        }
+    };
+    norm(a) == norm(b)
+}
+
+/// 是否恰好等于某个受保护的根目录（系统目录、Program Files、用户配置目录等）。
+///
+/// 允许删这些目录**下面**的产品子目录，但不允许删它们自己。
+fn is_protected_root(path: &Path) -> bool {
+    // 盘符根 / UNC 根：`C:\`、`C:`、`\\server\share`
+    if path.parent().is_none() {
+        return true;
+    }
+    const VARS: &[&str] = &[
+        "SystemRoot",
+        "SystemDrive",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramW6432",
+        "ProgramData",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PUBLIC",
+        "TEMP",
+        "TMP",
+    ];
+    for name in VARS {
+        if let Ok(v) = std::env::var(name) {
+            let v = v.trim();
+            if !v.is_empty() && path_eq(path, Path::new(v)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 「删除用户数据 / 额外卸载目录」通道的安全阀。
+///
+/// 这条通道的路径同样来自打包配置与前端拼接，且通常以管理员权限执行
+/// `remove_dir_all`，配置写错一个字符就可能删掉整台机器的东西，因此除通用的
+/// 形状校验（绝对路径、无 `..`、非符号链接、不在 `%SystemRoot%` 内）之外，
+/// 还额外挡掉两类灾难性目标：
+/// - 盘符根，以及只有一级的目录（`C:\Foo`）
+/// - 任何受保护根目录本身（见 `is_protected_root`）
+fn is_safe_delete_target(path: &Path) -> bool {
+    if !path.is_absolute() {
+        return false;
+    }
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+    if has_reparse_point(path) || is_under_system_root(path) {
+        return false;
+    }
+    let depth = path
+        .components()
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
+        .count();
+    if depth < 2 {
+        return false;
+    }
+    !is_protected_root(path)
+}
+
 /// 尽力删除一批路径：不存在则跳过，删不掉只记日志。
 ///
 /// 用于安装期由宿主自建/改名的快捷方式（例如把 `GenshinFpsUnlocker.lnk`
 /// 规范成中文显示名），这些路径可能因权限不足或桌面被 OneDrive 重定向而
 /// 不可删，但绝不该因此让整个卸载失败。
-async fn rm_best_effort(paths: &[String]) {
+///
+/// 每个路径都要先过 `is_safe_shortcut_target`，不通过的一律跳过并记日志。
+async fn rm_best_effort(paths: &[String], allowed_names: &[String]) {
     for pathstr in paths {
         let path = Path::new(pathstr);
+        if !is_safe_shortcut_target(path, allowed_names) {
+            tracing::warn!("跳过不安全的卸载清理路径: {pathstr}");
+            continue;
+        }
         if !path.exists() {
             continue;
         }
@@ -192,11 +432,31 @@ pub fn clean_extra_registry(items: &[RegistryCleanupItem]) {
             tracing::warn!("跳过空的注册表清理键: hive={}", item.hive);
             continue;
         }
-        let value = item
-            .value
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty());
+        // `value` 写成空字符串是配置错误：绝不当成「删整棵子键」处理
+        let value = match item.value.as_deref() {
+            Some(v) => {
+                let v = v.trim();
+                if v.is_empty() {
+                    tracing::warn!(
+                        "跳过 value 为空的注册表清理项（要删整棵子键请省略 value 字段）: {}\\{}",
+                        item.hive,
+                        item.key
+                    );
+                    continue;
+                }
+                Some(v)
+            }
+            None => None,
+        };
+        if !is_safe_registry_target(key_path, value) {
+            tracing::warn!(
+                "跳过不安全的注册表清理项: {}\\{} (value={:?})",
+                item.hive,
+                key_path,
+                value
+            );
+            continue;
+        }
         match item.hive.trim().to_ascii_uppercase().as_str() {
             "HKLM" | "HKEY_LOCAL_MACHINE" => {
                 tracing::info!("清理注册表 HKLM\\{key_path}");
@@ -280,14 +540,30 @@ pub async fn run_uninstall(
     }
     let res = rm_list(delete_list).await;
 
-    // 先尽力清理安装期由宿主自建/改名的快捷方式（失败不影响卸载）
-    rm_best_effort(&extra_uninstall_shortcuts).await;
+    // 先尽力清理安装期由宿主自建/改名的快捷方式（失败不影响卸载）。
+    // 允许的产品名取 reg_name 与安装目录名，用于安全阀判断「属于本产品」。
+    let allowed_names = [
+        Some(reg_name.clone()),
+        Path::new(source.as_str())
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(String::from),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|n| !n.trim().is_empty())
+    .collect::<Vec<_>>();
+    rm_best_effort(&extra_uninstall_shortcuts, &allowed_names).await;
 
     // delete user data
     // merge user_data_path and extra_uninstall_path
     let to_be_delete = [&user_data_path[..], &extra_uninstall_path[..]].concat();
     for pathstr in to_be_delete.iter() {
         let path = Path::new(pathstr);
+        if !is_safe_delete_target(path) {
+            tracing::warn!("跳过不安全的卸载目录: {pathstr}");
+            continue;
+        }
         if path.exists() {
             // check if is file or dir
             if path.is_file() {

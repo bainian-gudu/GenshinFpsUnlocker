@@ -7,9 +7,37 @@ import type { AgreementConfig } from '../types';
  * 避免任何情况下把脚本注入安装器界面。
  */
 
+/**
+ * 净化策略：协议正文只需要排版标签。
+ *
+ * 安装器界面是一个能触发提权 IPC 的 WebView，正文又来自打包配置，所以这里
+ * 按「白名单排版 + 禁掉一切可执行/可提交/可嵌入外部内容」的思路收紧：
+ * - 禁 style/form/input/iframe/object/embed/link/meta/base/svg/math 等标签
+ * - 禁 style / srcdoc / formaction / data / background 等属性
+ * - URI 只放行 http(s)、mailto 与页内锚点，杜绝 javascript: / data: / file:
+ * 链接的点击行为另由 App.vue 拦截（见 onAgreementClick），不会导航走安装窗口。
+ */
 const SANITIZE_OPTIONS = {
   USE_PROFILES: { html: true },
   ADD_ATTR: ['target', 'rel'],
+  FORBID_TAGS: [
+    'style',
+    'form',
+    'input',
+    'button',
+    'select',
+    'textarea',
+    'iframe',
+    'object',
+    'embed',
+    'link',
+    'meta',
+    'base',
+    'svg',
+    'math',
+  ],
+  FORBID_ATTR: ['style', 'srcdoc', 'formaction', 'data', 'background'],
+  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i,
 };
 
 /** HTML 转义 */
@@ -30,9 +58,10 @@ function renderInline(text: string): string {
   out = out.replace(/(^|[^*\w])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
   // 只放行 http(s) 链接；escapeHtml 之后引号已变成 &quot;，这里按未转义形式匹配
+  // 只放行 http(s) 链接；点击行为由 App.vue 拦截后交给系统浏览器
   out = out.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
+    '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>',
   );
   return out;
 }

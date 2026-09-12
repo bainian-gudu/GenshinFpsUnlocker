@@ -75,7 +75,8 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 - 安装目录生成 **`GenshinFpsUnlocker.uninst.exe`**、**`GenshinFpsUnlocker.update.exe`**
 - 安装界面「我已阅读并同意 **用户协议**」可点击，弹窗显示协议全文
   （正文由 `kachina.config.json` 的 `agreementFile` 指向仓库根 `USER_AGREEMENT.txt`，
-  打包时内联进 exe，支持 `text` / `markdown` / `html`）
+  打包时内联进 exe，支持 `text` / `markdown` / `html`）；配了协议就**必须勾选同意**
+  才能点安装，正文里的外链交给系统浏览器打开，不会把安装器窗口导航走
 
 卸载（四个入口，最终都是同一个 Kachina 卸载器）：
 
@@ -94,6 +95,13 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 `GenshinFpsUnlocker.lnk` 与开始菜单文件夹，还会按 `extraUninstallLnkNames`
 补删宿主改名后的中文快捷方式 `原神帧率解锁.lnk`（公共桌面 / 用户桌面 /
 两侧开始菜单都试，OneDrive 重定向的桌面也能命中；删不掉只记日志，不影响卸载）。
+
+卸载器以管理员身份运行，因此所有「按配置删除」的通道都加了安全阀：注册表只删
+`extraUninstallRegistry` 明确指到的值/子键（共享容器如 `Run`、`Uninstall`、`Policies`
+不允许整棵删，`value` 留空视为配置错误直接跳过）；快捷方式与数据目录必须是绝对路径、
+不含 `..`、不是符号链接 / junction、不在 `%SystemRoot%` 内，且不能是盘符根或
+`Program Files` / `%LocalAppData%` 这类受保护目录本身。命中的路径只记日志并跳过，
+不会让卸载失败。详见 `installer/README.md` 与 `installer/kachina/LOCAL_PATCHES.md`。
 
 在线更新：已安装副本可使用 `GenshinFpsUnlocker.update.exe`，从配置的 GitHub Release 源拉取（需已发布对应 `Install` 包）。
 

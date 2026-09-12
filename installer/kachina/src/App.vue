@@ -261,7 +261,11 @@
       </template>
       <template #body>
         <!-- 正文经 DOMPurify 净化，见 utils/agreement.ts -->
-        <div class="agreement-body" v-html="agreementHtml"></div>
+        <div
+          class="agreement-body"
+          v-html="agreementHtml"
+          @click="onAgreementClick"
+        ></div>
       </template>
       <template #footer>
         <button
@@ -403,6 +407,7 @@
   line-height: 1.8;
   text-align: left;
   word-break: break-word;
+  user-select: text;
   border: 1px solid var(--colorNeutralStroke1, rgba(0, 0, 0, 0.12));
   border-radius: 4px;
   background: var(--colorNeutralBackground2, rgba(0, 0, 0, 0.04));
@@ -941,6 +946,28 @@ function closeAgreement(accepted: boolean) {
     acceptEula.value = true;
   }
   dialog.value = '';
+}
+
+/**
+ * 拦截协议正文里的所有链接点击。
+ *
+ * 安装器窗口一旦被导航走，安装/卸载流程就直接断了；因此这里 preventDefault，
+ * 只把 http(s) 外链交给系统浏览器（与上游「获取 CDK」用的同一个 launch 命令），
+ * 其余（页内锚点、以及万一漏网的 javascript: 之类）什么都不做。
+ */
+function onAgreementClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  const anchor = target?.closest?.('a');
+  if (!anchor) {
+    return;
+  }
+  event.preventDefault();
+  const href = anchor.getAttribute('href') ?? '';
+  if (!/^https?:\/\//i.test(href)) {
+    return;
+  }
+  // 与上游「获取 CDK」同一个命令；失败只记日志，不打断安装流程
+  invoke('launch', { path: href }).catch((e) => warn('打开协议链接失败:', e));
 }
 
 const getInsightBase = () => {
@@ -1972,6 +1999,12 @@ onMounted(async () => {
     });
     if (INSTALLER_CONFIG.embedded_config) {
       Object.assign(PROJECT_CONFIG, INSTALLER_CONFIG.embedded_config);
+      // 打包时内联了用户协议：要求用户主动勾选「我已阅读并同意」才放开安装按钮。
+      // 没有内联协议时保持上游默认（视为已同意），不额外增加交互；
+      // 静默 / 非交互安装走 onMounted 末尾的 install()，不受这个勾选影响。
+      if (hasAgreementContent(PROJECT_CONFIG.agreement)) {
+        acceptEula.value = false;
+      }
       // Process embedded image/CSS
       processEmbeddedImage(INSTALLER_CONFIG.embedded_image);
 

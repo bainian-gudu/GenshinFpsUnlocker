@@ -11,6 +11,7 @@
 | 1 | 卸载时清理安装期写入的注册表（开机自启动等） | `src-tauri/src/installer/uninstall.rs`、`src/App.vue`、`src/types.ts`、`src/api/ipc.ts` |
 | 1b | 卸载时清理安装期由宿主自建/改名的快捷方式 | 同上 4 个文件 |
 | 2 | 用户协议可配置、多格式、点击弹窗看全文 | `src-tauri/src/builder/pack.rs`、`src/App.vue`、`src/types.ts`、`src/utils/agreement.ts`（新增） |
+| 3 | 安全加固：收敛卸载器的删除范围与提权面 | `src-tauri/src/installer/uninstall.rs`、`src/utils/agreement.ts`、`src/App.vue`（另有宿主侧 `src/Host/UninstallLauncher.cs`、`src/Host/RuntimePrerequisite.cs`，不属于本目录） |
 
 ---
 
@@ -192,13 +193,70 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 ---
 
+## 3. 安全加固：收敛卸载器的删除范围与提权面
+
+上游把「删什么」完全交给打包配置，而卸载器通常以管理员身份运行
+（本项目 `uacStrategy: "prefer-admin"`）。配置里一个笔误、或被人动过的安装目录 /
+注册表项，都会被管理员权限放大。本项目在**不改变上游既有语义**的前提下加了几道
+安全阀：命中即「拒绝 + 记日志」，绝不让卸载因此失败。
+
+### `src-tauri/src/installer/uninstall.rs`
+
+| 通道 | 上游行为 | 加固后 |
+| --- | --- | --- |
+| `extraUninstallRegistry` 删值 | 直接 `remove_value` | `is_safe_registry_target`：子键至少两级，不碰任何根键的直属项 |
+| 同上，删整棵子键 | 直接 `remove_tree` | 至少三级，且末级不在 `REG_TREE_DENY_LEAVES`（`Run` / `RunOnce` / `Uninstall` / `Policies` / `Explorer` / `Winlogon` / `Environment` / `Classes` / `Software` / `Microsoft` / `Windows` / `CurrentVersion` / `System` / `Services` / `Session Manager` / `IFEO` 等共享容器） |
+| `value` 写成空字符串 | 等价于「删整棵子键」 | 视为配置错误，整条跳过并告警（真要删子键必须显式省略 `value`） |
+| 提权卸载时清 HKCU | 只清管理员自己的 hive | 额外遍历 `HKEY_USERS` 下已加载的 SID（跳过 `.DEFAULT` / `S-1-5-18` / `*_Classes`）逐个清，避免漏掉发起卸载的登录用户 |
+| `rm_best_effort`（快捷方式） | 前端/配置给什么删什么，目录走 `remove_dir_all` | `is_safe_shortcut_target`：绝对路径、不含 `..`、路径与**所有父级**都不是符号链接 / junction、不落在 `%SystemRoot%` 内；目录只放行 `开始菜单\Programs\<产品名>`，文件只放行 `.lnk` 且位于某个 `Desktop\` 下或 `Programs\<产品名>\` 内。`allowed_names` = `regName` + 安装目录名 |
+| `userDataPath` / `extraUninstallPath` | 直接 `remove_file` / `remove_dir_all` | `is_safe_delete_target`：上述形状校验 + 至少两级目录 + 不等于任何受保护根目录本身（盘符根、`%SystemRoot%`、`%ProgramFiles%`、`%ProgramFiles(x86)%`、`%ProgramData%`、`%USERPROFILE%`、`%APPDATA%`、`%LOCALAPPDATA%`、`%PUBLIC%`、`%TEMP%` / `%TMP%`）。允许删这些目录**下面**的产品子目录，不允许删它们自己 |
+
+被拒绝的路径统一 `tracing::warn!("跳过不安全的…")` 后继续，卸载流程不中断。
+本项目的真实配置（`extraUninstallRegistry` 删 `HKCU\...\Run` 下的
+`GenshinFpsUnlocker` 值、`userDataPath` = `%LOCALAPPDATA%/GenshinFpsUnlocker`、
+`extraUninstallLnkNames` 4 个名字）全部落在放行范围内，功能不受影响。
+
+### `src/utils/agreement.ts` + `src/App.vue`（协议正文的注入面）
+
+协议正文来自打包配置，最终 `v-html` 进一个**能调用提权 IPC 的 WebView**，
+所以按「白名单排版 + 禁掉一切可执行 / 可提交 / 可外链内容」收紧：
+
+- DOMPurify：`FORBID_TAGS` 增加 `style / form / input / button / select / textarea /
+  iframe / object / embed / link / meta / base / svg / math`；`FORBID_ATTR` 增加
+  `style / srcdoc / formaction / data / background`；`ALLOWED_URI_REGEXP` 收窄为
+  `^(?:https?:|mailto:|#)`（上游默认还放行 `tel:` / `callto:` / `cid:` / `xmpp:` 等）。
+- 正文里的 `<a>` 点击一律 `preventDefault`：安装器窗口被导航走 = 安装 / 卸载流程直接断掉。
+  `http(s)` 外链交给 `invoke('launch')` 用系统浏览器打开（与上游「获取 CDK」同一个命令），
+  页内锚点与万一漏网的 `javascript:` 之类什么都不做。
+- 内联了协议正文时把 `acceptEula` 初始化为 `false`：必须勾「我已阅读并同意」才能点安装。
+  未内联协议时保持上游默认（视为已同意），不额外增加交互；`silent` / `non_interactive`
+  安装走 `onMounted` 末尾的 `install()`，不受勾选影响；卸载界面用的是另一个按钮，
+  同样不受影响。
+- 协议正文容器补 `user-select: text`（`.content` 全局是 `user-select: none`），
+  法律文本要能选中复制。
+
+### 宿主侧（`src/Host/`，不属于本目录，列在这里便于对照）
+
+- `UninstallLauncher.IsTrustworthyUninstaller`：宿主里的「卸载本软件」只负责启动
+  `<安装目录>\GenshinFpsUnlocker.uninst.exe`，启动前校验：路径仍在自身目录内、
+  文件名符合约定、非空文件、自身与所在目录都不是符号链接 / junction、目录不是
+  盘符根 / 系统目录 / 用户配置目录；**且宿主已提权时要求安装目录位于 `Program Files` 下**
+  —— 否则普通用户可以在可写目录里放一个同名 exe，借宿主的管理员令牌执行任意代码
+  （典型 EoP），这种情况直接拒绝并提示改用「设置 → 应用」卸载。
+  Web UI 的 `uninstall` 消息不接受任何参数，路径全部由宿主自己算，前端无法指定。
+- `RuntimePrerequisite.ResolveDotNetCli`：检测 .NET 桌面运行时不再用裸命令名 `dotnet`
+  （那会按 PATH 搜索），优先 `%ProgramFiles%\dotnet\dotnet.exe`，避免提权进程被 PATH 劫持。
+
+---
+
 ## 升级上游时的套用顺序
 
 1. 按 `UPSTREAM.md` 覆盖整个目录；
 2. 恢复本文件（`LOCAL_PATCHES.md`）与 `UPSTREAM.md`；
-3. 依次套用上面的改动：`uninstall.rs`（注册表 + `rm_best_effort`）→ `pack.rs`
-   → `types.ts` → `api/ipc.ts` → `utils/agreement.ts`（整份新增）
-   → `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处）；
+3. 依次套用上面的改动：`uninstall.rs`（注册表清理 + `rm_best_effort` + 第 3 节的
+   全部安全阀）→ `pack.rs` → `types.ts` → `api/ipc.ts` → `utils/agreement.ts`
+   （整份新增，含 DOMPurify 收紧策略）→ `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处
+   + 链接点击拦截 + `acceptEula` 初始化）；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
@@ -206,7 +264,11 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
    `HKCU\...\Run` 里的 `GenshinFpsUnlocker` 值消失；桌面上的
    `原神帧率解锁.lnk` 与开始菜单文件夹一并消失。
 
-> 上述 Rust 逻辑（`clean_extra_registry` / `rm_best_effort` / `resolve_agreement`）
-> 已在 Linux 上用 mock 版 `windows-registry` + 真实 `serde_json`/`tokio` 逐条跑过
-> （含提权卸载遍历 `HKEY_USERS`、BOM/CRLF、文件缺失等边界），
-> 但**没有**在 Windows 上实机验证过。
+> 上述 Rust 逻辑（`clean_extra_registry` / `rm_best_effort` / `is_safe_registry_target` /
+> `is_safe_shortcut_target` / `is_safe_delete_target` / `resolve_agreement`）已在 Linux 上
+> 用 mock 版 `windows-registry` + 真实 `serde_json` / `tokio` 逐条跑过 53 个断言
+> （含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 / 系统目录 /
+> 路径穿越 / 受保护根目录、协议 BOM/CRLF 与文件缺失等边界），其中
+> `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
+> `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`）在
+> harness 里用桩替代。整套逻辑**没有**在 Windows 上实机验证过。

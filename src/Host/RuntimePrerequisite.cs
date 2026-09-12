@@ -265,7 +265,7 @@ internal static class RuntimePrerequisite
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "dotnet",
+                FileName = ResolveDotNetCli(),
                 Arguments = "--list-runtimes",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -427,5 +427,29 @@ internal static class RuntimePrerequisite
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
+    }
+
+    /// <summary>
+    /// 定位 dotnet CLI：优先使用受保护安装目录下的绝对路径。
+    ///
+    /// 本进程可能以管理员身份运行，而 <c>FileName = "dotnet"</c> 会按 PATH 搜索；
+    /// 若 PATH 中存在普通用户可写的目录（常见于被植入的机器配置），攻击者放一个
+    /// 同名 exe 就能借我们的管理员令牌执行任意代码。因此只在找不到绝对路径时
+    /// 才回退到 PATH 搜索。
+    /// </summary>
+    private static string ResolveDotNetCli()
+    {
+        var roots = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        };
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            var candidate = Path.Combine(root, "dotnet", "dotnet.exe");
+            if (PathUtil.ExistsFile(candidate)) return candidate;
+        }
+        return "dotnet";
     }
 }
