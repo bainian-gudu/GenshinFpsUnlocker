@@ -1,34 +1,74 @@
 #include "Scanner.h"
+#include "PatternMatch.h"
 
 #include <Psapi.h>
-#include <sstream>
 
 namespace Scanner
 {
     /// <summary>
     /// 解析特征串：空格分隔的十六进制字节，"?" / "??" 表示通配（存为 -1）。
     /// </summary>
+    namespace
+    {
+        /// <summary>单个 hex 字符 → 0..15；非法返回 -1。</summary>
+        int HexNibble(char c)
+        {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        }
+    }
+
     std::vector<int> ParsePattern(const std::string& signature)
     {
         std::vector<int> pattern;
-        std::stringstream ss(signature);
-        std::string word;
-        while (ss >> word)
+        pattern.reserve(signature.size() / 3 + 1);
+
+        size_t i = 0;
+        while (i < signature.size())
         {
-            if (word == "?" || word == "??")
+            // 跳过分隔空白
+            while (i < signature.size() && (signature[i] == ' ' || signature[i] == '\t' ||
+                                            signature[i] == '\r' || signature[i] == '\n'))
+            {
+                ++i;
+            }
+            if (i >= signature.size())
+            {
+                break;
+            }
+
+            // 读一个 token（到下一个空白为止）
+            const size_t tokenStart = i;
+            while (i < signature.size() && signature[i] != ' ' && signature[i] != '\t' &&
+                   signature[i] != '\r' && signature[i] != '\n')
+            {
+                ++i;
+            }
+            const size_t tokenLen = i - tokenStart;
+
+            if (tokenLen == 1 && signature[tokenStart] == '?')
             {
                 pattern.push_back(-1);
             }
+            else if (tokenLen == 1 && HexNibble(signature[tokenStart]) >= 0)
+            {
+                pattern.push_back(HexNibble(signature[tokenStart]));
+            }
+            else if (tokenLen == 2 && signature[tokenStart] == '?' && signature[tokenStart + 1] == '?')
+            {
+                pattern.push_back(-1);
+            }
+            else if (tokenLen == 2)
+            {
+                const int hi = HexNibble(signature[tokenStart]);
+                const int lo = HexNibble(signature[tokenStart + 1]);
+                pattern.push_back(hi < 0 || lo < 0 ? -1 : (hi << 4) | lo);
+            }
             else
             {
-                try
-                {
-                    pattern.push_back(std::stoi(word, nullptr, 16));
-                }
-                catch (...)
-                {
-                    pattern.push_back(-1);
-                }
+                pattern.push_back(-1);  // 形状不对的 token 视为通配，与旧实现一致
             }
         }
         return pattern;
@@ -60,6 +100,7 @@ namespace Scanner
         const uintptr_t startAddr = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
         const uintptr_t endAddr = startAddr + modInfo.SizeOfImage;
         const size_t pSize = pattern.size();
+        const auto compiled = PatternMatch::Compile(pattern);
 
         uintptr_t current = startAddr;
         while (current < endAddr)
@@ -87,21 +128,10 @@ namespace Scanner
                 if (regionSize >= pSize)
                 {
                     const uint8_t* pStart = static_cast<const uint8_t*>(mbi.BaseAddress);
-                    for (size_t i = 0; i <= regionSize - pSize; ++i)
+                    // memchr 跳到下一个「首固定字节」再整条校验，见 PatternMatch.h
+                    if (const uint8_t* hit = PatternMatch::Find(pStart, regionSize, compiled))
                     {
-                        bool found = true;
-                        for (size_t j = 0; j < pSize; ++j)
-                        {
-                            if (pattern[j] != -1 && pattern[j] != pStart[i + j])
-                            {
-                                found = false;
-                                break;
-                            }
-                        }
-                        if (found)
-                        {
-                            return const_cast<uint8_t*>(pStart + i);
-                        }
+                        return const_cast<uint8_t*>(hit);
                     }
                 }
             }

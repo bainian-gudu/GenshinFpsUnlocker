@@ -209,6 +209,8 @@ internal sealed partial class MainForm
     {
         if (_trayMenu is null) return;
         var dark = UiStyle.IsUiDark;
+        // 旧 renderer 的画笔/画刷随它一起释放，别等 GC
+        if (_trayMenu.Renderer is IDisposable oldRenderer) oldRenderer.Dispose();
         _trayMenu.Renderer = new TrayMenuRenderer(dark);
         _trayMenu.BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
         _trayMenu.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
@@ -418,9 +420,20 @@ internal sealed partial class MainForm
     }
 
     /// <summary>托盘菜单绘制：圆角选中条 + 设计稿紫强调色。</summary>
-    private sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
+    /// <summary>
+    /// 自绘渲染器。画笔/画刷在构造时建好、 Dispose 时释放：菜单每次鼠标移动都会
+    /// 重绘若干项，早先每次 OnRender* 都 new SolidBrush/Pen，一次悬停就产生几十个
+    /// GDI+ 对象和等量的 GC 压力。
+    /// </summary>
+    private sealed class TrayMenuRenderer : ToolStripProfessionalRenderer, IDisposable
     {
         private readonly bool _dark;
+        private readonly SolidBrush _bgBrush;
+        private readonly SolidBrush _hoverBrush;
+        private readonly SolidBrush _accentBrush;
+        private readonly Pen _checkPen;
+        private readonly Pen _sepPen;
+        private bool _disposed;
         private readonly Color _bg;
         private readonly Color _hover;
         private readonly Color _accent;
@@ -438,26 +451,45 @@ internal sealed partial class MainForm
             _text = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
             _muted = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
             _sep = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xE0, 0xDC, 0xEA);
+            _bgBrush = new SolidBrush(_bg);
+            _hoverBrush = new SolidBrush(_hover);
+            _accentBrush = new SolidBrush(_accent);
+            _sepPen = new Pen(_sep);
+            _checkPen = new Pen(_accent, 1.9f)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+                LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
+            };
             RoundedEdges = false;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _bgBrush.Dispose();
+            _hoverBrush.Dispose();
+            _accentBrush.Dispose();
+            _sepPen.Dispose();
+            _checkPen.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
         {
-            using var b = new SolidBrush(_bg);
-            e.Graphics.FillRectangle(b, e.AffectedBounds);
+            e.Graphics.FillRectangle(_bgBrush, e.AffectedBounds);
         }
 
         protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
         {
-            using var pen = new Pen(_sep);
             var r = e.AffectedBounds;
             r.Width -= 1;
             r.Height -= 1;
-            e.Graphics.DrawRectangle(pen, r);
+            e.Graphics.DrawRectangle(_sepPen, r);
         }
 
-        /// <summary>左侧勾选槽宽度（所有菜单项文字从同一 X 起排）。</summary>
-        /// <summary>勾选槽 + 文字左缘；所有项（含无勾选项）同一 X，避免参差。</summary>
+        /// <summary>勾选槽宽与文字左缘：所有项（含无勾选项）同一 X 起排，避免参差。</summary>
         private const int CheckGutter = 28;
         private const int TextLeft = 32;
 
@@ -478,17 +510,14 @@ internal sealed partial class MainForm
             var item = e.Item;
             var bounds = new Rectangle(3, 1, Math.Max(0, item.Width - 6), Math.Max(0, item.Height - 2));
 
-            using (var b = new SolidBrush(_bg))
-                g.FillRectangle(b, new Rectangle(0, 0, item.Width, item.Height));
+            g.FillRectangle(_bgBrush, new Rectangle(0, 0, item.Width, item.Height));
 
             if (!item.Enabled) return;
             if (!item.Selected && !item.Pressed) return;
 
             using var path = RoundRect(bounds, 6);
-            using var brush = new SolidBrush(_hover);
-            g.FillPath(brush, path);
-            using var accent = new SolidBrush(_accent);
-            g.FillRectangle(accent, new Rectangle(bounds.X + 1, bounds.Y + 5, 3, Math.Max(4, bounds.Height - 10)));
+            g.FillPath(_hoverBrush, path);
+            g.FillRectangle(_accentBrush, new Rectangle(bounds.X + 1, bounds.Y + 5, 3, Math.Max(4, bounds.Height - 10)));
         }
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
@@ -545,13 +574,7 @@ internal sealed partial class MainForm
             const float glyphH = 8f;    // 勾形包围盒高（cy-4 .. cy+4）
             var cx = (CheckGutter - glyphW) / 2f;
             var cy = item.Height / 2f;
-            using var pen = new Pen(_accent, 1.9f)
-            {
-                StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                EndCap = System.Drawing.Drawing2D.LineCap.Round,
-                LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
-            };
-            g.DrawLines(pen, new[]
+            g.DrawLines(_checkPen, new[]
             {
                 new PointF(cx, cy),
                 new PointF(cx + 4, cy + glyphH / 2f),
@@ -562,8 +585,7 @@ internal sealed partial class MainForm
         protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
         {
             var y = e.Item.ContentRectangle.Top + e.Item.ContentRectangle.Height / 2;
-            using var pen = new Pen(_sep);
-            e.Graphics.DrawLine(pen, TextLeft, y, Math.Max(TextLeft + 8, e.Item.Width - 12), y);
+            e.Graphics.DrawLine(_sepPen, TextLeft, y, Math.Max(TextLeft + 8, e.Item.Width - 12), y);
         }
 
         private static System.Drawing.Drawing2D.GraphicsPath RoundRect(Rectangle bounds, int radius)

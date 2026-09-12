@@ -351,6 +351,7 @@ internal sealed partial class MainForm : Form
             try { _wakeCts?.Dispose(); } catch { /* ignore */ }
             try { _service.StateChanged -= OnServiceStateForTray; } catch { /* ignore */ }
             try { _tray.Visible = false; } catch { /* ignore */ }
+            try { (_trayMenu?.Renderer as IDisposable)?.Dispose(); } catch { /* ignore */ }
             try { _tray.Dispose(); } catch { /* ignore */ }
             try { _trayIconOwned?.Dispose(); } catch { /* ignore */ }
             try { _bridge.Dispose(); } catch { /* ignore */ }
