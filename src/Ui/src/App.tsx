@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { Brand, BrandMark, GithubIcon } from './components/Brand';
+import { Brand, GithubIcon } from './components/Brand';
 import { ConfirmDialog, LaunchDialog, PathDialog, SafetyDialog } from './components/Dialogs';
 import { FpsControl } from './components/FpsControl';
 import { PageHeading, Toasts, ToggleRow } from './components/ui';

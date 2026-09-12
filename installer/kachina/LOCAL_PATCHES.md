@@ -2,9 +2,10 @@
 
 上游快照：tag `0.5.1` / commit `ae461aa9ddd5a8f5e445459e14f5d611921f9938`（见 `UPSTREAM.md`）。
 
-本目录**不是纯净快照**：为了本项目的两个需求，在 4 个上游文件 + 1 个新增文件上做了
-最小化改动。升级上游版本时必须按本清单重新套用（都是「加字段 / 加分支」，
-不改动上游既有逻辑，冲突概率低）。
+本目录**不是纯净快照**：为了本项目的需求，在 8 个上游文件 + 2 处新增
+（`src/utils/agreement.ts`、`vendor/rcedit-rs/`）上做了最小化改动。升级上游版本时
+必须按本清单重新套用（都是「加字段 / 加分支 / 加样式覆盖」，不改动上游既有逻辑，
+冲突概率低）。
 
 | # | 需求 | 涉及文件 |
 | --- | --- | --- |
@@ -13,6 +14,7 @@
 | 2 | 用户协议可配置、多格式、点击弹窗看全文 | `src-tauri/src/builder/pack.rs`、`src/App.vue`、`src/types.ts`、`src/utils/agreement.ts`（新增） |
 | 3 | 安全加固：收敛卸载器的删除范围与提权面 | `src-tauri/src/installer/uninstall.rs`、`src/utils/agreement.ts`、`src/App.vue`（另有宿主侧 `src/Host/UninstallLauncher.cs`、`src/Host/RuntimePrerequisite.cs`，不属于本目录） |
 | 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增，vendored 依赖 + 1 行 C++ 修复） |
+| 5 | 弹窗里的按钮不再遮住正文（协议全文能完整看到） | `src/Dialog.vue`、`src/App.vue` |
 
 ---
 
@@ -171,8 +173,8 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
   （「关闭」与「我已阅读并同意」，后者顺手勾上 `acceptEula`）；
 - 新增 `agreementTitle` / `hasAgreement` / `agreementHtml` 三个 computed
   与 `openAgreement()` / `closeAgreement(accepted)` 两个函数；
-- scoped 样式新增 `.agreement-body`（`max-height: 46vh` + `overflow-y: auto`）
-  及其 `:deep()` 子元素样式。选择器都以 `.agreement-body[data-v-*]` 开头，
+- scoped 样式新增 `.agreement-body`（高度由弹窗骨架的 flex 分配 + `overflow-y: auto`，
+  见第 5 节）及其 `:deep()` 子元素样式。选择器都以 `.agreement-body[data-v-*]` 开头，
   因此不会被 `rsbuild.config.ts` 里 PurgeCSS 的 `safelist: [/^(?!h[1-6]).*$/]` 清掉。
 
 ### `src/types.ts`
@@ -250,32 +252,6 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 ---
 
-## 升级上游时的套用顺序
-
-1. 按 `UPSTREAM.md` 覆盖整个目录；
-2. 恢复本文件（`LOCAL_PATCHES.md`）与 `UPSTREAM.md`；
-3. 依次套用上面的改动：`uninstall.rs`（注册表清理 + `rm_best_effort` + 第 3 节的
-   全部安全阀）→ `pack.rs` → `types.ts` → `api/ipc.ts` → `utils/agreement.ts`
-   （整份新增，含 DOMPurify 收紧策略）→ `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处
-   + 链接点击拦截 + `acceptEula` 初始化）；
-4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
-   只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
-5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
-   `installer\pack.ps1`，确认：安装界面能弹出协议全文；卸载后
-   `HKCU\...\Run` 里的 `GenshinFpsUnlocker` 值消失；桌面上的
-   `原神帧率解锁.lnk` 与开始菜单文件夹一并消失。
-
-> 上述 Rust 逻辑（`clean_extra_registry` / `rm_best_effort` / `is_safe_registry_target` /
-> `is_safe_shortcut_target` / `is_safe_delete_target` / `resolve_agreement`）已在 Linux 上
-> 用 mock 版 `windows-registry` + 真实 `serde_json` / `tokio` 逐条跑过 53 个断言
-> （含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 / 系统目录 /
-> 路径穿越 / 受保护根目录、协议 BOM/CRLF 与文件缺失等边界），其中
-> `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
-> `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`）在
-> harness 里用桩替代。整套逻辑**没有**在 Windows 上实机验证过。
-
----
-
 ## 4. 依赖：`rcedit` 从 git 依赖改为仓库内 vendored 副本
 
 上游 kachina 的 `src-tauri/Cargo.toml` 里写的是：
@@ -313,3 +289,69 @@ error: failed to run custom build command for `rcedit-sys v0.1.0 (https://github
 - `pwsh tools/devcheck/devcheck.ps1 -Layer native`：在有 `cl.exe` 的机器上（CI 的 windows job）
   真编一遍 `rcedit-sys`，让这类「工具链 vs vendored C++」的破坏在**自动**工作流里就暴露，
   不必等手动触发 Build 跑 6 分钟。
+
+---
+
+## 5. 弹窗布局：footer 按钮回到文档流
+
+上游的 `.btn-install` 是给**主界面右下角**设计的：`position: absolute; bottom: 20px;
+right: 8px`（次要按钮 `.btn-install-2rd` 再往左挪 150px）。三个弹窗的 footer 里
+复用了同一个类，于是按钮脱离文档流、浮在 `.dialog-body` 上面。主界面没事（正文短），
+协议弹窗就露馅了：
+
+- 安装窗口只有 **520 × 250** 逻辑像素（`src-tauri/src/main.rs` 的 `base_width` /
+  `base_height` × 系统文字缩放），`.dialog` 撑满后约 488 × 246；
+- 协议正文原先写死 `max-height: 46vh`（≈115px）+ 内边距/边框/外边距 ≈ 149px，
+  加上标题（25px 字）与说明文字，文档流走到约 210px；
+- 而两个按钮占 190~230px 这一段 —— **正好压住正文最后一两行**；
+  按钮本身 140×40 / 100×40，在 488px 宽的弹窗里也偏大。
+
+### 改法
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/Dialog.vue` | `.dialog` 改纵向 flex（`overflow: hidden`）；新增 `.dialog-body { flex: 1 1 auto; min-height: 0 }`（自己也是 flex column）与 `.dialog-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 6px 8px 10px }` |
+| `src/App.vue` | 新增 `.dialog-footer .btn-install`（含 `.btn-install-2rd`）覆盖：`position: static; height: 28px; width: auto; min-width: 72px; padding: 0 14px; font-size: 12.5px`；`.agreement-body` 去掉 `max-height: 46vh`，改 `flex: 1 1 auto; min-height: 0` |
+
+footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结构上不可能重叠**，
+窗口按系统文字缩放放大缩小都成立。正文可见区域也从「115px 里被按钮盖掉约 20px」
+变成完整的约 110px（`.agreement-body` 是 content-box，115px 只是内容高度，
+外头还有 20px 内边距 + 2px 边框 + 12px 外边距）。
+
+> 两条样式必须分别写在 `Dialog.vue` 和 `App.vue`：Vue 的 scoped CSS 里，
+> slot 内容带的是**父组件**（App.vue）的 scope id，子组件（Dialog.vue）选择不到
+> `.dialog-footer .btn-install`；反过来 `.dialog-footer` 这个元素属于 Dialog.vue，
+> App.vue 也只能靠后代选择器命中它。
+
+### 影响面
+
+三个弹窗（`source` / `mirrorc` / `agreement`）的 footer 都变成流内右对齐，
+按钮略小、略低（原先底边距 20px，现在 10px），视觉位置基本不变；
+主界面的 6 个 `.btn-install` 不在 `.dialog-footer` 里，绝对定位保持原样。
+
+---
+
+## 升级上游时的套用顺序
+
+1. 按 `UPSTREAM.md` 覆盖整个目录；
+2. 恢复本文件（`LOCAL_PATCHES.md`）与 `UPSTREAM.md`；
+3. 依次套用上面的改动：`uninstall.rs`（注册表清理 + `rm_best_effort` + 第 3 节的
+   全部安全阀）→ `pack.rs` → `types.ts` → `api/ipc.ts` → `utils/agreement.ts`
+   （整份新增，含 DOMPurify 收紧策略）→ `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处
+   + 链接点击拦截 + `acceptEula` 初始化 + 第 5 节的两处样式）→ `Dialog.vue`
+   （第 5 节的 flex 骨架）；
+4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
+   只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
+5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
+   `installer\pack.ps1`，确认：安装界面能弹出协议全文；卸载后
+   `HKCU\...\Run` 里的 `GenshinFpsUnlocker` 值消失；桌面上的
+   `原神帧率解锁.lnk` 与开始菜单文件夹一并消失。
+
+> 上述 Rust 逻辑（`clean_extra_registry` / `rm_best_effort` / `is_safe_registry_target` /
+> `is_safe_shortcut_target` / `is_safe_delete_target` / `resolve_agreement`）已在 Linux 上
+> 用 mock 版 `windows-registry` + 真实 `serde_json` / `tokio` 逐条跑过 53 个断言
+> （含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 / 系统目录 /
+> 路径穿越 / 受保护根目录、协议 BOM/CRLF 与文件缺失等边界），其中
+> `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
+> `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`）在
+> harness 里用桩替代。整套逻辑**没有**在 Windows 上实机验证过。

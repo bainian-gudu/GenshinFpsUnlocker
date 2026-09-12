@@ -22,12 +22,8 @@ env:
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   CARGO_TERM_COLOR: "always"
-  # actions/setup-node 自己（以及它的 post-job 缓存步骤）会打 [DEP0040] punycode /
-  # [DEP0169] url.parse() 弃用告警，是 action 内部依赖的事，跟本仓库无关。
-  # env 对所有步骤（包括 node 类 action）都生效，所以在这里统一静音。
+  # 压掉第三方 action 自己的弃用告警，理由见 tools/devcheck/README.md「日志里哪些 Warning / error 是正常的」
   NODE_NO_WARNINGS: "1"
-  # 已是 runner 默认行为，留着只为显式声明；ilammy/msvc-dev-cmd@v1 仍声明 node20，
-  # 日志里会有一条 ##[warning]Node.js 20 is deprecated，那是上游 action 的事。
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
@@ -43,9 +39,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      # actions/checkout 会先 git init，ubuntu 镜像上的 git 默认分支名还是 master，
-      # 于是每次都要打 8 行 "hint: Using 'master' as the name for the initial branch..."。
-      # 放在 checkout 之前设好默认分支名，日志里就干净了。
+      # 压掉 actions/checkout 里 git init 的 8 行 master hint，详见 tools/devcheck/README.md
       - name: Silence git default-branch hint
         if: runner.os == 'Linux'
         run: git config --global init.defaultBranch main

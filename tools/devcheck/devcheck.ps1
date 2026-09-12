@@ -164,10 +164,8 @@ function Invoke-Native {
     foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
 
     $proc = [System.Diagnostics.Process]::Start($psi)
-    # stdout / stderr 必须并发读。串行读（先 ReadToEnd stdout 再读 stderr）在 Windows 上
-    # 会死锁：命名管道缓冲区只有 4 KB，而 cargo / dotnet 把进度和诊断都写进 stderr，
-    # 写满后子进程阻塞在 write(stderr)，父进程阻塞在 read(stdout)，两边永远等下去
-    # （Linux 管道缓冲 64 KB，所以同样的代码在 Linux 上「碰巧」不会挂）。
+    # stdout / stderr 必须并发读：串行读在 Windows 上会死锁（管道缓冲只有 4 KB）。
+    # 完整原因与本地复现方法见同目录 README.md「跨平台的坑」。
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
     if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
@@ -179,9 +177,8 @@ function Invoke-Native {
     try { $stdout = $outTask.Result } catch { }
     try { $stderr = $errTask.Result } catch { }
 
-    # 两个流是分别读完再拼接的（并发读才不会死锁），所以 stderr 的内容一律排在
-    # stdout 后面，时间顺序会错位。两边都非空时插一行分隔，读日志的人才不会把
-    # 末尾的 stderr 误当成「跑完之后又出事了」。
+    # 并发读的两个流分别读完再拼接，stderr 一律排在 stdout 后面（时间顺序会错位），
+    # 所以两边都非空时插一行分隔说明。详见 README.md「日志里哪些 Warning / error 是正常的」。
     $parts = @()
     if ($stdout.Trim()) { $parts += $stdout.Trim() }
     if ($stderr.Trim()) {
@@ -317,10 +314,7 @@ function Test-VendoredSource {
     $notes.Add('npm 依赖全部来自 registry')
 
     # 7) rcedit-rs 的 vendored 副本：kachina 唯一需要 C++ 编译器的依赖。
-    #    上游（Devolutions/rcedit-rs，最新提交 2025-10-29）的 rescle.cc 用了
-    #    std::locale::empty() —— MSVC 的非标准扩展，VS 2022 17.14 弃用、
-    #    MSVC 14.51（VS 2026 = 现在的 windows-latest）移除（microsoft/STL#5834），
-    #    编译直接 error C2039，所以改成用仓库内的副本 + 一行修复。
+    #    为什么不用 git 依赖、与上游差在哪、怎么升级：副本目录里的 LOCAL_PATCHES.md。
     $rc = 'installer/kachina/vendor/rcedit-rs'
     $rcRequired = @(
         "$rc/Cargo.toml", "$rc/LICENSE", "$rc/LICENSE.rcedit", "$rc/src/lib.rs",
@@ -422,9 +416,8 @@ function Test-RustLogic {
 
 function Test-NativeDeps {
     # vendored 的 rcedit-sys 带 C++（rescle.cc / librcedit.cpp），只能靠 MSVC 编。
-    # 这一层就在有 cl.exe 的机器上真编一遍：工具链或 C++ 侧的变化
-    # （例如 MSVC 14.51 移除 std::locale::empty 导致 error C2039）会在自动跑的
-    # Devcheck 工作流里立刻暴露，不必等手动触发 Build、跑 6 分钟才发现。
+    # 这一层在有 cl.exe 的机器上真编一遍，让工具链/C++ 侧的变化在自动跑的 Devcheck
+    # 里就暴露，不必等手动触发 Build。踩过的具体那一次：vendor 目录的 LOCAL_PATCHES.md。
     $crate = Join-Path $RepoRoot 'installer/kachina/vendor/rcedit-rs/rcedit-sys'
     if (-not (Test-Path -LiteralPath (Join-Path $crate 'Cargo.toml'))) {
         throw "找不到 $crate（vendored 副本被删了？）"
@@ -473,12 +466,9 @@ function Test-Frontend {
     $checks = @(
         @{ What = 'tsc --noEmit（agreement.ts / types.ts）'; Exe = $npx; Args = @('tsc', '--noEmit', '-p', 'tsconfig.json') }
         @{ What = '.vue 单文件组件编译'; Exe = $node; Args = @('sfccheck.mjs') }
-        # 只查我们自己写的文件：types.ts / App.vue 是上游代码，本身就不满足仓库的
-        # prettier 风格，查它们只会天天误报（要格式化请在 installer/kachina 里用上游的工具链）。
-        # --end-of-line auto：仓库已用 .gitattributes 强制 LF 入库/检出，但 Windows 上
-        # 若有人是在加 .gitattributes 之前 clone 的（工作区已是 CRLF 且没重新规范化），
-        # prettier 默认的 endOfLine=lf 会因为纯粹的换行差异报「格式不对」，
-        # 把真正需要关注的风格问题淹掉。换行由 .gitattributes 管，这里只管格式。
+        # 只查我们自己写的文件（types.ts / App.vue 是上游代码，本身不符合仓库的 prettier 风格）。
+        # --end-of-line auto：换行统一由 .gitattributes 管，别让旧工作区的 CRLF 淹掉真问题，
+        # 详见 README.md「跨平台的坑」。
         @{ What = 'prettier --check'; Exe = $npx; Args = @('prettier', '--check', '--end-of-line', 'auto', 'gen/src/utils/agreement.ts') }
     )
     foreach ($c in $checks) {
@@ -595,10 +585,8 @@ jobs:
         -Run { Test-RustTypecheck }
 
     # --- 3) logic：把注册表安全阀的深度要求从 2 段放宽到 1 段 ---
-    # 用 1 而不是 0：usize >= 0 恒真，编译器会额外打一条
-    # `warning: comparison is useless due to type limits`，那是注入带来的噪音，
-    # 不是我们代码的问题；>= 1 同样是真放宽（"Software" 这种单段键会被放过），
-    # 断言照样能抓到，日志里干净。
+    # 用 1 而不是 0：usize >= 0 恒真，编译器会多打一条无用的 comparison 告警（噪音），
+    # 放宽的效果一样。详见 README.md「日志里哪些 Warning / error 是正常的」。
     Add-Case 'logic 层能抓到安全阀被放宽' `
         -Mutate {
             $f = Join-Path $DevCheckRoot 'rust/logic/src/gen/extracted.rs'

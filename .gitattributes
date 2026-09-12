@@ -1,11 +1,6 @@
 # 全仓库统一换行：入库 LF、检出也是 LF。
-#
-# 为什么必须有这个文件：windows-latest runner 的 git 默认 core.autocrlf=true，
-# 检出时会把工作区文件换成 CRLF。仓库里的文本文件本来就是 LF 入库的，
-# 于是同一个提交在 ubuntu-latest 上是绿的、在 windows-latest 上 prettier --check
-# 必然报「Code style issues found」（prettier 2.x 起默认 endOfLine=lf）。
-# 顺带也让 hashFiles('installer/kachina/**') 这类按工作区内容算的缓存 key
-# 在两个平台上保持一致。
+# 没有这个文件，windows-latest 上 prettier --check 必挂（runner 的 git 默认
+# core.autocrlf=true）。完整来龙去脉：tools/devcheck/README.md「跨平台的坑」。
 * text=auto eol=lf
 
 # 明确声明二进制，避免被当成文本做换行转换（text=auto 一般能自动识别，

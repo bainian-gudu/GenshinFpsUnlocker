@@ -1,11 +1,10 @@
-import DOMPurify from 'dompurify';
-import type { AgreementConfig } from '../types';
-
 /**
  * 用户协议渲染：把配置里内联的协议正文（text / markdown / html）转成可安全
- * v-html 的字符串。协议正文来自打包时的本地文件，但仍旧统一走 DOMPurify，
- * 避免任何情况下把脚本注入安装器界面。
+ * v-html 的字符串。正文来自打包时读入的本地文件，但仍统一过一遍 DOMPurify，
+ * 任何情况下都不让脚本进安装器界面。
  */
+import DOMPurify from 'dompurify';
+import type { AgreementConfig } from '../types';
 
 /**
  * 净化策略：协议正文只需要排版标签。
@@ -57,8 +56,8 @@ function renderInline(text: string): string {
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   out = out.replace(/(^|[^*\w])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-  // 只放行 http(s) 链接；escapeHtml 之后引号已变成 &quot;，这里按未转义形式匹配
-  // 只放行 http(s) 链接；点击行为由 App.vue 拦截后交给系统浏览器
+  // 链接只放行 http(s)；正则按转义后的文本匹配（引号已是 &quot;）。
+  // 点击行为由 App.vue 的 onAgreementClick 拦下交给系统浏览器，不在 WebView 里导航。
   out = out.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>',

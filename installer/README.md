@@ -153,7 +153,9 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 - 打包（`pack`）时正文被**内联进 exe**（`agreement: { title, format, content }`），
   所以离线安装器、`update.exe`、`uninst.exe` 共用同一份协议，运行期不读文件、不联网。
 - 安装界面的「我已阅读并同意 **用户协议**」里，链接可点击，弹窗显示全文；
-  弹窗底部「我已阅读并同意」会顺手勾上同意框。
+  弹窗底部「我已阅读并同意」会顺手勾上同意框（「关闭」只关弹窗，不改勾选状态）。
+  正文可滚动、按钮固定在下方不遮正文 —— 安装窗口只有 520×250，弹窗骨架因此改成
+  纵向 flex，细节见 `kachina/LOCAL_PATCHES.md` 第 5 节。
 - **内联了协议正文就必须主动勾选**才能点「安装」（`acceptEula` 初始为 `false`）。
   没有协议内容时保持上游默认（视为已同意）；`silent` / `non_interactive` 安装、
   更新、卸载都不受影响。
@@ -211,6 +213,21 @@ npm 依赖全部来自 registry），并且每次 push 都会在 Devcheck 工作
 
 CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace action ——
 这是任何构建都免不了的；被禁止的是「kachina 本体来自本仓库之外」。
+
+### workflow 里那些看着多余的设置
+
+工作流与脚本的注释只留一句指针，完整理由记在这里（约定：**思路、踩坑过程、
+参考的项目/issue 一律写文档，不写进代码注释**）。
+
+| 设置 | 为什么 |
+| --- | --- |
+| `RUST_TOOLCHAIN: nightly` + `-Z build-std` | 上游 kachina 的构建方式，stable 工具链编不过 |
+| `CMAKE_GENERATOR: Ninja`（`build-kachina` job） | `seera-msquic` 的静态构建会在 `target\<三元组>\release\build\seera-msquic\<hash>\out\build\CMakeFiles\CMakeScratch\TryCompile-*\...` 这种极深路径下写 `.tlog`，超过 Windows 260 字符上限时 MSBuild 的 FileTracker 报 `error FTK1011: could not create the new file tracking log file`。Ninja 不写 `.tlog`，从根上绕开；同 job 里的 `Enable Windows long paths`（`LongPathsEnabled=1`）是第二道防线。**副作用**：Ninja 不会像 MSBuild 那样自己去 VS 安装目录找 `cl.exe`，所以必须先跑 `ilammy/msvc-dev-cmd@v1` 把 `PATH` / `INCLUDE` / `LIB` 注入进去 |
+| `NODE_NO_WARNINGS: "1"` | `actions/setup-node` 自己（含它的 post-job 缓存步骤）会打 `[DEP0040] punycode` / `[DEP0169] url.parse()` 弃用告警，是 action 内部依赖的事，跟本仓库无关。`env` 对所有步骤生效，在这里统一静音 |
+| `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"` | 2025-10 起「声明 node20 的 action 一律强制跑 node24」已是 runner 默认行为，这个变量留着只是显式声明。日志里那条 `##[warning]Node.js 20 is deprecated` 来自第三方 action 自己的 `action.yml`（清单见下表），删不删这个变量都会打 |
+| kachina 的 `rcedit = { path = "../vendor/rcedit-rs" }` | 原本是 git 依赖，但上游 C++ 用了新版 MSVC 已移除的非标准扩展，编不过。完整出处（含上游仓库、快照 commit、对应的 MSVC STL 变更）见 `kachina/vendor/rcedit-rs/LOCAL_PATCHES.md` |
+| 仓库根的 `.gitattributes`（`* text=auto eol=lf`） | windows-latest 的 git 默认 `core.autocrlf=true`，检出成 CRLF 后 `prettier --check` 在 Windows 上必挂。详见 `../tools/devcheck/README.md`「跨平台的坑」 |
+| `git config --global init.defaultBranch main`（放在 checkout 之前） | `actions/checkout` 会先 `git init`，ubuntu 镜像上默认分支名还是 `master`，每次打 8 行 hint。同上 |
 
 ### 已经在 CI 上跑通
 

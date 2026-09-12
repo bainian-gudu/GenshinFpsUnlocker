@@ -150,6 +150,7 @@ internal static class UninstallLauncher
         }
     }
 
+    /// <summary>是否是符号链接 / 挂载点之类的重解析点（校验卸载程序时用来拒绝被替换的路径）。</summary>
     private static bool IsReparsePoint(FileAttributes attributes) =>
         (attributes & FileAttributes.ReparsePoint) != 0;
 }

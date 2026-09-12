@@ -1,11 +1,4 @@
-# ---------------------------------------------------------------------------
-# vendored 副本（来源见 LOCAL_PATCHES.md）：
-#   https://github.com/Devolutions/rcedit-rs @ 1bfa3ee6da2092b9b0c93148ce1455c5d45c538c
-# 与上游的差异：
-#   1. 删掉 [dev-dependencies]（上游的 tests/ 没有一起 vendor，tempfile 用不到）
-#   2. rcedit-sys/src/rescle.cc 里 std::locale::empty() -> std::locale::classic()
-#      （MSVC 14.51 起移除了这个非标准扩展，见 microsoft/STL#5834）
-# ---------------------------------------------------------------------------
+# 仓库内 vendored 副本。上游来源、与上游的两处差异、升级方式：同目录 LOCAL_PATCHES.md
 [package]
 name = "rcedit"
 version = "0.1.0"

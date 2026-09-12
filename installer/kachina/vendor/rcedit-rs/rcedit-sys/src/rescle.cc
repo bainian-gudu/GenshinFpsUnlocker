@@ -84,11 +84,8 @@ inline T round(T value, int modula = 4) {
 
 std::wstring ReadFileToString(const wchar_t* filename) {
   std::wifstream wif(filename);
-  // 本地改动（原为 std::locale::empty()）：那是 MSVC 的非标准扩展，
-  // VS 2022 17.14 起弃用、MSVC 14.51（VS 2026 / windows-latest）起彻底移除
-  // （microsoft/STL#5834），编译会报 error C2039: 'empty' is not a member of 'std::locale'。
-  // 这里的用意只是给 wifstream 装一个 codecvt_utf8 facet，基准 locale 用哪个都行；
-  // classic() 是标准里的 "C" locale，且不受 locale::global() 影响，行为确定。
+  // Local patch: was a non-standard MSVC locale extension that newer toolchains
+  // removed. Rationale and provenance: ../../LOCAL_PATCHES.md
   wif.imbue(std::locale(std::locale::classic(), new std::codecvt_utf8<wchar_t>));
   std::wstringstream wss;
   wss << wif.rdbuf();

@@ -158,6 +158,10 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
   `.gitattributes`（`* text=auto eol=lf`，让所有平台都检出 LF，顺带让
   `hashFiles('installer/kachina/**')` 这类按工作区算的缓存 key 跨平台一致）；
   devcheck 里再传 `--end-of-line auto` 兜底，避免在没重新规范化的旧工作区上误报。
+- **新版 MSVC 会删掉非标准扩展，vendored C++ 因此会突然编不过。** `native` 层就是为
+  这件事存在的：它用 runner 上的 `cl.exe` 真编一遍 `installer/kachina/vendor/rcedit-rs`
+  的 C++。触发这条坑的具体变更（哪个 MSVC 版本、上游哪个 PR、我们改的那一行）记在
+  `installer/kachina/vendor/rcedit-rs/LOCAL_PATCHES.md`，代码里只留一句指针。
 - **`Get-Tool` 在 Windows 上要避开 `.ps1` shim。** npm/npx 会同时装 `npm.cmd` 和
   `npm.ps1`，而 `ProcessStartInfo`（`UseShellExecute=false`）执行不了 `.ps1`，
   执行策略也可能拦；所以同名时优先 `.cmd`。

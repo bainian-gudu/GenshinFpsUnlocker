@@ -178,6 +178,10 @@ internal static class ShortcutHelper
         throw new IOException("无法写入任何桌面目录的快捷方式");
     }
 
+    /// <summary>
+    /// 清掉桌面上的历史别名快捷方式（早期英文名、<c>.exe.lnk</c> 双后缀）。
+    /// 只按固定文件名删，不做通配，避免误删用户的其它快捷方式。
+    /// </summary>
     private static void CleanDesktopAliases(string? desktop)
     {
         if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop)) return;
@@ -263,6 +267,9 @@ internal static class ShortcutHelper
         }
     }
 
+    /// <summary>
+    /// 需要覆盖的两个桌面：全体用户桌面 + 当前用户桌面（后者可能被 OneDrive 重定向）。
+    /// </summary>
     private static IEnumerable<string> DesktopRoots()
     {
         yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
@@ -318,6 +325,7 @@ internal static class ShortcutHelper
         return (user, true);
     }
 
+    /// <summary>给定一侧开始菜单目录，返回另一侧（全体用户 ↔ 当前用户）。</summary>
     private static string OtherProgramsRoot(string root)
     {
         var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms);
@@ -364,6 +372,7 @@ internal static class ShortcutHelper
         }
     }
 
+    /// <summary>删快捷方式，失败只记 Debug 日志：清理残留不该打断安装/卸载主流程。</summary>
     private static void TryDelete(string path)
     {
         try
@@ -376,6 +385,10 @@ internal static class ShortcutHelper
         }
     }
 
+    /// <summary>
+    /// 这个 <c>.lnk</c> 的目标是不是本程序的 exe。卸载时先确认再删，
+    /// 同名但指向别处的快捷方式一律不碰。
+    /// </summary>
     private static bool ShortcutTargetsExe(string lnkPath, string exeFull)
     {
         try
@@ -395,6 +408,7 @@ internal static class ShortcutHelper
         }
     }
 
+    /// <summary>用 <c>IShellLinkW</c> 写 <c>.lnk</c>（走 COM，不依赖 WScript.Shell）。</summary>
     private static void CreateShortcut(
         string lnkPath,
         string targetPath,

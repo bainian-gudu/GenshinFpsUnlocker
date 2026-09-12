@@ -35,16 +35,9 @@ env:
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   CARGO_TERM_COLOR: "always"
-  # actions/setup-node 自己（以及它的 post-job 缓存步骤）会打 [DEP0040] punycode /
-  # [DEP0169] url.parse() 弃用告警，是 action 内部依赖的事，跟本仓库无关。
-  # env 对所有步骤（包括 node 类 action）都生效，所以在这里统一静音。
+  # 这两个变量都是为了压掉第三方 action 自己的告警，理由见
+  # installer/README.md「workflow 里那些看着多余的设置」
   NODE_NO_WARNINGS: "1"
-  # 注：2025-10 起「声明 node20 的 action 一律强制跑 node24」已是 runner 默认行为，
-  # 这个变量留着只是显式声明。日志里那条
-  #   ##[warning]Node.js 20 is deprecated ... forced to run on Node.js 24:
-  #   ilammy/msvc-dev-cmd@v1, pnpm/action-setup@v4, actions/download-artifact@v6
-  # 是这些第三方 action 自己的 action.yml 还在声明 node20，删不删这个变量都会打；
-  # msvc-dev-cmd 已经是最新的 v1.13.0（2024-01），只能等上游。
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
@@ -70,12 +63,8 @@ jobs:
           path: installer/tools/kachina-builder.exe
           key: kachina-builder-${{ runner.os }}-${{ hashFiles('installer/kachina/**') }}
 
-      # seera-msquic 的静态构建会在
-      #   <repo>\installer\kachina\src-tauri\target\<三元组>\release\build\seera-msquic\<hash>\out\build\
-      #   CMakeFiles\CMakeScratch\TryCompile-*\...\*.tlog
-      # 这种极深路径下写文件，超过 Windows 260 字符上限时 MSBuild 的 FileTracker 会报
-      #   FileTracker : error FTK1011: could not create the new file tracking log file
-      # 两道防线：打开系统长路径支持 + 下面把 cmake 生成器换成 Ninja（不写 .tlog）。
+      # 长路径 + 下面的 CMAKE_GENERATOR: Ninja 是同一件事的两道防线（FTK1011），
+      # 详见 installer/README.md「workflow 里那些看着多余的设置」
       - name: Enable Windows long paths
         if: steps.kachina-cache.outputs.cache-hit != 'true'
         shell: pwsh
@@ -130,7 +119,7 @@ jobs:
       - name: Build kachina-builder from source
         if: steps.kachina-cache.outputs.cache-hit != 'true'
         env:
-          # cmake-rs 会读取 CMAKE_GENERATOR；Ninja 绕开 MSBuild 的 FileTracker（FTK1011）
+          # cmake-rs 会读取 CMAKE_GENERATOR；Ninja 不写 .tlog，绕开 FTK1011（见 README）
           CMAKE_GENERATOR: Ninja
         shell: pwsh
         run: |

@@ -75,6 +75,7 @@ internal static class UiStyle
         }
     }
 
+    /// <summary>系统的「应用」深浅色（HKCU Themes\Personalize\AppsUseLightTheme），读不到按浅色算。</summary>
     public static bool IsAppsDarkMode()
     {
         try
@@ -174,6 +175,7 @@ internal static class UiStyle
         }
     }
 
+    /// <summary>系统主题/配色变化时重刷界面；其它类别的偏好变化直接忽略。</summary>
     private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         if (e.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.VisualStyle or UserPreferenceCategory.Color or UserPreferenceCategory.Window))

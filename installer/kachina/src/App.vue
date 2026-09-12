@@ -365,6 +365,19 @@
   }
 }
 
+/* 弹窗 footer 里的按钮：.btn-install 的绝对定位是给主界面右下角用的，
+   放进弹窗会浮在正文上面，所以在 footer 里改回文档流并收窄一档。
+   弹窗骨架的 flex 布局见 Dialog.vue。 */
+.dialog-footer .btn-install,
+.dialog-footer .btn-install.btn-install-2rd {
+  position: static;
+  height: 28px;
+  width: auto;
+  min-width: 72px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
 .actions {
   display: flex;
   flex-direction: column;
@@ -398,7 +411,10 @@
 
 .agreement-body {
   app-region: no-drag;
-  max-height: 46vh;
+  /* 高度由弹窗骨架的 flex 分配，自己只管滚动。
+     早先写死的 max-height: 46vh 会和 footer 抢地方。 */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 10px 12px;
@@ -941,6 +957,7 @@ function openAgreement() {
   }
   dialog.value = 'agreement';
 }
+// 「我已阅读并同意」→ 顺手勾上 EULA；「关闭」→ 只关弹窗，不改勾选状态
 function closeAgreement(accepted: boolean) {
   if (accepted) {
     acceptEula.value = true;
