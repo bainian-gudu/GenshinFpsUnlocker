@@ -84,6 +84,9 @@ namespace
             return nullptr;
         }
 
+        // caller 位于游戏模块映像内（已提交、可读），窗口内读字节是安全的；
+        // 早先每个 0xE8 候选都走一次 ResolveRelative（内含 VirtualQuery 系统调用），
+        // 这里直接做 rel32 算术，整个窗口零系统调用。
         void* lastCall = nullptr;
         for (int i = 0; i < kMosaicCallWindow - 4; ++i)
         {
@@ -93,7 +96,8 @@ namespace
                 continue;
             }
 
-            if (Scanner::ResolveRelative(p, 1, 5) == displayEffect)
+            const auto rel = *reinterpret_cast<const int32_t*>(p + 1);
+            if (static_cast<void*>(p + 5 + rel) == displayEffect)
             {
                 lastCall = p;
             }

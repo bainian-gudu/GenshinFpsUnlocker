@@ -26,6 +26,7 @@ internal sealed class UiBridge : IDisposable
     private WebView2? _webView;
     private int _saveState; // 0 saved, 1 saving, 2 error
     private bool _disposed;
+    private string? _lastStateJson;
 
     public UiBridge(AppConfig config, UnlockService service, MainForm form)
     {
@@ -38,17 +39,23 @@ internal sealed class UiBridge : IDisposable
     public void Attach(WebView2 webView)
     {
         _webView = webView;
+        _lastStateJson = null;  // 新 webview 没收到过任何状态，作废去重缓存
         webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
     }
 
     public void PushState()
     {
         if (_webView?.CoreWebView2 is null) return;
-        Post(new
+        // 监视循环每秒会触发几次 StateChanged（状态串里带实时 FPS），但绝大部分
+        // 推送的 JSON 与上一次完全相同：序列化 + WebView2 消息 + 前端整树重渲染
+        // 全是白做。这里按序列化结果去重，只有真正变化才过桥。
+        var json = JsonSerializer.Serialize(new
         {
             type = "state",
             state = BuildStateObject(),
-        });
+        }, JsonOpts);
+        if (json == _lastStateJson) return;
+        if (PostJson(json)) _lastStateJson = json;
     }
 
     public void PushLog(string level, string message)
@@ -620,14 +627,22 @@ internal sealed class UiBridge : IDisposable
 
     private void Post(object payload)
     {
+        PostJson(JsonSerializer.Serialize(payload, JsonOpts));
+    }
+
+    /// <summary>发送已序列化的消息；返回是否真的发出去了（webview 未就绪时不算）。</summary>
+    private bool PostJson(string json)
+    {
         try
         {
-            var json = JsonSerializer.Serialize(payload, JsonOpts);
-            _webView?.CoreWebView2?.PostWebMessageAsJson(json);
+            if (_webView?.CoreWebView2 is null) return false;
+            _webView.CoreWebView2.PostWebMessageAsJson(json);
+            return true;
         }
         catch (Exception ex)
         {
             AppLog.Debug("UiBridge post: " + ex.Message);
+            return false;
         }
     }
 
