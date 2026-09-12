@@ -1,0 +1,14 @@
+{
+  "name": "gfu-devcheck-front",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "devcheck 前端层的最小依赖：只做类型检查与 SFC 编译，不打包",
+  "dependencies": {
+    "@vue/compiler-sfc": "^3.5.16",
+    "dompurify": "^3.2.6",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "vue": "^3.5.16"
+  }
+}

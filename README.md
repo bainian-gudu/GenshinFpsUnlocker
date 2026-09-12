@@ -58,6 +58,32 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 （默认安装目录 `Program Files\GenshinFpsUnlocker`、GitHub 在线源、运行库列表）。
 上游源码快照的来源、版本与构建前置见 [`installer/kachina/UPSTREAM.md`](installer/kachina/UPSTREAM.md)。
 
+## 开发自检（devcheck）
+
+`installer/kachina` 是 Tauri + Windows 专用子项目，完整构建一次要几分钟（nightly +
+自定义 target + `-Z build-std` + pnpm），改一行代码只能靠构建来发现写错了。
+`tools/devcheck` 把**我们真正改过的那部分**放进最小依赖的检查环境，热跑 6–12 秒：
+
+```powershell
+pwsh tools/devcheck/devcheck.ps1                # all：ps1 语法 / Rust 类型检查 / 行为断言 / TS+.vue / Host 构建
+pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
+pwsh tools/devcheck/devcheck.ps1 -SelfTest      # 自检：注入 5 个错误，确认每层真的会报错
+```
+
+Rust 那两层是关键：
+
+- `rust` —— 整份 `installer/uninstall.rs` + `utils/error.rs` 塞进一个只有 11 个依赖的
+  crate，`cargo check --target x86_64-pc-windows-msvc`。不需要 tauri、不需要 Windows 机器，
+  却能抓到类型/借用/API 误用（含 `std::os::windows`、`windows-registry`）。
+- `logic` —— mock 版 windows-registry 上跑 53 条行为断言：三个删除安全阀、
+  `value` 为空的处理、提权时遍历 `HKEY_USERS`；协议那条是拿仓库**真实的**
+  `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement`，
+  逐字节比对内联结果。
+
+`-SelfTest` 会往生成物里注入 5 个错误（PowerShell 语法、Rust 类型、安全阀被放宽、
+TS 类型、`.vue` 模板），确认每一层都会报错——避免「检查跑通了但其实什么都没查」。
+覆盖范围、抓不到的东西与维护约定见 [`tools/devcheck/README.md`](tools/devcheck/README.md)。
+
 ## 安装 / 卸载
 
 安装与卸载**只有 Kachina 一种实现**。主程序自身不做任何安装/卸载动作：

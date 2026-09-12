@@ -1,0 +1,21 @@
+# 行为断言 crate：用 mock 版 windows-registry 跑抽取出来的真实逻辑，
+# 在任意平台（含 Linux / CI 容器）都能 `cargo run`，不需要 Windows。
+#
+# 被测源码是生成的：src/gen/extracted.rs（由 devcheck.ps1 抽取，勿手改、不入库）。
+[package]
+name = "kachina-devcheck-logic"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "kachina-devcheck-logic"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tracing = "0.1"
+tokio = { version = "1", features = ["fs", "rt-multi-thread", "macros"] }
+
+[workspace]

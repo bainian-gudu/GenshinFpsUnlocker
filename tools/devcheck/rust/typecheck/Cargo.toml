@@ -1,0 +1,37 @@
+# 生成式「类型检查」crate：把 kachina 的真实源码塞进一个只有最小依赖的 crate 里，
+# 用 `cargo check --target x86_64-pc-windows-msvc` 快速发现编译错误，
+# 不需要 tauri / 完整依赖树 / Windows 机器。
+#
+# 依赖版本与 installer/kachina/src-tauri/Cargo.toml 对齐（大版本一致即可），
+# 否则检查结论不可信 —— 改上游依赖时记得同步这里。
+[package]
+name = "kachina-typecheck"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4.39"
+lazy_static = "1.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = [
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "fs",
+    "io-util",
+    "process",
+    "macros",
+    "net",
+] }
+tracing = "0.1"
+windows = { version = "0.61.1", features = ["Win32_System_Threading"] }
+uuid = "1"
+windows-registry = "0.5"
+
+[workspace]

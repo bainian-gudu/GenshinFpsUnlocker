@@ -61,3 +61,14 @@ src/Ui/node_modules/
 src/Ui/dist/
 
 assets-gen/
+
+# ---------------------------------------------------------------------------
+# devcheck（tools/devcheck/）—— 本地快速体检，见 tools/devcheck/README.md
+#   检查用的源码是生成物，不入库；说明文档要入库（上面 *.md 被忽略）
+# ---------------------------------------------------------------------------
+tools/devcheck/rust/*/src/gen/
+tools/devcheck/front/gen/
+tools/devcheck/front/.prettierrc
+tools/devcheck/_selftest/
+tools/devcheck/front/_selftest/
+!tools/devcheck/README.md
