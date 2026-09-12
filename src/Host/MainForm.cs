@@ -25,7 +25,14 @@ internal sealed partial class MainForm : Form
     /// 启动时若「最小化到托盘」：在 Web 就绪前拦截 Show，避免主窗闪几秒再消失。
     /// </summary>
     private bool _allowVisible = true;
+    /// <summary>仍处于「启动进托盘」阶段（尚未完成首次入托盘）。</summary>
     private bool _startupTrayPending;
+    /// <summary>
+    /// 「启动进托盘」本进程只允许发生一次。
+    /// 之后用户主动打开的主窗（托盘图标 / 二次点快捷方式唤醒 / UI showWindow）
+    /// 绝不能再被任何延迟到达的兜底调用藏回托盘。
+    /// </summary>
+    private bool _startupTrayDone;
     /// <summary>启动托盘时暂存正常位置，恢复时用。</summary>
     private Point _restoreLocation;
     private bool _hasRestoreLocation;
@@ -146,8 +153,11 @@ internal sealed partial class MainForm : Form
         {
             try
             {
-                // 启动托盘模式：Shown 不应出现；若出现则立刻藏
-                if (_startupTrayPending || (_config.StartMinimized && _inTray && !_allowVisible))
+                // 启动托盘模式：Shown 不应出现；若仍处于启动阶段则立刻藏。
+                // 注意：判定必须用「启动阶段」标志，不能用 _config.StartMinimized ——
+                // 后者是持久化的用户偏好，用户之后从托盘打开主窗时它仍为 true，
+                // 旧代码据此把刚弹出的界面又藏回托盘（一闪即最小化）。
+                if (_startupTrayPending || (_inTray && !_allowVisible))
                 {
                     try { FinishStartupToTray(); } catch { /* ignore */ }
                     return;
@@ -200,8 +210,8 @@ internal sealed partial class MainForm : Form
             {
                 AppLog.Error(ex, "WebView2 初始化失败");
                 try { ShowNativeFallbackUi(ex.Message); } catch { /* ignore */ }
-                // 启动托盘模式：不要 MessageBox 抢焦点；托盘气球即可
-                if (!(_config.StartMinimized || _inTray))
+                // 仍在托盘后台（含启动进托盘阶段）：不要 MessageBox 抢焦点；托盘气球即可
+                if (!_inTray && !_startupTrayPending)
                 {
                     try
                     {
@@ -231,8 +241,16 @@ internal sealed partial class MainForm : Form
                 }
             }
 
-            // 启动托盘：构造期已 Finish；此处仅兜底
-            if (_config.StartMinimized || _startupTrayPending || _inTray && !_allowVisible)
+            // 启动托盘兜底：只在「启动进托盘」阶段才允许隐藏。
+            //
+            // 【本次修复】旧条件含 _config.StartMinimized，而它是持久化偏好：
+            // StartMinimized=true 时主窗句柄在启动阶段被 SetVisibleCore 拦住，
+            // Load 事件其实一直不触发，直到用户第一次从托盘打开主窗（或二次点快捷方式
+            // 唤醒本实例）才真正 Show → Load → await WebView2 初始化。
+            // 此时旧条件依旧为真，于是又调 FinishStartupToTray() 把刚弹出的界面藏回去，
+            // 表现为「启动软件会弹出界面，然后自己最小化」。
+            // 现在只认 _startupTrayPending（阶段标志），并叠加 FinishStartupToTray 的一次性守卫。
+            if (_startupTrayPending)
             {
                 BeginInvoke(() =>
                 {
@@ -249,7 +267,8 @@ internal sealed partial class MainForm : Form
                 {
                     try
                     {
-                        _config.StartMinimized = false;
+                        // 不再改写 _config.StartMinimized：那是用户的持久化偏好，
+                        // WebView2 加载失败不应把它悄悄关掉（下次启动行为被改）。
                         _startupTrayPending = false;
                         _allowVisible = true;
                         RestoreFromTrayPublic();
@@ -551,10 +570,23 @@ internal sealed partial class MainForm : Form
 
     /// <summary>
     /// 启动配置为进托盘：尽早调用。窗口保持隐藏/屏外，用户看不到主界面。
+    /// 一次性：本进程只会真正执行一次，之后（用户主动打开主窗后）任何兜底调用都直接忽略，
+    /// 避免出现「界面弹出 → 又被自动藏回托盘」。
     /// </summary>
     private void FinishStartupToTray()
     {
         if (_reallyExit || IsDisposed) return;
+
+        // 已完成过「启动进托盘」→ 现在窗口若可见，一定是用户主动打开的，不得再藏
+        if (_startupTrayDone)
+        {
+            if (_startupTrayPending)
+                AppLog.Warn("FinishStartupToTray 被重复调用（启动阶段已结束）— 忽略");
+            _startupTrayPending = false;
+            return;
+        }
+
+        _startupTrayDone = true;
         _startupTrayPending = false;
         _allowVisible = false; // 仍禁止误 Show，直到用户点「显示主界面」
         _inTray = true;
@@ -635,8 +667,8 @@ internal sealed partial class MainForm : Form
             if (_hidingToTray) return;
             if (_inTray && !Visible && !_startupTrayPending) return;
 
-            // 启动路径优先走无闪现逻辑
-            if (fromStartup || _startupTrayPending)
+            // 启动路径优先走无闪现逻辑；启动进托盘已完成过则走常规隐藏
+            if ((fromStartup || _startupTrayPending) && !_startupTrayDone)
             {
                 FinishStartupToTray();
                 return;
