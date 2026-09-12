@@ -1,0 +1,84 @@
+/* 设计令牌（深浅色变量）、基础排版与全局元素样式。 */
+:root {
+  font-family: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  color: #edecf3;
+  background: #121319;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --bg: #121319;
+  --sidebar-bg: #16171e;
+  --panel: #1b1d25;
+  --panel-raised: #22242e;
+  --input: #171920;
+  --topbar: #15161c;
+  --text: #edecf3;
+  --secondary: #b0afbe;
+  --muted: #8b8c9c;
+  --border: #2d2e3a;
+  --border-soft: #272934;
+  --hover: #252631;
+  --accent: #bda2f2;
+  --accent-hover: #cdb6fa;
+  --accent-soft: #b69aef13;
+  --accent-border: #695581;
+  --accent-text: #251b36;
+  --track: #373340;
+  --success: #8bcbb1;
+  --success-bg: #1a2a25;
+  --success-border: #2c4138;
+  --warning: #c1a77d;
+  --error: #eb929b;
+  --sidebar-width: 228px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f5f8;
+  --sidebar-bg: #f0eff5;
+  --panel: #ffffff;
+  --panel-raised: #f4f2f8;
+  --input: #f8f7fb;
+  --topbar: #f9f8fc;
+  --text: #282435;
+  --secondary: #615b71;
+  --muted: #777082;
+  --border: #e4dfed;
+  --border-soft: #eeebf3;
+  --hover: #e9e4f1;
+  --accent: #906ac7;
+  --accent-hover: #a882dc;
+  --accent-soft: #906ac714;
+  --accent-border: #b49cd2;
+  --accent-text: #ffffff;
+  --track: #e7e1ef;
+  --success: #35866c;
+  --success-bg: #e9f2ed;
+  --success-border: #d4e7dd;
+  --warning: #93733d;
+  --error: #c55261;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; scrollbar-color: var(--border) transparent; scrollbar-width: thin; }
+body { margin: 0; min-width: 320px; background: var(--bg); }
+button, input, select, textarea { font: inherit; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+button { border: 0; }
+a { color: inherit; text-decoration: none; }
+button, a, input, select { outline-offset: 4px; }
+:focus-visible { outline: 2px solid var(--accent); }
+h1, h2, h3, p { margin: 0; }
+svg { flex-shrink: 0; }
+::selection { color: var(--text); background: #a486d653; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.skip-link { position: fixed; z-index: 120; top: -60px; left: 16px; padding: 12px 18px; background: var(--accent); color: var(--accent-text); border-radius: 5px; font-size: 13px; }
+.skip-link:focus { top: 12px; }
+.app-shell { min-height: 100svh; color: var(--text); }

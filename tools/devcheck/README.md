@@ -94,7 +94,10 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 
 ```
 tools/devcheck/
-├── devcheck.ps1            入口：分层执行 / 汇总 / -SelfTest / -Fix
+├── devcheck.ps1            入口：参数 / 常量 / -Fix / 分层执行 / 汇总
+├── lib/Common.ps1          基础设施：Get-Tool / Write-* / Invoke-Layer / Invoke-Native
+├── lib/Layers.ps1          各层实现（Test-VendoredSource、Test-Ps1Syntax、New-GenSources、Test-Rust*/Native/Frontend/Host/Ui）
+├── lib/SelfTest.ps1        -SelfTest：往生成物注入错误，验证每层真的会报错
 ├── lib/RustSource.ps1      Rust 源码抽取：先把字符串与注释「挖空」，再做括号配对定位 item 边界
 ├── lib/Generate.ps1        生成两个 crate 的 src/gen 与 front/gen（含要抽取的 item 清单）
 ├── rust/typecheck/         整文件类型检查 crate（真实依赖，Windows target）

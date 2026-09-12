@@ -24,215 +24,6 @@ internal sealed partial class MainForm
     /// <summary>当前是否在托盘后台模式。</summary>
     internal bool IsInTray => _inTray;
 
-    private void BuildTray()
-    {
-        _trayIconOwned = AppIcon.LoadClone();
-        var icon = _trayIconOwned ?? SystemIcons.Application;
-        _tray = new NotifyIcon
-        {
-            Visible = true,
-            Text = Truncate(BuildTrayTipText(), 63),
-            Icon = icon,
-            BalloonTipIcon = ToolTipIcon.Info,
-        };
-        AppLog.Info($"tray created visible={_tray.Visible} hasAppIcon={_trayIconOwned is not null}");
-
-        var dark = UiStyle.IsUiDark;
-        var menu = new ContextMenuStrip
-        {
-            Name = "TrayMenu",
-            // 统一左侧留白：勾选画在同一槽位，文字左对齐（避免默认 CheckMargin 把字顶歪）
-            ShowImageMargin = false,
-            ShowCheckMargin = false,
-            AutoClose = true,
-            Font = UiStyle.UiFont,
-            Padding = new Padding(4, 6, 4, 6),
-            Renderer = new TrayMenuRenderer(dark),
-            BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA),
-            ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22),
-        };
-        _trayMenu = menu;
-
-        // —— 状态头 ——
-        _trayStatusItem = MakeHeaderItem(BuildStatusHeaderText());
-        menu.Items.Add(_trayStatusItem);
-        menu.Items.Add(MakeSep());
-
-        // —— 窗口与游戏操作 ——
-        menu.Items.Add(MakeActionItem("显示主界面", (_, _) => RestoreFromTrayPublic()));
-        menu.Items.Add(MakeActionItem("启动游戏", (_, _) =>
-        {
-            // 成败都只发一条信息类通知：文案本身已说明结果，不必再用警告图标
-            _ = _service.TryLaunchGame(out var msg);
-            ShowTrayBalloon("启动游戏", msg);
-            PushUiAndRefreshTray();
-        }));
-        menu.Items.Add(MakeSep());
-
-        // —— 帧率解锁组 ——
-        _trayEnabledItem = MakeCheckItem(
-            "帧率解锁",
-            _config.Enabled,
-            "开启后按目标帧率注入；关闭则暂停解锁");
-        _trayEnabledItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _service.SetEnabled(_trayEnabledItem.Checked);
-            AfterTrayConfigChange("帧率解锁");
-        };
-        menu.Items.Add(_trayEnabledItem);
-
-        // 修改帧率（预设 + 自定义）：紧随帧率解锁
-        _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {_config.TargetFps} FPS")
-        {
-            ToolTipText = "选择预设或自定义目标帧率",
-            Padding = TrayItemPadding,
-            TextAlign = ContentAlignment.MiddleLeft,
-        };
-        menu.Items.Add(_trayFpsRoot);
-        BuildTrayFpsItems();
-
-        _trayAutoWatchItem = MakeCheckItem(
-            "自动解锁",
-            _config.AutoWatch,
-            "检测到游戏启动后自动应用帧率设置");
-        _trayAutoWatchItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _service.SetAutoWatch(_trayAutoWatchItem.Checked);
-            AfterTrayConfigChange("自动解锁");
-        };
-        menu.Items.Add(_trayAutoWatchItem);
-        menu.Items.Add(MakeSep());
-
-        // —— 反虚化组（画面效果注入，随游戏进程即时生效；联机/UGC 玩法勿开）——
-        _trayAntiBlurPerspectiveItem = MakeCheckItem(
-            "反角色虚化",
-            _config.AntiBlurPerspective,
-            "镜头拉近时角色不再透明化（仅供单机体验）");
-        _trayAntiBlurPerspectiveItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _service.SetAntiBlurPerspective(_trayAntiBlurPerspectiveItem.Checked);
-            AfterTrayConfigChange("反角色虚化");
-        };
-        menu.Items.Add(_trayAntiBlurPerspectiveItem);
-
-        _trayAntiBlurDiveMosaicItem = MakeCheckItem(
-            "移除水下马赛克",
-            _config.AntiBlurDiveMosaic,
-            "角色入水时不再显示马赛克虚化（仅供单机体验）");
-        _trayAntiBlurDiveMosaicItem.CheckedChanged += (_, _) =>
-        {
-            if (_syncingUi) return;
-            _service.SetAntiBlurDiveMosaic(_trayAntiBlurDiveMosaicItem.Checked);
-            AfterTrayConfigChange("移除水下马赛克");
-        };
-        menu.Items.Add(_trayAntiBlurDiveMosaicItem);
-        menu.Items.Add(MakeSep());
-
-        // —— 退出 ——
-        menu.Items.Add(MakeActionItem("退出", (_, _) =>
-        {
-            _reallyExit = true;
-            Close();
-        }));
-
-        menu.Opening += (_, _) =>
-        {
-            try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
-            SyncTrayFromConfig();
-        };
-
-        _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) =>
-        {
-            try { RestoreFromTrayPublic(); }
-            catch (Exception ex) { AppLog.Error(ex, "tray DoubleClick restore"); }
-        };
-        _tray.MouseClick += (_, e) =>
-        {
-            if (e.Button != MouseButtons.Left) return;
-            try { RestoreFromTrayPublic(); }
-            catch (Exception ex) { AppLog.Error(ex, "tray MouseClick restore"); }
-        };
-        _tray.BalloonTipClicked += (_, _) =>
-        {
-            try { RestoreFromTrayPublic(); }
-            catch (Exception ex) { AppLog.Error(ex, "tray BalloonTipClicked restore"); }
-        };
-
-        _service.StateChanged += OnServiceStateForTray;
-        UpdateTrayTip();
-    }
-
-    /// <summary>菜单项统一内边距：左侧留给勾选槽，文字与动作项对齐。</summary>
-    private static Padding TrayItemPadding => new(4, 4, 10, 4);
-
-    private static ToolStripMenuItem MakeHeaderItem(string text) =>
-        new(text)
-        {
-            Enabled = false,
-            Font = new Font(UiStyle.UiFont, FontStyle.Bold),
-            Padding = TrayItemPadding,
-            TextAlign = ContentAlignment.MiddleLeft,
-        };
-
-    private static ToolStripMenuItem MakeActionItem(string text, EventHandler onClick)
-    {
-        var item = new ToolStripMenuItem(text)
-        {
-            Padding = TrayItemPadding,
-            TextAlign = ContentAlignment.MiddleLeft,
-        };
-        item.Click += onClick;
-        return item;
-    }
-
-    private static ToolStripMenuItem MakeCheckItem(string text, bool checkedState, string tip)
-    {
-        return new ToolStripMenuItem(text)
-        {
-            CheckOnClick = true,
-            Checked = checkedState,
-            ToolTipText = tip,
-            Padding = TrayItemPadding,
-            TextAlign = ContentAlignment.MiddleLeft,
-        };
-    }
-
-    private static ToolStripSeparator MakeSep() =>
-        new() { Margin = new Padding(10, 3, 10, 3) };
-
-    private void ApplyTrayMenuTheme()
-    {
-        if (_trayMenu is null) return;
-        var dark = UiStyle.IsUiDark;
-        // 旧 renderer 的画笔/画刷随它一起释放，别等 GC
-        if (_trayMenu.Renderer is IDisposable oldRenderer) oldRenderer.Dispose();
-        _trayMenu.Renderer = new TrayMenuRenderer(dark);
-        _trayMenu.BackColor = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
-        _trayMenu.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
-        _trayMenu.Font = UiStyle.UiFont;
-        foreach (ToolStripItem it in _trayMenu.Items)
-            StyleTrayItem(it, dark);
-        if (_trayFpsRoot is not null)
-        {
-            foreach (ToolStripItem it in _trayFpsRoot.DropDownItems)
-                StyleTrayItem(it, dark);
-            _trayFpsRoot.DropDown.Renderer = new TrayMenuRenderer(dark);
-            _trayFpsRoot.DropDown.BackColor = _trayMenu.BackColor;
-            _trayFpsRoot.DropDown.ForeColor = _trayMenu.ForeColor;
-        }
-    }
-
-    private static void StyleTrayItem(ToolStripItem it, bool dark)
-    {
-        it.ForeColor = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
-        if (it is ToolStripMenuItem mi && !mi.Enabled)
-            it.ForeColor = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
-    }
-
     private void OnServiceStateForTray()
     {
         if (IsDisposed) return;
@@ -256,128 +47,6 @@ internal sealed partial class MainForm
     {
         SyncTrayFromConfig();
         if (_webReady) _bridge.PushState();
-    }
-
-    private void ShowCustomFpsDialog()
-    {
-        var dark = UiStyle.IsUiDark;
-        using var dlg = new Form
-        {
-            Text = "修改目标帧率",
-            Width = 340,
-            Height = 188,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            StartPosition = FormStartPosition.CenterScreen,
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = false,
-            BackColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg,
-            ForeColor = dark ? UiStyle.UiDarkText : UiStyle.UiLightText,
-            Font = UiStyle.UiFont,
-        };
-        UiStyle.ApplyToForm(dlg);
-        UiStyle.ApplyTitleBarChrome(dlg, dark);
-
-        var label = new Label
-        {
-            Text = "目标帧率（1 – 540）",
-            Left = 22,
-            Top = 22,
-            AutoSize = true,
-            ForeColor = dark ? Color.FromArgb(0xB0, 0xAF, 0xBE) : Color.FromArgb(0x55, 0x52, 0x64),
-        };
-        var num = new NumericUpDown
-        {
-            Minimum = 1,
-            Maximum = 540,
-            Value = Math.Clamp(_config.TargetFps, 1, 540),
-            Left = 22,
-            Top = 52,
-            Width = 140,
-            Font = UiStyle.UiFontBold(2f),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
-        var ok = new Button
-        {
-            Text = "确定",
-            Left = 200,
-            Top = 50,
-            Width = 100,
-            Height = 32,
-            DialogResult = DialogResult.OK,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = dark ? Color.FromArgb(0xBD, 0xA2, 0xF2) : Color.FromArgb(0x90, 0x6A, 0xC7),
-            ForeColor = dark ? Color.FromArgb(0x25, 0x1B, 0x36) : Color.White,
-        };
-        ok.FlatAppearance.BorderSize = 0;
-        var cancel = new Button
-        {
-            Text = "取消",
-            Left = 200,
-            Top = 96,
-            Width = 100,
-            Height = 30,
-            DialogResult = DialogResult.Cancel,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = dark ? Color.FromArgb(0x22, 0x24, 0x2E) : Color.FromArgb(0xEE, 0xEC, 0xF4),
-            ForeColor = dlg.ForeColor,
-        };
-        cancel.FlatAppearance.BorderColor = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xD8, 0xD4, 0xE4);
-        dlg.Controls.Add(label);
-        dlg.Controls.Add(num);
-        dlg.Controls.Add(ok);
-        dlg.Controls.Add(cancel);
-        dlg.AcceptButton = ok;
-        dlg.CancelButton = cancel;
-        if (dlg.ShowDialog(Visible ? this : null) == DialogResult.OK)
-        {
-            _service.ApplyFps((int)num.Value);
-            _config.TrySave(out _);
-            PushUiAndRefreshTray();
-            ShowTrayBalloon("帧率", $"目标 FPS = {_config.TargetFps}");
-        }
-    }
-
-    private void BuildTrayFpsItems()
-    {
-        if (_trayFpsRoot is null) return;
-        _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";
-        _trayFpsRoot.DropDownItems.Clear();
-
-        foreach (var preset in TrayFpsPresets)
-        {
-            var p = preset;
-            var item = new ToolStripMenuItem($"{p} FPS")
-            {
-                Checked = _config.TargetFps == p,
-                CheckOnClick = false,
-                ToolTipText = p == 120 ? "推荐" : null,
-                Padding = TrayItemPadding,
-                TextAlign = ContentAlignment.MiddleLeft,
-            };
-            if (p == 120)
-                item.Text = "120 FPS  · 推荐";
-            item.Click += (_, _) =>
-            {
-                _service.ApplyFps(p);
-                _config.TrySave(out _);
-                PushUiAndRefreshTray();
-                ShowTrayBalloon("帧率", $"目标 FPS = {p}");
-            };
-            _trayFpsRoot.DropDownItems.Add(item);
-        }
-
-        _trayFpsRoot.DropDownItems.Add(MakeSep());
-        var custom = new ToolStripMenuItem("自定义…")
-        {
-            Padding = TrayItemPadding,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ToolTipText = "输入 1–540 之间的目标帧率",
-        };
-        custom.Click += (_, _) => ShowCustomFpsDialog();
-        _trayFpsRoot.DropDownItems.Add(custom);
-
-        try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
     }
 
     private string BuildStatusHeaderText()
@@ -423,214 +92,73 @@ internal sealed partial class MainForm
         catch { /* ignore */ }
     }
 
-    /// <summary>托盘菜单绘制：圆角选中条 + 设计稿紫强调色。</summary>
-    /// <summary>
-    /// 自绘渲染器。画笔/画刷在构造时建好、 Dispose 时释放：菜单每次鼠标移动都会
-    /// 重绘若干项，早先每次 OnRender* 都 new SolidBrush/Pen，一次悬停就产生几十个
-    /// GDI+ 对象和等量的 GC 压力。
-    /// </summary>
-    private sealed class TrayMenuRenderer : ToolStripProfessionalRenderer, IDisposable
+    /// <summary>托盘菜单 / Web 改配置后：勾选、FPS 子菜单、提示全文与状态头对齐 UI。</summary>
+    public void SyncTrayFromConfig()
     {
-        private readonly bool _dark;
-        private readonly SolidBrush _bgBrush;
-        private readonly SolidBrush _hoverBrush;
-        private readonly SolidBrush _accentBrush;
-        private readonly Pen _checkPen;
-        private readonly Pen _sepPen;
-        private bool _disposed;
-        private readonly Color _bg;
-        private readonly Color _hover;
-        private readonly Color _accent;
-        private readonly Color _text;
-        private readonly Color _muted;
-        private readonly Color _sep;
+        if (IsDisposed) return;
 
-        public TrayMenuRenderer(bool dark)
-            : base(new TrayColorTable(dark))
+        void work()
         {
-            _dark = dark;
-            _bg = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
-            _hover = dark ? Color.FromArgb(0x25, 0x26, 0x31) : Color.FromArgb(0xEE, 0xEA, 0xF6);
-            _accent = dark ? Color.FromArgb(0xBD, 0xA2, 0xF2) : Color.FromArgb(0x90, 0x6A, 0xC7);
-            _text = dark ? Color.FromArgb(0xED, 0xEC, 0xF3) : Color.FromArgb(0x1A, 0x1A, 0x22);
-            _muted = dark ? Color.FromArgb(0x8B, 0x8C, 0x9C) : Color.FromArgb(0x77, 0x70, 0x82);
-            _sep = dark ? Color.FromArgb(0x2D, 0x2E, 0x3A) : Color.FromArgb(0xE0, 0xDC, 0xEA);
-            _bgBrush = new SolidBrush(_bg);
-            _hoverBrush = new SolidBrush(_hover);
-            _accentBrush = new SolidBrush(_accent);
-            _sepPen = new Pen(_sep);
-            _checkPen = new Pen(_accent, 1.9f)
+            _syncingUi = true;
+            try
             {
-                StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                EndCap = System.Drawing.Drawing2D.LineCap.Round,
-                LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
-            };
-            RoundedEdges = false;
-        }
+                if (_trayStatusItem is not null)
+                    _trayStatusItem.Text = BuildStatusHeaderText();
 
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            _bgBrush.Dispose();
-            _hoverBrush.Dispose();
-            _accentBrush.Dispose();
-            _sepPen.Dispose();
-            _checkPen.Dispose();
-            GC.SuppressFinalize(this);
-        }
+                if (_trayEnabledItem is not null)
+                {
+                    _trayEnabledItem.Checked = _config.Enabled;
+                    // 总开关关闭时仍允许改勾选，但状态头会提示暂停
+                    _trayEnabledItem.Enabled = true;
+                }
+                if (_trayAutoWatchItem is not null)
+                    _trayAutoWatchItem.Checked = _config.AutoWatch;
+                if (_trayAntiBlurPerspectiveItem is not null)
+                    _trayAntiBlurPerspectiveItem.Checked = _config.AntiBlurPerspective;
+                if (_trayAntiBlurDiveMosaicItem is not null)
+                    _trayAntiBlurDiveMosaicItem.Checked = _config.AntiBlurDiveMosaic;
 
-        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
-        {
-            e.Graphics.FillRectangle(_bgBrush, e.AffectedBounds);
-        }
-
-        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
-        {
-            var r = e.AffectedBounds;
-            r.Width -= 1;
-            r.Height -= 1;
-            e.Graphics.DrawRectangle(_sepPen, r);
-        }
-
-        /// <summary>勾选槽宽与文字左缘：所有项（含无勾选项）同一 X 起排，避免参差。</summary>
-        private const int CheckGutter = 28;
-        private const int TextLeft = 32;
-
-        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
-        {
-            // 无系统图标栏
-        }
-
-        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
-        {
-            // 不使用系统默认勾选绘制；在 OnRenderItemText 前由 DrawCheckMark 绘制
-        }
-
-        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
-        {
-            var g = e.Graphics;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var item = e.Item;
-            var bounds = new Rectangle(3, 1, Math.Max(0, item.Width - 6), Math.Max(0, item.Height - 2));
-
-            g.FillRectangle(_bgBrush, new Rectangle(0, 0, item.Width, item.Height));
-
-            if (!item.Enabled) return;
-            if (!item.Selected && !item.Pressed) return;
-
-            using var path = RoundRect(bounds, 6);
-            g.FillPath(_hoverBrush, path);
-            g.FillRectangle(_accentBrush, new Rectangle(bounds.X + 1, bounds.Y + 5, 3, Math.Max(4, bounds.Height - 10)));
-        }
-
-        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
-        {
-            var g = e.Graphics;
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-            var item = e.Item;
-            var isCheck = item is ToolStripMenuItem { CheckOnClick: true };
-            var isChecked = item is ToolStripMenuItem { Checked: true };
-
-            // 勾选标记：固定画在 gutter 内垂直居中
-            if (isChecked)
-                DrawCheckMark(g, item);
-
-            e.TextColor = !item.Enabled
-                ? _muted
-                : isChecked && isCheck
-                    ? _accent
-                    : item.Selected
-                        ? _accent
-                        : _text;
-
-            // 文字统一左缘 TextLeft、整行高度内垂直居中：矩形直接取整行高度，
-            // 由 VerticalCenter 负责对中，别再自己叠 ContentRectangle.Y / 内边距
-            // （叠了会偏高偏矮不一，和勾选标记对不齐）。
-            var font = e.TextFont ?? item.Font ?? SystemFonts.MenuFont ?? SystemFonts.DefaultFont;
-            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
-            var textRect = new Rectangle(
-                TextLeft,
-                0,
-                Math.Max(8, item.Width - TextLeft - 12),
-                item.Height);
-
-            TextRenderer.DrawText(
-                g,
-                e.Text ?? item.Text ?? "",
-                font,
-                textRect,
-                e.TextColor,
-                flags | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-            // 不再调用 base，避免系统再画一次偏移文字
-        }
-
-        /// <summary>
-        /// 自绘勾选标记：与文字共用「整行高度的中线」这一条基线，勾形包围盒
-        /// （11×8）在勾选槽内水平居中、在行内垂直居中，√ 与文字因此严格对齐。
-        /// 早先的写法把 ContentRectangle.Y 又加了一遍行高的一半，√ 比文字低 3~4px。
-        /// </summary>
-        private void DrawCheckMark(Graphics g, ToolStripItem item)
-        {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            const float glyphW = 11f;   // 勾形包围盒宽
-            const float glyphH = 8f;    // 勾形包围盒高（cy-4 .. cy+4）
-            var cx = (CheckGutter - glyphW) / 2f;
-            var cy = item.Height / 2f;
-            g.DrawLines(_checkPen, new[]
+                if (_trayFpsRoot is not null)
+                {
+                    _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";
+                    foreach (ToolStripItem it in _trayFpsRoot.DropDownItems)
+                    {
+                        if (it is not ToolStripMenuItem mi) continue;
+                        // "120 FPS  · 推荐" / "60 FPS"
+                        var txt = mi.Text ?? "";
+                        var numPart = txt.Split(' ')[0];
+                        if (int.TryParse(numPart, out var fps))
+                            mi.Checked = fps == _config.TargetFps;
+                    }
+                }
+                UpdateTrayTip();
+            }
+            finally
             {
-                new PointF(cx, cy),
-                new PointF(cx + 4, cy + glyphH / 2f),
-                new PointF(cx + glyphW, cy - glyphH / 2f),
-            });
+                _syncingUi = false;
+            }
         }
 
-        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
-        {
-            var y = e.Item.ContentRectangle.Top + e.Item.ContentRectangle.Height / 2;
-            e.Graphics.DrawLine(_sepPen, TextLeft, y, Math.Max(TextLeft + 8, e.Item.Width - 12), y);
-        }
-
-        private static System.Drawing.Drawing2D.GraphicsPath RoundRect(Rectangle bounds, int radius)
-        {
-            var path = new System.Drawing.Drawing2D.GraphicsPath();
-            var d = radius * 2;
-            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
-            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
-            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
-            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
-        }
+        if (InvokeRequired) BeginInvoke(work);
+        else work();
     }
 
-    private sealed class TrayColorTable : ProfessionalColorTable
+    private void UpdateTrayTip()
     {
-        private readonly Color _bg;
-        private readonly Color _hover;
-
-        public TrayColorTable(bool dark)
+        try
         {
-            _bg = dark ? Color.FromArgb(0x1B, 0x1D, 0x25) : Color.FromArgb(0xF7, 0xF6, 0xFA);
-            _hover = dark ? Color.FromArgb(0x25, 0x26, 0x31) : Color.FromArgb(0xEE, 0xEA, 0xF6);
+            if (_tray is null) return;
+            _tray.Text = BuildTrayTipText();
+            if (_trayStatusItem is not null && !_syncingUi)
+            {
+                // 仅更新文案，不进 _syncingUi 全量路径时也刷新头
+                _trayStatusItem.Text = BuildStatusHeaderText();
+            }
         }
-
-        public override Color MenuBorder => _bg;
-        public override Color MenuItemBorder => Color.Transparent;
-        public override Color MenuItemSelected => _hover;
-        public override Color MenuItemSelectedGradientBegin => _hover;
-        public override Color MenuItemSelectedGradientEnd => _hover;
-        public override Color MenuStripGradientBegin => _bg;
-        public override Color MenuStripGradientEnd => _bg;
-        public override Color ToolStripDropDownBackground => _bg;
-        public override Color ImageMarginGradientBegin => _bg;
-        public override Color ImageMarginGradientMiddle => _bg;
-        public override Color ImageMarginGradientEnd => _bg;
-        public override Color SeparatorDark => _bg;
-        public override Color SeparatorLight => _bg;
-        public override Color CheckBackground => _bg;
-        public override Color CheckSelectedBackground => _hover;
-        public override Color CheckPressedBackground => _hover;
+        catch { /* ignore */ }
     }
+
+    private static string Truncate(string s, int max)
+        => s.Length <= max ? s : s[..(max - 1)] + "…";
+
 }

@@ -1,0 +1,13 @@
+/* 启动占位、桌面版标识、协议正文与「驻留托盘」按钮。 */
+.boot-shell { display:grid; place-items:center; min-height:100vh; }
+.boot-card { display:flex; flex-direction:column; align-items:center; gap:14px; color:var(--secondary); }
+.boot-card p { margin:0; letter-spacing:.2px; }
+.preview-label.is-native { color: var(--success); border-color: var(--success-border); background: var(--success-bg); }
+.safety-pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.7; color: var(--secondary); margin: 0; }
+
+.status-tray-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; color: var(--muted); font-size: 11px;
+  padding: 2px 6px; border-radius: 6px; transition: color .15s, background .15s;
+}
+.status-tray-btn:hover { color: var(--text); background: var(--hover); }

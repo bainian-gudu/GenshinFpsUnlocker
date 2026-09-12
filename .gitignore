@@ -60,6 +60,7 @@ installer/kachina/tests/fixtures/
 # Web UI
 src/Ui/node_modules/
 src/Ui/dist/
+src/Ui/*.tsbuildinfo
 
 assets-gen/
 

@@ -1,0 +1,286 @@
+/* 响应式断点与 prefers-reduced-motion 降级。 */
+@media (min-width: 1600px) {
+  :root { --sidebar-width: 245px; }
+  .sidebar-brand-row { padding-left: 29px; }
+  .main-content { padding-top: 36px; padding-bottom: 32px; }
+  .overview-hero { min-height: 245px; }
+  .hero-copy { padding-top: 34px; }
+  .hero-copy h2 { font-size: 36px; }
+  .overview-controls { margin-top: 24px; gap: 24px; }
+  .fps-panel, .quick-settings { min-height: 291px; }
+  .game-launch-panel { margin-top: 24px; min-height: 102px; }
+  .hero-guide { margin-top: 25px; }
+}
+
+@media (max-width: 1250px) {
+  :root { --sidebar-width: 208px; }
+  .sidebar-brand-row { padding-left: 20px; padding-right: 20px; }
+  .brand-mark { width: 34px; height: 34px; }
+  .brand-wordmark strong { font-size: 20px; }
+  .brand-wordmark > span { font-size: 8.5px; letter-spacing: 1.8px; }
+  .main-content { padding: 27px 28px 24px; }
+  .topbar { padding: 0 28px; }
+  .overview-controls { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+  .control-panel { padding-left: 19px; padding-right: 19px; }
+  .fps-presets button > span { display: none; }
+  .hero-copy h2 { font-size: 31px; }
+  .hero-copy > p { font-size: 10.5px; }
+  .launch-button { min-width: 128px; }
+  .path-button { padding-left: 11px; padding-right: 11px; }
+  .game-path { font-size: 9.5px; }
+  .overview-tip > p { font-size: 9.5px; }
+  .fps-monitor-hint { font-size: 9px; gap: 6px; }
+  .toggle-row { gap: 10px; }
+  .toggle-row-copy p { font-size: 9.5px; }
+  .quick-settings .row-icon { width: 16px; }
+  .guide-layout { gap: 32px; }
+  .about-intro { gap: 32px; }
+  .about-brand-mark { width: 120px; height: 120px; }
+  .about-intro h2 { font-size: 43px; }
+}
+
+@media (max-width: 1050px) {
+  :root { --sidebar-width: 185px; }
+  .sidebar-brand-row { padding-left: 18px; padding-right: 16px; }
+  .brand { gap: 9px; }
+  .brand-mark { height: 31px; width: 31px; }
+  .brand-wordmark strong { font-size: 18px; }
+  .brand-wordmark > span { font-size: 8px; letter-spacing: 1.4px; }
+  .nav-item { font-size: 12px; gap: 11px; padding-left: 12px; padding-right: 12px; }
+  .nav-group-label { margin-left: 24px; }
+  .sidebar-version { margin-left: 20px; margin-right: 20px; font-size: 9px; }
+  .main-content { padding-left: 25px; padding-right: 25px; }
+  .overview-controls { grid-template-columns: minmax(0, 1.13fr) minmax(0, 1fr); }
+  .quick-settings .row-icon { display: none; }
+  .fps-monitor-hint { display: none; }
+  .hero-copy { padding-left: 27px; }
+  .hero-copy h2 { font-size: 29px; }
+  .hero-copy h3 { font-size: 19px; }
+  .hero-copy p { max-width: 340px; }
+  .game-launch-panel { gap: 12px; padding-left: 17px; padding-right: 17px; }
+  .launch-actions { gap: 8px; }
+  .launch-button { min-width: 113px; font-size: 11px; }
+  .path-button { font-size: 10px; padding-left: 9px; padding-right: 9px; gap: 6px; }
+  .game-art { width: 48px; height: 48px; border-radius: 11px; }
+    .example-label { font-size: 7px; }
+  .overview-tip { align-items: flex-start; }
+  .overview-tip > svg { margin-top: 2px; }
+  .tip-help { display: none; }
+  .settings-game-grid { gap: 16px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .about-intro { padding-left: 0; padding-right: 0; }
+  .about-brand-mark { width: 93px; height: 93px; }
+  .about-intro h2 { font-size: 37px; }
+  .about-details { gap: 32px; }
+}
+
+@media (max-width: 860px) and (min-width: 561px) {
+  :root { --sidebar-width: 76px; }
+  .sidebar-brand-row { justify-content: center; padding: 27px 15px; }
+  .brand-mark { height: 35px; width: 35px; }
+  .brand-wordmark, .nav-group-label { display: none; }
+  .primary-nav { margin-top: 22px; }
+  .primary-nav, .secondary-nav { padding-left: 12px; padding-right: 12px; }
+  .nav-item { justify-content: center; padding: 0; gap: 0; min-height: 46px; }
+  .nav-item > span:not(.nav-active-background) { display: none; }
+  .nav-item > svg { width: 20px; height: 20px; }
+  .sidebar-constellation { display: none; }
+  .sidebar-version { justify-content: center; margin-left: 13px; margin-right: 13px; }
+  .sidebar-version a, .version-dot { display: none; }
+  .main-content { padding-left: 24px; padding-right: 24px; }
+  .topbar { padding-left: 24px; padding-right: 24px; }
+}
+
+@media (max-width: 720px) {
+  .overview-controls, .settings-game-grid { grid-template-columns: minmax(0, 1fr); }
+  .fps-monitor-hint { display: flex; font-size: 10px; }
+  .fps-presets button > span { display: inline; font-size: 8px; }
+  .quick-settings { min-height: 255px; }
+  .quick-settings .row-icon { display: block; width: 18px; }
+  .quick-settings .toggle-row { min-height: 63px; }
+  .toggle-row-copy p { font-size: 10.5px; }
+  .game-launch-panel { flex-wrap: wrap; padding: 18px; }
+  .game-info { flex: 1; }
+  .game-path { font-size: 10px; }
+  .example-label { font-size: 8px; }
+  .launch-actions { flex: 0 0 100%; width: 100%; justify-content: flex-end; padding-top: 14px; margin-top: 3px; border-top: 1px solid var(--border-soft); gap: 10px; }
+  .launch-actions .button { flex: 1; height: 39px; }
+  .hero-copy { padding-left: 26px; }
+  .hero-copy h2 { font-size: 30px; }
+  .hero-copy h3 { font-size: 20px; }
+  .page-heading { gap: 10px; }
+  .page-heading p { font-size: 10.5px; }
+  .readiness { font-size: 9px; padding: 6px 8px; }
+  .status-target, .status-bar-left > .status-bar-separator { display: none; }
+  .status-bar { padding-left: 20px; padding-right: 20px; }
+  .guide-layout { grid-template-columns: 1fr; gap: 24px; }
+  .guide-art { min-height: 180px; }
+  .guide-art > img { object-position: center 55%; }
+  .guide-art > div { left: 23px; bottom: 20px; }
+  .guide-art > div > p { font-size: 20px; line-height: 1.6; }
+  .guide-safety { flex-wrap: wrap; align-items: flex-start; }
+  .guide-safety > div { flex: 1; }
+  .guide-safety > button { margin-left: 33px; }
+  .log-toolbar { flex-wrap: wrap; padding: 16px; }
+  .search-input { flex: 0 0 100%; max-width: none; }
+  .log-toolbar .select-input { flex: 1; max-width: none; }
+  .log-table th, .log-table td { padding-left: 12px; padding-right: 12px; }
+  .log-table th:first-child { width: 84px; }
+  .log-table th:nth-child(2) { width: 74px; }
+  .log-footer { padding: 13px 16px; }
+  .log-footer > span:last-child { display: none; }
+  .about-intro { gap: 25px; padding-top: 30px; }
+  .about-brand-mark { width: 83px; height: 83px; }
+  .about-intro h2 { font-size: 36px; }
+  .about-version { display: block; width: fit-content; margin: 13px 0 0; }
+  .about-details { grid-template-columns: 1fr; gap: 32px; }
+  .about-actions { flex-wrap: wrap; }
+  .reset-button { margin-left: 0; }
+}
+
+@media (max-width: 560px) {
+  :root { --sidebar-width: 228px; }
+  .sidebar { visibility: hidden; transform: translateX(-100%); transition: transform .25s ease, visibility .25s; z-index: 60; }
+  .sidebar.sidebar-open { visibility: visible; transform: translateX(0); }
+  .sidebar-backdrop { display: block; position: fixed; inset: 0; background: #05060aac; backdrop-filter: blur(3px); z-index: 50; }
+  .sidebar-brand-row { padding-left: 22px; padding-right: 16px; }
+  .brand-mark { width: 36px; height: 36px; }
+  .brand-wordmark strong { font-size: 20px; }
+  .brand-wordmark > span { font-size: 8.5px; letter-spacing: 1.9px; }
+  .sidebar-close { display: flex; margin-left: auto; width: 26px; }
+  .nav-item { font-size: 12.5px; min-height: 45px; }
+  .sidebar-constellation { height: 130px; }
+  .sidebar-version { font-size: 10px; margin-left: 24px; margin-right: 24px; }
+  .main-pane { margin-left: 0; }
+  .mobile-menu-button { display: flex; margin-left: -5px; }
+  .topbar { height: 60px; padding: 0 17px; }
+  .breadcrumb { gap: 8px; font-size: 11px; }
+  .breadcrumb-root { display: none; }
+  .topbar-actions { gap: 9px; }
+  .github-link > span, .github-link > svg:last-child, .topbar-divider { display: none; }
+  .github-link { padding: 6px 0 6px 3px; }
+  .theme-button { width: 29px; }
+  .preview-label { padding: 4px 6px; font-size: 9px; }
+  .main-content { padding: 24px 18px 22px; }
+  .page-heading { margin-bottom: 20px; gap: 8px; }
+  .page-heading h1 { font-size: 23px; }
+  .page-heading p { font-size: 10px; letter-spacing: 0; margin-top: 5px; }
+  .page-heading-actions { gap: 6px; }
+  .page-heading-actions > .text-button { font-size: 9px; }
+  .page-heading-actions .button { font-size: 10px; padding-left: 10px; padding-right: 10px; }
+  .readiness { font-size: 9px; padding: 5px 7px; gap: 5px; }
+  .overview-hero { min-height: 227px; border-radius: 8px; }
+  .hero-shade { background: linear-gradient(90deg, #142127f5 0%, #17282bc4 44%, #17282b4d 100%); }
+  .hero-image { object-position: 63% center; }
+  .hero-copy { padding: 24px 22px; max-width: 100%; }
+  .hero-copy h2 { font-size: 26px; letter-spacing: -.85px; line-height: 1.4; }
+  .hero-copy h3 { font-size: 18px; margin-top: 10px; letter-spacing: .8px; }
+  .hero-copy p { max-width: 230px; font-size: 10px; line-height: 1.9; margin-top: 9px; }
+  .hero-guide { margin-top: 20px; font-size: 10px; gap: 8px; }
+  .overview-controls { gap: 16px; margin-top: 16px; }
+  .control-panel { padding-left: 20px; padding-right: 20px; border-radius: 8px; }
+  .fps-panel { min-height: 281px; }
+  .fps-monitor-hint { font-size: 9px; gap: 6px; }
+  .fps-presets { gap: 6px; }
+  .fps-presets button { font-size: 11px; }
+  .fps-presets button > span { display: none; }
+  .fps-feedback { font-size: 9px; }
+  .toggle-row-copy p { font-size: 10px; }
+  .quick-settings { min-height: 250px; }
+  .game-launch-panel { padding: 17px; margin-top: 16px; gap: 12px; border-radius: 8px; }
+  .game-info-title { gap: 7px; }
+  .game-info-title > h2 { font-size: 14px; }
+  .game-state { font-size: 9px; }
+  .example-label { font-size: 7px; padding: 1px 3px; }
+  .game-path { font-size: 9px; gap: 5px; }
+  .overview-tip { padding-top: 17px; gap: 8px; }
+  .overview-tip > p { font-size: 9.5px; }
+  .status-bar { min-height: 34px; padding: 8px 17px; font-size: 8px; gap: 8px; }
+  .status-bar-left, .status-bar-right { gap: 6px; }
+  .status-bar-right > .status-bar-separator, .status-bar-right > button { display: none; }
+  .autosave-label { font-size: 9px; gap: 4px; }
+  .tabs { justify-content: space-between; gap: 8px; margin-bottom: 20px; }
+  .tabs > button { padding: 0 2px; font-size: 10.5px; gap: 6px; }
+  .tabs > button > svg { width: 14px; }
+  .setting-list { padding-top: 20px; padding-bottom: 10px; }
+  .section-intro h2 { font-size: 14px; }
+  .section-intro p { font-size: 10px; }
+  .setting-row { min-height: 92px; gap: 12px; }
+  .setting-row p, .setting-list .toggle-row-copy p { font-size: 10px; }
+  .number-setting input { width: 65px; font-size: 11px; }
+  .number-setting span { padding-right: 9px; }
+  .setting-list .select-input { max-width: 100px; padding-left: 9px; padding-right: 9px; }
+  .config-tools { padding: 21px 20px; }
+  .config-tool-buttons { gap: 8px; }
+  .config-tool-buttons .button { font-size: 10px; padding-left: 10px; padding-right: 10px; gap: 6px; }
+  .config-tools .input-help { font-size: 10px; }
+  .settings-native-note { font-size: 10px; }
+  .about-uninstall { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .about-uninstall p { font-size: 10px; }
+  .settings-path-panel .panel-heading .text-button { font-size: 10px; }
+  .path-display { padding: 10px; font-size: 10px; }
+  .log-toolbar { padding: 14px; }
+  .log-session-heading { padding-left: 14px; padding-right: 14px; }
+  .log-table td { font-size: 10px; padding-top: 13px; padding-bottom: 13px; }
+  .log-table td:first-child { font-size: 9px; }
+  .log-table th:first-child { width: 76px; }
+  .log-table th:nth-child(2) { width: 65px; }
+  .log-table th, .log-table td { padding-left: 10px; padding-right: 10px; }
+  .log-level { font-size: 7px; min-width: 33px; }
+  .log-table-container { min-height: 330px; }
+  .log-footer { font-size: 9px; }
+  .getting-started > h2 { font-size: 21px; }
+  .guide-layout { padding-top: 9px; gap: 18px; }
+  .guide-art { min-height: 165px; }
+  .guide-art > div > p { font-size: 19px; }
+  .faq-item > button { font-size: 11px; padding: 17px 0; gap: 10px; }
+  .faq-item p { font-size: 10.5px; padding-right: 15px; }
+  .guide-safety p { font-size: 10px; }
+  .about-intro { flex-direction: column; align-items: flex-start; gap: 24px; padding-top: 20px; padding-bottom: 30px; }
+  .about-brand-mark { width: 72px; height: 72px; }
+  .about-intro h2 { font-size: 41px; }
+  .about-intro p { font-size: 11px; }
+  .about-actions { gap: 9px; }
+  .about-actions .button { font-size: 10.5px; padding-left: 11px; padding-right: 11px; }
+  .about-details { padding-top: 28px; padding-bottom: 26px; }
+  .about-details dl > div { font-size: 10px; }
+  .modal-backdrop { padding: 14px; }
+  .modal { max-height: calc(100svh - 28px); border-radius: 11px; }
+  .modal-header { padding: 25px 22px 0; }
+  .modal-header > h2 { font-size: 18px; }
+  .modal-header > p { font-size: 10.5px; }
+  .modal-body { padding: 20px 22px 23px; }
+  .modal-footer { padding: 15px 20px; gap: 8px; flex-wrap: wrap; }
+  .modal-footer .button { font-size: 10.5px; padding-left: 12px; padding-right: 12px; gap: 7px; }
+  .modal-footer > .text-button:first-child { font-size: 9px; }
+  .path-helper-actions { flex-direction: column; align-items: flex-start; gap: 13px; }
+  .path-input { font-size: 10px; }
+  .toast-container { right: 12px; bottom: 45px; width: calc(100vw - 24px); }
+  .toast { padding: 14px 11px 14px 14px; }
+}
+
+@media (max-width: 380px) {
+  .hero-copy h2 { font-size: 23px; }
+  .hero-copy h3 { font-size: 17px; }
+  .page-heading p { max-width: 200px; font-size: 9px; }
+  .page-heading h1 { font-size: 22px; }
+  .fps-monitor-hint { display: none; }
+  .fps-presets { gap: 5px; }
+  .game-state { display: none; }
+  .toggle-row-copy p { font-size: 9px; }
+  .quick-settings .row-icon { width: 16px; }
+  .topbar-actions { gap: 6px; }
+}
+
+@media (max-height: 780px) and (min-width: 861px) {
+  .sidebar-constellation { height: 105px; }
+  .main-content { padding-top: 24px; }
+  .page-heading { margin-bottom: 20px; }
+  .overview-hero { min-height: 211px; }
+  .hero-copy { padding-top: 23px; padding-bottom: 23px; }
+  .hero-guide { margin-top: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
