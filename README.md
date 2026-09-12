@@ -253,26 +253,29 @@ Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kach
   已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp`。
 - 安装 / 卸载 / 更新器整体方案来自 [YuehaiTeam/kachina-installer](https://github.com/YuehaiTeam/kachina-installer)
   （源码快照见 `installer/kachina/`，版本与来源见 `installer/kachina/UPSTREAM.md`）。
+- 应用图标等图片素材取自 [babalae/better-genshin-impact](https://github.com/babalae/better-genshin-impact)
+  （GPL-3.0），逐文件路径见下文「图片与素材来源」。
 - 其余实现层面的参考（上游 issue、MSVC/Windows 行为变更等）一律记在对应目录的
   `LOCAL_PATCHES.md` / `tools/devcheck/README.md` 里，代码注释只留一句指针。
 
 ### 图片与素材来源
 
-| 文件 | 内容 | 来源 | 版权归属 |
+| 文件 | 内容 | 来源（`md5sum` 逐字节核对） | 版权归属 |
 | --- | --- | --- | --- |
 | `src/Ui/public/images/game-icon.webp` | 《原神》官方应用图标（派蒙头像 + miHoYo 字标） | 米哈游官方素材 | © 米哈游 / HoYoverse |
-| `src/Host/Assets/app.png` / `app.ico` / `favicon.ico`、`src/Ui/public/favicon.ico` / `favicon.png` | 应用图标：chibi 风格的猫耳角色抱纸箱 | **AI 生成**（提交 `afdf028`），形象借鉴《原神》角色 | 角色形象 © 米哈游；图本身为 AI 生成 |
-| `installer/kachina/src/left.webp` | 安装器左侧立绘：chibi 猫耳角色抱纸箱 | **上游 kachina-installer 自带**（与 tag `0.5.1` 逐字节一致，未改动） | 上游仓库素材（上游未提供 LICENSE，来源未注明） |
-| `installer/kachina/src-tauri/icons/icon.ico` | 安装器 / 卸载器 exe 图标 | **上游 kachina-installer 自带**（与 tag `0.5.1` 逐字节一致） | 同上 |
-| `src/Ui/public/images/teyvat-landscape.jpg` | 概览页 / 指南页的璃月风格山水横幅 | 随设计稿提供的插画 | 见下注 |
+| `src/Host/Assets/app.png`、`src/Host/Assets/app.ico`、`src/Ui/public/favicon.ico` | 应用图标：chibi 风格的猫耳角色抱纸箱 | [babalae/better-genshin-impact](https://github.com/babalae/better-genshin-impact) 的 `BetterGenshinImpact/Resources/Images/logo.png` / `logo.ico` | 素材随 BetterGI（**GPL-3.0**）；角色形象 © 米哈游 |
+| `src/Host/Assets/favicon.ico`、`src/Ui/public/favicon.png` | 同一形象的安装包 / 网页图标变体 | BetterGI 的 `Build/micasetup/Favicon.ico` / `Favicon.png` | 同上 |
+| `installer/kachina/src-tauri/icons/icon.ico` | 安装器 / 卸载器 exe 图标 | 上游 kachina-installer 自带（与 tag `0.5.1` 一致）；该文件本身又与 BetterGI `Build/micasetup/FaviconSetup.ico` 同字节 | 同上 |
+| `installer/kachina/src/left.webp` | 安装器左侧立绘：同款 chibi 角色 | 上游 kachina-installer 自带（与 tag `0.5.1` 逐字节一致，未改动） | 上游仓库素材（上游未提供 LICENSE） |
+| `src/Ui/public/images/teyvat-landscape.jpg` | 概览页 / 指南页的璃月风格山水横幅 | **AI 生成的原神风格插画**（个人自用前提下生成，非官方素材） | 风格致敬《原神》；场景本身非米哈游素材 |
 | `src/Ui/public/favicon.svg` | 星芒形单色 logo（纯几何路径，304 字节） | 本项目手写 SVG | 本项目（MIT） |
 
-> 注 1：AI 生成的素材（应用图标、横幅）是在「个人自用、非商业」前提下生成的，
-> 生成时参考了《原神》的角色与美术风格；**角色名称与形象本身的版权仍归米哈游**。
-> 注 2：校验方式 `md5sum` 与上游 tag `0.5.1` 逐文件比对 —— `left.webp`、
-> `src-tauri/icons/icon.ico` 与上游完全一致，属于上游快照的一部分，
-> 升级上游时按 `installer/kachina/UPSTREAM.md` 的流程一起更新。
-> 若其中任何一张图的权利人提出异议，将从仓库中移除并替换。
+> 注 1：除 `favicon.svg`（本项目手写）与 AI 生成的横幅外，仓库内所有图片都与
+> 上游 kachina 快照或 BetterGI 仓库中的某个文件**逐字节相同**（核对方式：`md5sum`，
+> 路径见上表「来源」列）。BetterGI 以 **GPL-3.0** 发布，这些素材**不随本项目的
+> MIT 许可再授权**；升级上游 kachina 时按 `installer/kachina/UPSTREAM.md` 一起更新。
+> 注 2：凡涉及《原神》角色、官方图标或美术风格的素材，角色与形象的版权均归米哈游。
+> 若任何一张图的权利人提出异议，将从仓库中移除并替换。
 
 ### 商标与作品归属（米哈游）
 
@@ -284,4 +287,5 @@ Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kach
 ## License
 
 MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（[kachina-installer](https://github.com/YuehaiTeam/kachina-installer)，源码快照见 `installer/kachina/`）按其上游许可使用 —— **注意：上游仓库未提供 LICENSE 文件**，详见 `installer/kachina/UPSTREAM.md`。
-代码与文档主要由 AI 生成并按上述 MIT 许可发布；**素材不随 MIT 许可授权**（见上节）。
+代码与文档主要由 AI 生成并按上述 MIT 许可发布；**图片素材不随 MIT 许可授权** ——
+它们分别属于米哈游、BetterGI（GPL-3.0）与上游 kachina 快照（见「图片与素材来源」）。
