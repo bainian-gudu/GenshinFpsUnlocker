@@ -27,6 +27,10 @@ internal sealed class UiBridge : IDisposable
     private int _saveState; // 0 saved, 1 saving, 2 error
     private bool _disposed;
     private string? _lastStateJson;
+    /// <summary>增量日志的自增序号（与 getBootstrap 的 "log-N" 区分，避免 React key 撞车）。</summary>
+    private int _liveLogSeq;
+    /// <summary>增量推送失败过一次就停手，等下次 Attach 再恢复（见 PushLog 注释）。</summary>
+    private bool _logPushBroken;
 
     public UiBridge(AppConfig config, UnlockService service, MainForm form)
     {
@@ -34,12 +38,15 @@ internal sealed class UiBridge : IDisposable
         _service = service;
         _form = form;
         _service.StateChanged += OnServiceStateChanged;
+        // 宿主日志 → 前端日志页的增量推送（前端 native.ts 的 onNativeLog 一直在监听）
+        AppLog.EntryLogged += OnAppLogEntry;
     }
 
     public void Attach(WebView2 webView)
     {
         _webView = webView;
         _lastStateJson = null;  // 新 webview 没收到过任何状态，作废去重缓存
+        _logPushBroken = false; // 新 webview 重新允许增量日志
         webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
     }
 
@@ -58,20 +65,57 @@ internal sealed class UiBridge : IDisposable
         if (PostJson(json)) _lastStateJson = json;
     }
 
-    public void PushLog(string level, string message)
+    /// <summary>
+    /// 把一条宿主日志增量推给前端日志页。
+    /// 前端（native.ts 的 onNativeLog）早就在监听了，缺的一直是宿主这边的接线：
+    /// 旧实现里 PushLog 没有任何调用方，日志页只显示 getBootstrap 拿到的那一批，
+    /// 之后宿主再记什么都看不见。
+    /// </summary>
+    private void PushLog(AppLog.Entry entry)
     {
-        if (_webView?.CoreWebView2 is null) return;
-        Post(new
+        if (_disposed || _logPushBroken || _webView?.CoreWebView2 is null) return;
+
+        var payload = new
         {
             type = "log",
             entry = new
             {
-                id = Guid.NewGuid().ToString("N"),
-                timestamp = DateTime.UtcNow.ToString("O"),
-                level,
-                message,
+                id = $"live-{Interlocked.Increment(ref _liveLogSeq)}",
+                timestamp = entry.UtcTimestamp,
+                level = entry.LevelName,
+                message = entry.Message,
             },
-        });
+        };
+
+        // 故意不走 Post()：那条路径失败时会 AppLog.Debug，而 AppLog 现在会把每条
+        // 日志再推给前端 —— 「推送失败 → 记日志 → 又推送」会自己喂自己，
+        // 在 webview 正在拆除的当口刷爆消息队列。这里失败就静默停手，
+        // 等下次 Attach（新 webview）再恢复。
+        try
+        {
+            _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload, JsonOpts));
+        }
+        catch
+        {
+            _logPushBroken = true;
+        }
+    }
+
+    /// <summary>
+    /// AppLog 的事件在「写日志的那个线程」上触发（监视循环、线程池都可能），
+    /// 而 PostWebMessageAsJson 必须在 UI 线程调用 —— 统一 marshaling 过去。
+    /// </summary>
+    private void OnAppLogEntry(AppLog.Entry entry)
+    {
+        if (_disposed) return;
+        try
+        {
+            if (_form.IsHandleCreated && !_form.IsDisposed)
+                _form.BeginInvoke(() => PushLog(entry));
+            else
+                PushLog(entry);
+        }
+        catch { /* ignore */ }
     }
 
     private void OnServiceStateChanged()
@@ -616,41 +660,19 @@ internal sealed class UiBridge : IDisposable
 
     private static object ReadRecentLogs()
     {
-        var lines = AppLog.GetRecentLines(200);
-        var list = new List<object>(lines.Count);
+        // 直接取结构化记录：旧实现是从格式化字符串里反解析级别/时间，
+        // 还会把 "[T12]" 这样的线程标记一起塞进 message 显示给用户。
+        var entries = AppLog.GetRecentEntries(200);
+        var list = new List<object>(entries.Count);
         var i = 0;
-        foreach (var line in lines)
+        foreach (var e in entries)
         {
-            // 期望格式类似: 2026-... [INFO] message
-            var level = "Info";
-            var message = line;
-            var ts = DateTime.UtcNow.ToString("O");
-            try
-            {
-                var lb = line.IndexOf('[');
-                var rb = line.IndexOf(']', lb + 1);
-                if (lb >= 0 && rb > lb)
-                {
-                    var tag = line[(lb + 1)..rb].Trim();
-                    if (tag.Equals("TRACE", StringComparison.OrdinalIgnoreCase)) level = "Trace";
-                    else if (tag.Equals("DEBUG", StringComparison.OrdinalIgnoreCase)) level = "Debug";
-                    else if (tag.Equals("INFO", StringComparison.OrdinalIgnoreCase)) level = "Info";
-                    else if (tag.Equals("WARN", StringComparison.OrdinalIgnoreCase) || tag.Equals("WARNING", StringComparison.OrdinalIgnoreCase)) level = "Warn";
-                    else if (tag.Equals("ERROR", StringComparison.OrdinalIgnoreCase)) level = "Error";
-                    message = line[(rb + 1)..].Trim();
-                    var head = line[..lb].Trim();
-                    if (DateTime.TryParse(head, out var dt))
-                        ts = dt.ToUniversalTime().ToString("O");
-                }
-            }
-            catch { /* keep defaults */ }
-
             list.Add(new
             {
                 id = $"log-{i++}",
-                timestamp = ts,
-                level,
-                message,
+                timestamp = e.UtcTimestamp,
+                level = e.LevelName,
+                message = e.Message,
             });
         }
         return list;
@@ -682,6 +704,7 @@ internal sealed class UiBridge : IDisposable
         if (_disposed) return;
         _disposed = true;
         _service.StateChanged -= OnServiceStateChanged;
+        AppLog.EntryLogged -= OnAppLogEntry;
         if (_webView?.CoreWebView2 is not null)
         {
             try { _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived; }

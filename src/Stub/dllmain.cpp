@@ -477,10 +477,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         g_running.store(false, std::memory_order_relaxed);
         if (g_workerThread)
         {
-            // 不要在装载器锁上阻塞太久
-            WaitForSingleObject(g_workerThread, 1500);
+            // 不要在装载器锁上阻塞太久。正常 ExitProcess 路径下其它线程已被终止，
+            // 这里会立刻返回。
+            const DWORD waitResult = WaitForSingleObject(g_workerThread, 1500);
             CloseHandle(g_workerThread);
             g_workerThread = nullptr;
+
+            // 超时说明工作线程还活着（FreeLibrary / 控制台关闭等非 ExitProcess 路径）。
+            // 这时继续卸钩、Uninitialize、解除共享内存映射，等于让还在跑的线程去踩
+            // 已释放的 trampoline 和已 unmap 的 g_ipc —— 崩在退出路上。
+            // 宁可把这点资源留给一个即将消失的进程。
+            if (waitResult != WAIT_OBJECT_0)
+            {
+                return TRUE;
+            }
         }
         MH_DisableHook(MH_ALL_HOOKS);
         MH_Uninitialize();

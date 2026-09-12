@@ -251,7 +251,7 @@ internal sealed partial class UnlockService
                 _config.GamePath = path;
                 if (!_config.TrySave(out var pathSaveErr))
                     AppLog.Warn("game path save: " + pathSaveErr);
-                _gamePathStatus = $"游戏路径: {path}（运行中进程）";
+                Volatile.Write(ref _gamePathStatus, $"游戏路径: {path}（运行中进程）");
                 AppLog.Info("captured game path from process: " + path);
                 Raise(forceUi: true);
             }
@@ -301,8 +301,8 @@ internal sealed partial class UnlockService
     /// <summary>更新状态文本（相同内容跳过，避免无意义刷新）。</summary>
     private void SetStatus(string text)
     {
-        if (_statusText == text) return;
-        _statusText = text;
+        if (Volatile.Read(ref _statusText) == text) return;
+        Volatile.Write(ref _statusText, text);
         Raise(forceUi: false);
     }
 

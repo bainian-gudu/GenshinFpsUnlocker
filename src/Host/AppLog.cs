@@ -15,13 +15,27 @@ internal enum LogLevel
 
 /// <summary>
 /// 缓冲型文件日志。默认开启 Debug。
-/// 路径：%LocalAppData%\GenshinFpsUnlocker\logs\app-yyyyMMdd.log
+/// 路径：%LocalAppData%\GenshinFpsUnlocker\logs\app-yyyyMMdd.log（跨日自动换文件）
 /// 通过队列批量刷盘降低 I/O 开销；Error 立即刷盘。UTF-8 编码支持中文。
+///
+/// 内存里保留最近若干条<b>结构化</b>记录（<see cref="Entry"/>），一方面供 UI 的
+/// 日志页读取（<see cref="GetRecentEntries"/>，不用再从格式化字符串里反解析级别），
+/// 另一方面通过 <see cref="EntryLogged"/> 事件让 UI 做增量推送。
 /// </summary>
 internal static class AppLog
 {
+    /// <summary>一条日志记录（时间戳为本地时间，与文件里的格式一致）。</summary>
+    public sealed record Entry(DateTime Timestamp, LogLevel Level, int ThreadId, string Message)
+    {
+        /// <summary>级别名与前端约定的字符串一致（Trace/Debug/Info/Warn/Error）。</summary>
+        public string LevelName => Level.ToString();
+
+        /// <summary>UTC 的 ISO-8601 时间戳，供前端 <c>&lt;time datetime&gt;</c> 使用。</summary>
+        public string UtcTimestamp => Timestamp.ToUniversalTime().ToString("O");
+    }
+
     private static readonly object FileLock = new();
-    private static readonly ConcurrentQueue<string> Recent = new();
+    private static readonly ConcurrentQueue<Entry> Recent = new();
     private static readonly ConcurrentQueue<string> PendingWrite = new();
     private const int RecentCap = 400;
     private const int FlushThreshold = 16;
@@ -30,9 +44,16 @@ internal static class AppLog
     private static bool _enabled = true;
     private static LogLevel _minLevel = LogLevel.Debug;
     private static string? _filePath;
+    private static DateOnly _fileDate;
     private static int _sessionId;
     private static System.Threading.Timer? _flushTimer;
     private static int _pendingCount;
+
+    /// <summary>
+    /// 每写入一条日志就触发（在<b>写日志的那个线程</b>上，且已过滤掉被关掉的级别）。
+    /// 订阅方若要碰 UI 必须自己 marshaling；处理器里也不要再写日志（会递归）。
+    /// </summary>
+    public static event Action<Entry>? EntryLogged;
 
     /// <summary>当前日志文件完整路径（可能为 null）。</summary>
     public static string? CurrentFilePath => _filePath;
@@ -53,7 +74,8 @@ internal static class AppLog
         try
         {
             PathUtil.EnsureDir(AppPaths.LogDirectory);
-            _filePath = Path.Combine(AppPaths.LogDirectory, $"app-{DateTime.Now:yyyyMMdd}.log");
+            _fileDate = DateOnly.FromDateTime(DateTime.Now);
+            _filePath = Path.Combine(AppPaths.LogDirectory, $"app-{_fileDate:yyyyMMdd}.log");
         }
         catch
         {
@@ -112,12 +134,21 @@ internal static class AppLog
     public static void Error(Exception ex, string message)
         => Write(LogLevel.Error, $"{message}: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
 
-    /// <summary>内存中最近日志行（供 UI 诊断窗口使用）。</summary>
-    public static IReadOnlyList<string> GetRecentLines(int max = 200)
+    /// <summary>内存中最近的日志记录（供 UI 日志页使用，免去从字符串反解析）。</summary>
+    public static IReadOnlyList<Entry> GetRecentEntries(int max = 200)
     {
         var arr = Recent.ToArray();
-        if (arr.Length <= max) return arr;
-        return arr[^max..];
+        if (arr.Length > max) arr = arr[^max..];
+        return arr;
+    }
+
+    /// <summary>内存中最近日志行的格式化文本（导出 / 诊断窗口用）。</summary>
+    public static IReadOnlyList<string> GetRecentLines(int max = 200)
+    {
+        var entries = GetRecentEntries(max);
+        var list = new List<string>(entries.Count);
+        foreach (var e in entries) list.Add(FormatLine(e));
+        return list;
     }
 
     /// <summary>用资源管理器打开日志目录。</summary>
@@ -174,6 +205,9 @@ internal static class AppLog
         FlushPending();
     }
 
+    private static string FormatLine(Entry e) =>
+        $"{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{e.LevelName.ToUpperInvariant(),-5}] [T{e.ThreadId}] {e.Message}";
+
     private static void Write(LogLevel level, string message)
     {
         if (!_initialized) return;
@@ -181,14 +215,18 @@ internal static class AppLog
         if (!_enabled && level < LogLevel.Error) return;
         if (level < _minLevel && level < LogLevel.Error) return;
 
-        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level.ToString().ToUpperInvariant(),-5}] [T{Environment.CurrentManagedThreadId}] {message}";
+        var entry = new Entry(DateTime.Now, level, Environment.CurrentManagedThreadId, message);
 
-        Recent.Enqueue(line);
+        Recent.Enqueue(entry);
         while (Recent.Count > RecentCap && Recent.TryDequeue(out _)) { }
+
+        // UI 增量推送。处理器自己负责 marshaling 与异常兜底；这里再兜一层，
+        // 免得某个订阅者把异常抛回写日志的调用方。
+        try { EntryLogged?.Invoke(entry); } catch { /* ignore */ }
 
         if (_filePath is null) return;
 
-        PendingWrite.Enqueue(line);
+        PendingWrite.Enqueue(FormatLine(entry));
         var count = Interlocked.Increment(ref _pendingCount);
 
         // Error 立即刷；其它达到阈值再刷
@@ -206,6 +244,15 @@ internal static class AppLog
         {
             try
             {
+                // 跨日换文件：常驻多日的进程不能一直往启动那天的文件里写
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                if (today != _fileDate)
+                {
+                    _fileDate = today;
+                    _filePath = Path.Combine(AppPaths.LogDirectory, $"app-{today:yyyyMMdd}.log");
+                    PathUtil.EnsureDir(AppPaths.LogDirectory);
+                }
+
                 var sb = new StringBuilder();
                 while (PendingWrite.TryDequeue(out var line))
                 {
@@ -230,7 +277,6 @@ internal static class AppLog
         if (string.IsNullOrWhiteSpace(s)) return LogLevel.Debug;
         return Enum.TryParse<LogLevel>(s, ignoreCase: true, out var lv) ? lv : LogLevel.Debug;
     }
-
     /// <summary>删除超过保留天数的 app-yyyyMMdd.log。</summary>
     private static void TrimOldLogs(int keepDays)
     {

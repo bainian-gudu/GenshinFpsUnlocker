@@ -36,8 +36,10 @@ internal sealed partial class UnlockService : IDisposable
     /// <summary>状态变化（UI 应 Invoke 到 UI 线程后刷新）。</summary>
     public event Action? StateChanged;
 
-    public string StatusText => _statusText;
-    public string GamePathStatus => _gamePathStatus;
+    // 这两个串由后台监视线程写、UI 线程读：引用赋值本身原子，但没有屏障时
+    // UI 可能长时间读到旧值，所以显式走 Volatile（也把这层意图写在代码里）。
+    public string StatusText => Volatile.Read(ref _statusText);
+    public string GamePathStatus => Volatile.Read(ref _gamePathStatus);
     public int AttachedPid => Volatile.Read(ref _attachedPid);
     public IpcStatus StubStatus => _ipc.Read().Status;
     public int CurrentFpsFeedback => _ipc.Read().CurrentFps;
@@ -86,10 +88,8 @@ internal sealed partial class UnlockService : IDisposable
         var now = DateTime.UtcNow;
 
         // 跳过冗余写入
-        if (!force
-            && fps == _lastPushedFps
-            && en == _lastPushedEnabled
-            && (now - _lastIpcPushUtc).TotalMilliseconds < 400)
+        var changed = fps != _lastPushedFps || en != _lastPushedEnabled;
+        if (!force && !changed && (now - _lastIpcPushUtc).TotalMilliseconds < 400)
         {
             return;
         }
@@ -99,7 +99,9 @@ internal sealed partial class UnlockService : IDisposable
         _lastPushedEnabled = en;
         _lastIpcPushUtc = now;
 
-        if (force || AppLog.Enabled)
+        // 只在「真的变了」或强制推送时记一行：保活式的重复写入每秒能有两三次，
+        // 全记下来会把日志文件和界面日志页（现在会实时增量显示宿主日志）刷满。
+        if (force || changed)
             AppLog.Debug($"IPC push fps={fps} effective={en != 0}");
         Raise(forceUi: force);
     }
@@ -171,14 +173,14 @@ internal sealed partial class UnlockService : IDisposable
         if (GameLocator.IsValidGameExe(_config.GamePath))
         {
             _config.GamePath = PathUtil.Normalize(_config.GamePath);
-            _gamePathStatus = $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(GameLocateSource.Config)}）";
+            Volatile.Write(ref _gamePathStatus, $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(GameLocateSource.Config)}）");
             Raise(forceUi: true);
             return GameLocateResult.Success(_config.GamePath!, GameLocateSource.Config);
         }
 
         if (!autoLocateIfMissing)
         {
-            _gamePathStatus = "游戏路径: 未设置";
+            Volatile.Write(ref _gamePathStatus, "游戏路径: 未设置");
             Raise(forceUi: true);
             return GameLocateResult.Fail("未设置");
         }
@@ -188,11 +190,11 @@ internal sealed partial class UnlockService : IDisposable
         {
             _config.GamePath = PathUtil.Normalize(result.Path);
             _config.TrySave(out _);
-            _gamePathStatus = $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(result.Source)}）";
+            Volatile.Write(ref _gamePathStatus, $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(result.Source)}）");
         }
         else
         {
-            _gamePathStatus = $"游戏路径: 未找到 — {result.Detail}";
+            Volatile.Write(ref _gamePathStatus, $"游戏路径: 未找到 — {result.Detail}");
         }
 
         Raise(forceUi: true);
@@ -207,7 +209,7 @@ internal sealed partial class UnlockService : IDisposable
         {
             _config.GamePath = PathUtil.Normalize(result.Path);
             _config.TrySave(out _);
-            _gamePathStatus = $"游戏路径: {_config.GamePath}（手动选择）";
+            Volatile.Write(ref _gamePathStatus, $"游戏路径: {_config.GamePath}（手动选择）");
             AppLog.Info("manual game path: " + _config.GamePath);
             Raise(forceUi: true);
         }
@@ -226,12 +228,12 @@ internal sealed partial class UnlockService : IDisposable
             AppLog.Info($"game path auto: {result.Path} source={result.Source}");
             _config.GamePath = PathUtil.Normalize(result.Path);
             _config.TrySave(out _);
-            _gamePathStatus = $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(result.Source)}）";
+            Volatile.Write(ref _gamePathStatus, $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(result.Source)}）");
         }
         else
         {
             AppLog.Warn($"game path auto failed: {result.Detail}");
-            _gamePathStatus = $"自动查找失败: {result.Detail}";
+            Volatile.Write(ref _gamePathStatus, $"自动查找失败: {result.Detail}");
         }
 
         Raise(forceUi: true);

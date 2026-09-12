@@ -35,16 +35,25 @@ internal static class DllInjector
         // 超过经典 MAX_PATH 时尝试 8.3 短路径（仍可能含中文卷标，但长度更短）
         if (injectPath.Length >= 260)
         {
+            string? shortPath = null;
             try
             {
-                var shortPath = GetShortPath(injectPath);
-                if (!string.IsNullOrEmpty(shortPath))
-                {
-                    AppLog.Info($"注入使用短路径: {shortPath}");
-                    injectPath = shortPath;
-                }
+                shortPath = GetShortPath(injectPath);
             }
             catch (Exception ex) { AppLog.Warn("GetShortPath: " + ex.Message); }
+
+            if (!string.IsNullOrEmpty(shortPath))
+            {
+                AppLog.Info($"注入使用短路径: {shortPath}");
+                injectPath = shortPath;
+            }
+            else
+            {
+                // 系统可能关闭了 8.3 短路径生成（fsutil 8dot3name），此时长路径下的
+                // LoadLibraryW 很可能失败 —— 把原因写清楚，别让用户对着「注入失败」猜
+                AppLog.Warn($"注入路径长度 {injectPath.Length} ≥ 260 且取不到 8.3 短路径" +
+                            $"（卷可能已关闭短路径生成），LoadLibraryW 可能失败: {injectPath}");
+            }
         }
 
         if (TryRemoteLoadLibrary(process.Id, injectPath, out error))

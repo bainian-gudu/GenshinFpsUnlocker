@@ -104,7 +104,14 @@ export default function App() {
         const boot = await nativeGetBootstrap();
         if (cancelled) return;
         applyNativeState(boot.state);
-        if (boot.logs.length) setLogs(boot.logs);
+        if (boot.logs.length) {
+          // 监听器在 bootstrap 之前就挂上了，这期间可能已经收到增量日志；
+          // 合并而不是整体替换，并按 id 去重，免得丢掉或重复这几条。
+          setLogs((prev) => {
+            const seen = new Set(boot.logs.map((entry) => entry.id));
+            return [...boot.logs, ...prev.filter((entry) => !seen.has(entry.id))].slice(-200);
+          });
+        }
         else addLog('Info', '已连接桌面服务。');
         if (!boot.state.config.safetyNoticeAcknowledged) setModal('safety');
       } catch (error) {
