@@ -65,8 +65,42 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetExitCodeThread(IntPtr hThread, out uint lpExitCode);
 
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern IntPtr LoadLibrary(string lpFileName);
+    /// <summary>映射 DLL 但不调用其 DllMain（备用 Hook 注入用，见 DllInjector）。</summary>
+    public const uint DONT_RESOLVE_DLL_REFERENCES = 0x00000001;
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "LoadLibraryExW")]
+    public static extern IntPtr LoadLibraryEx(string lpLibFileName, IntPtr hFile, uint dwFlags);
+
+    // ---- 目标进程模块表（确认注入结果，不依赖被截断的线程退出码）----
+    public const uint TH32CS_SNAPMODULE = 0x00000008;
+    public const uint TH32CS_SNAPMODULE32 = 0x00000010;
+    public static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct MODULEENTRY32W
+    {
+        public uint dwSize;
+        public uint th32ModuleID;
+        public uint th32ProcessID;
+        public uint GlblcntUsage;
+        public uint ProccntUsage;
+        public IntPtr modBaseAddr;
+        public uint modBaseSize;
+        public IntPtr hModule;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string szModule;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExePath;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "Module32FirstW")]
+    public static extern bool Module32First(IntPtr hSnapshot, ref MODULEENTRY32W lpme);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "Module32NextW")]
+    public static extern bool Module32Next(IntPtr hSnapshot, ref MODULEENTRY32W lpme);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool FreeLibrary(IntPtr hModule);

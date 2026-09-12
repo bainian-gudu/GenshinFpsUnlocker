@@ -11,6 +11,9 @@
 
 #include "AntiBlur.h"
 
+#include <Psapi.h>
+
+#include <algorithm>
 #include <cstring>
 
 #include "MinHook.h"
@@ -76,21 +79,51 @@ namespace
     /// <summary>
     /// 在马赛克调用者函数体内，定位“最后一个 call DisplayEffect”的指令地址。
     /// 对应 UnlockerIsland Hooks.cpp 的 ScanPlayerDiveMosaic。
+    ///
+    /// 读窗口必须夹在「模块映像 ∩ 当前内存区域」内：caller 只是特征码命中的地址，
+    /// 没有任何保证它离映像末尾有 0x800 字节，裸读窗口尾部就是越界访问 → AV。
+    /// 边界只在入口算一次（1 次 GetModuleInformation + 1 次 VirtualQuery），
+    /// 循环内直接做 rel32 算术，每个候选零系统调用。
     /// </summary>
-    void* FindMosaicCallSite(void* caller, void* displayEffect)
+    void* FindMosaicCallSite(void* caller, void* displayEffect, uintptr_t moduleEnd)
     {
         if (!caller || !displayEffect)
         {
             return nullptr;
         }
 
-        // caller 位于游戏模块映像内（已提交、可读），窗口内读字节是安全的；
-        // 早先每个 0xE8 候选都走一次 ResolveRelative（内含 VirtualQuery 系统调用），
-        // 这里直接做 rel32 算术，整个窗口零系统调用。
-        void* lastCall = nullptr;
-        for (int i = 0; i < kMosaicCallWindow - 4; ++i)
+        const uintptr_t start = reinterpret_cast<uintptr_t>(caller);
+        // 至少要能读出一条完整 call：opcode + rel32
+        if (moduleEnd < start + 5)
         {
-            auto* p = static_cast<unsigned char*>(caller) + i;
+            return nullptr;
+        }
+
+        // 窗口上界再被 caller 所在内存区域夹一次（区域可能比模块映像短）
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (!VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(mbi)))
+        {
+            return nullptr;
+        }
+        if (mbi.State != MEM_COMMIT || (mbi.Protect & PAGE_GUARD) != 0)
+        {
+            return nullptr;
+        }
+
+        const uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        const uintptr_t limit = std::min(moduleEnd, regionEnd);
+        if (limit < start + 5)
+        {
+            return nullptr;
+        }
+
+        // 最后一个可以安全读取 rel32 的起点：p+1..p+4 必须落在 limit 之内
+        const uintptr_t lastP = std::min(start + static_cast<uintptr_t>(kMosaicCallWindow) - 5, limit - 5);
+
+        void* lastCall = nullptr;
+        for (uintptr_t addr = start; addr <= lastP; ++addr)
+        {
+            auto* p = reinterpret_cast<unsigned char*>(addr);
             if (*p != 0xE8) // call rel32
             {
                 continue;
@@ -103,6 +136,17 @@ namespace
             }
         }
         return lastCall;
+    }
+
+    /// <summary>模块映像的结束地址（不含）；取不到信息时返回 0。</summary>
+    uintptr_t ModuleEnd(HMODULE module)
+    {
+        MODULEINFO mi{};
+        if (!GetModuleInformation(GetCurrentProcess(), module, &mi, sizeof(mi)))
+        {
+            return 0;
+        }
+        return reinterpret_cast<uintptr_t>(mi.lpBaseOfDll) + mi.SizeOfImage;
     }
 }
 
@@ -135,12 +179,21 @@ namespace AntiBlur
         {
             void* caller = Scanner::ScanModule(gameModule, kPlayerDiveMosaicPattern);
             void* displayEffect = Scanner::ScanModule(gameModule, kDisplayEffectPattern);
-            if (void* callSite = FindMosaicCallSite(caller, displayEffect))
+            if (void* callSite = FindMosaicCallSite(caller, displayEffect, ModuleEnd(gameModule)))
             {
                 // 与原实现一致：仅处理 E8 call 补丁路径。
                 // （上游的非 call 分支在其扫描路径下为死代码，offset 必定指向 call。）
-                g_mosaicPatch = new Patch(callSite, kMosaicPatchBytes, sizeof(kMosaicPatchBytes));
-                g_mosaicReady = true;
+                auto* patch = new Patch(callSite, kMosaicPatchBytes, sizeof(kMosaicPatchBytes));
+                if (patch->IsValid())
+                {
+                    g_mosaicPatch = patch;
+                    g_mosaicReady = true;
+                }
+                else
+                {
+                    // 页保护放不开（被保护页 / 权限问题）：放弃这个功能，别留半死对象
+                    delete patch;
+                }
             }
         }
 

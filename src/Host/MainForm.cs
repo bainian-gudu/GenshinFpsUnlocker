@@ -198,7 +198,7 @@ internal sealed partial class MainForm : Form
                     {
                         // 用户主动再点快捷方式：打开主界面（比仅弹「已在运行」更合理）
                         RestoreFromTrayPublic();
-                        ShowTrayBalloon(AppPaths.ProductDisplayName, "主窗口已打开。", ToolTipIcon.Info);
+                        ShowTrayBalloon(AppPaths.ProductDisplayName, "主窗口已打开。");
                     }
                     catch (Exception ex) { AppLog.Warn("wake restore: " + ex.Message); }
                 });
@@ -242,8 +242,7 @@ internal sealed partial class MainForm : Form
                     {
                         ShowTrayBalloon(
                             AppPaths.ProductDisplayName,
-                            "界面引擎加载失败，可在托盘右键进行基本设置。",
-                            ToolTipIcon.Warning);
+                            "界面引擎加载失败，可在托盘右键进行基本设置。");
                     }
                     catch { /* ignore */ }
                 }
@@ -285,8 +284,7 @@ internal sealed partial class MainForm : Form
                             _tray.Visible = true;
                             ShowTrayBalloon(
                                 AppPaths.ProductDisplayName,
-                                "界面加载异常，已保留窗口与托盘。右键托盘可调整设置。",
-                                ToolTipIcon.Warning);
+                                "界面加载异常，已保留窗口与托盘。右键托盘可调整设置。");
                         }
                     }
                     catch { /* ignore */ }
@@ -650,8 +648,7 @@ internal sealed partial class MainForm : Form
                 _trayTipShownThisSession = true;
                 ShowTrayBalloon(
                     AppPaths.ProductDisplayName,
-                    "已在后台运行。若托盘区看不到图标，请点任务栏 ^ 展开「显示隐藏的图标」。左键打开主窗口，右键可设置。",
-                    ToolTipIcon.Info);
+                    "已在后台运行。若托盘区看不到图标，请点任务栏 ^ 展开「显示隐藏的图标」。左键打开主窗口，右键可设置。");
             }
             AppLog.Info("startup → tray (no flash)");
         }
@@ -722,8 +719,7 @@ internal sealed partial class MainForm : Form
                     _trayTipShownThisSession = true;
                     ShowTrayBalloon(
                         AppPaths.ProductDisplayName,
-                        "已在后台运行。左键单击或双击托盘图标可打开主窗口；右键可调整设置。",
-                        ToolTipIcon.Info);
+                        "已在后台运行。左键单击或双击托盘图标可打开主窗口；右键可调整设置。");
                 }
 
                 AppLog.Info("window → tray");

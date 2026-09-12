@@ -5,12 +5,19 @@
 //   1) 特征码扫描 Get/Set targetFrameRate
 //   2) Hook getter，使游戏内画质菜单仍显示合法档位（30/45/60）
 //   3) 周期性调用 setter 写入 Host 下发的目标 FPS
+//   4) Hook setter 记录「游戏自己的档位」，关闭解锁时写回它
 //
 // 反虚化注入模块（AntiBlur.cpp，迁移自 Snap.Hutao.Remastered.UnlockerIsland）：
-//   4) 反角色虚化：Hook 虚化函数，开启时跳过
-//   5) 移除水下马赛克：开启时把马赛克调用的 call 原地 Patch 为 mov eax,0
+//   5) 反角色虚化：Hook 虚化函数，开启时跳过
+//   6) 移除水下马赛克：开启时把马赛克调用的 call 原地 Patch 为 mov eax,0
 //
 // 与 Host 通过命名共享内存通信（见 Common/IpcData.h）。
+//
+// 健壮性约定：
+//   - 特征码解析出来的都是裸函数指针，游戏更新后可能退化成假阳性。
+//     因此：① 指针必须落在游戏模块映像内才使用；② 每轮工作都套 SEH 兜底
+//     （/EHsc 下 catch(...) 接不住访问违例），一旦踩雷立刻停手卸钩，
+//     让游戏回到未注入状态，而不是每 250ms 反复崩。
 // =============================================================================
 
 #include <Windows.h>
@@ -41,7 +48,6 @@ namespace
     using GetFrameCountFn = int (*)();
     using SetFrameCountFn = int (*)(int);
 
-    HMODULE g_selfModule = nullptr;
     HMODULE g_gameModule = nullptr;
     HANDLE g_workerThread = nullptr;
     std::atomic_bool g_running{ false };
@@ -49,8 +55,12 @@ namespace
     IpcData* g_ipc = nullptr;
     HANDLE g_mapHandle = nullptr;
 
-    GetFrameCountFn g_originalGetFrameCount = nullptr;
-    SetFrameCountFn g_setFrameCount = nullptr;
+    GetFrameCountFn g_originalGetFrameCount = nullptr;  // getter 的 trampoline
+    SetFrameCountFn g_originalSetFrameCount = nullptr;  // setter 的 trampoline
+    SetFrameCountFn g_setFrameCount = nullptr;          // 实际调用的 setter（优先 trampoline）
+
+    /// <summary>游戏自身的帧率档位（由 setter Hook 记录，关闭解锁时写回）。</summary>
+    std::atomic_int g_gameOwnFps{ 0 };
 
     // 缓存上次写入值：未变化时跳过调用，降低开销；仍每 2s 强制刷新一次（防游戏重置）
     int g_lastAppliedFps = -1;
@@ -75,6 +85,20 @@ namespace
         return ret;
     }
 
+    /// <summary>
+    /// Hook 后的 SetFrameCount：只记录「游戏自己」设置的档位再原样转发。
+    /// 本模块写入时走的是 trampoline（g_originalSetFrameCount），不会经过这里，
+    /// 因此记录到的值就是游戏/画质菜单的真实意图。
+    /// </summary>
+    int HookSetFrameCount(int fps)
+    {
+        if (fps > 0)
+        {
+            g_gameOwnFps.store(fps, std::memory_order_relaxed);
+        }
+        return g_originalSetFrameCount ? g_originalSetFrameCount(fps) : 0;
+    }
+
     /// <summary>定位游戏主模块（国服 / 国际服 / 当前进程映像）。</summary>
     HMODULE FindGameModule()
     {
@@ -89,6 +113,28 @@ namespace
             module = GetModuleHandleW(nullptr);
         }
         return module;
+    }
+
+    /// <summary>
+    /// 函数指针是否落在模块映像范围内。特征码假阳性最常见的形态就是解析出
+    /// 一个指向映像外（或未提交页）的地址，直接调用等于让游戏崩。
+    /// </summary>
+    bool IsInsideModule(HMODULE module, void* fn)
+    {
+        if (!module || !fn)
+        {
+            return false;
+        }
+
+        MODULEINFO mi{};
+        if (!GetModuleInformation(GetCurrentProcess(), module, &mi, sizeof(mi)))
+        {
+            return false;
+        }
+
+        const uintptr_t base = reinterpret_cast<uintptr_t>(mi.lpBaseOfDll);
+        const uintptr_t addr = reinterpret_cast<uintptr_t>(fn);
+        return addr >= base && addr < base + mi.SizeOfImage;
     }
 
     /// <summary>
@@ -142,8 +188,8 @@ namespace
     }
 
     /// <summary>
-    /// 特征扫描并创建 GetFrameCount Hook；解析 SetFrameCount 函数指针。
-    /// 幂等：Hook 只创建一次。
+    /// 特征扫描并创建 Get/Set Hook。
+    /// 幂等：Hook 只创建一次。解析结果必须落在游戏模块映像内，否则视为失败。
     /// </summary>
     bool ResolveFpsFunctions()
     {
@@ -167,6 +213,12 @@ namespace
             return false;
         }
 
+        // 假阳性防线：解析结果必须在游戏模块映像内
+        if (!IsInsideModule(g_gameModule, getFn) || !IsInsideModule(g_gameModule, setFn))
+        {
+            return false;
+        }
+
         if (!g_originalGetFrameCount)
         {
             if (MH_CreateHook(getFn, &HookGetFrameCount, reinterpret_cast<LPVOID*>(&g_originalGetFrameCount)) != MH_OK)
@@ -175,7 +227,20 @@ namespace
             }
         }
 
-        g_setFrameCount = reinterpret_cast<SetFrameCountFn>(setFn);
+        // setter Hook 用来观察「游戏自己」把帧率设成了多少；失败不致命，
+        // 关闭解锁时退回用启用瞬间抓到的初值。
+        if (!g_originalSetFrameCount)
+        {
+            if (MH_CreateHook(setFn, &HookSetFrameCount, reinterpret_cast<LPVOID*>(&g_originalSetFrameCount)) != MH_OK)
+            {
+                g_originalSetFrameCount = nullptr;
+            }
+        }
+
+        // 走 trampoline 调用：既避开我们自己的 Hook（不会污染 g_gameOwnFps），也少一层跳转
+        g_setFrameCount = g_originalSetFrameCount
+                              ? g_originalSetFrameCount
+                              : reinterpret_cast<SetFrameCountFn>(setFn);
         return true;
     }
 
@@ -193,6 +258,20 @@ namespace
         const int enabled = g_ipc->Enabled;
         if (enabled == 0)
         {
+            // 关闭解锁的边沿：把帧率写回游戏自身的档位。
+            // 仅仅「停止写入」是不够的 —— 游戏会一直维持我们最后写进去的高帧率，
+            // 而界面上显示的是「已暂停」，与实际不符。
+            if (g_lastEnabled != 0)
+            {
+                const int own = g_gameOwnFps.load(std::memory_order_relaxed);
+                if (own > 0)
+                {
+                    g_setFrameCount(own);
+                    g_ipc->CurrentFps = own;
+                }
+                g_lastAppliedFps = -1;  // 重新开启时强制再写一次
+                g_lastApplyTick = GetTickCount();
+            }
             g_lastEnabled = 0;
             return;
         }
@@ -214,6 +293,38 @@ namespace
         g_lastAppliedFps = fps;
         g_lastEnabled = enabled;
         g_lastApplyTick = now;
+    }
+
+    /// <summary>一轮工作：写帧率 + 反虚化开关落地。</summary>
+    void TickOnce()
+    {
+        ApplyTargetFps();
+        // 反虚化：按共享内存开关应用/还原水下马赛克字节 Patch
+        AntiBlur::Tick(g_ipc);
+    }
+
+    /// <summary>
+    /// SEH 兜底的一轮工作。返回 false 表示踩到了结构化异常（多半是特征码假阳性
+    /// 或游戏改了代码布局），调用方应停止工作并卸钩。
+    /// 单独成函数、且函数内不含需要展开的 C++ 对象：MSVC 不允许在同一个函数里
+    /// 混用 __try 与 try/catch（C2713），也不允许 __try 与析构对象共存（C2712）。
+    /// </summary>
+    bool TickOnceSafely()
+    {
+#if defined(_MSC_VER)
+        __try
+        {
+            TickOnce();
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+#else
+        TickOnce();
+        return true;
+#endif
     }
 
     /// <summary>
@@ -240,26 +351,30 @@ namespace
         g_ipc->Status = IpcStatus::Waiting;
 
         // 游戏模块可能尚未完全加载，重试扫描。
-        // FPS 函数必须解析成功；反虚化特征（游戏版本更新可能失效）仅在有限
-        // 窗口内尝试，解析不到则跳过该功能，不阻塞帧率解锁。
+        // FPS 函数必须解析成功；反虚化特征（游戏版本更新可能失效）只在有限
+        // 次数内尝试，解析不到则跳过该功能，不阻塞帧率解锁。
         bool resolved = false;
-        bool antiBlurGaveUp = false;
+        bool antiBlurDone = false;
+        int antiBlurTries = 0;
+        constexpr int kAntiBlurMaxTries = 20;  // 约 10s，独立于 FPS 解析的重试计数
         for (int i = 0; i < 120 && g_running.load(std::memory_order_relaxed); ++i)
         {
             if (!resolved)
             {
                 resolved = ResolveFpsFunctions();
             }
-            else if (!antiBlurGaveUp)
+            else if (!antiBlurDone)
             {
-                // 反虚化解析：两个功能均就绪即完成；扫描窗口用尽后放弃。
-                if (AntiBlur::Initialize(g_gameModule, g_ipc) || i >= 40)
+                // 计数独立：旧实现与 FPS 解析共用循环变量，游戏加载慢时
+                // 反虚化会只剩一次尝试机会，表现为「启动慢就没生效」。
+                ++antiBlurTries;
+                if (AntiBlur::Initialize(g_gameModule, g_ipc) || antiBlurTries >= kAntiBlurMaxTries)
                 {
-                    antiBlurGaveUp = true;
+                    antiBlurDone = true;
                 }
             }
 
-            if (resolved && antiBlurGaveUp)
+            if (resolved && antiBlurDone)
             {
                 break;
             }
@@ -269,7 +384,7 @@ namespace
         if (!resolved)
         {
             g_ipc->Status = IpcStatus::Error;
-            g_ipc->LastError = static_cast<int32_t>(GetLastError() ? GetLastError() : 0xE001);
+            g_ipc->LastError = 0xE001;  // 特征码未命中（游戏版本更新后最常见）
             return 2;
         }
 
@@ -278,6 +393,17 @@ namespace
             g_ipc->Status = IpcStatus::Error;
             g_ipc->LastError = 0xE002;
             return 3;
+        }
+
+        // 抓一次游戏当前的帧率档位（走 trampoline，拿到的是未经 Hook 改写的真值），
+        // 作为「游戏自己的档位」初值；之后 setter Hook 会持续更新它。
+        if (g_originalGetFrameCount)
+        {
+            const int own = g_originalGetFrameCount();
+            if (own > 0)
+            {
+                g_gameOwnFps.store(own, std::memory_order_relaxed);
+            }
         }
 
         g_ipc->Status = IpcStatus::Ready;
@@ -291,16 +417,23 @@ namespace
                 break;
             }
 
-            // 捕获 C++ 异常，避免异常穿透搞崩游戏进程
+            bool faulted = false;
             try
             {
-                ApplyTargetFps();
-                // 反虚化：按共享内存开关应用/还原水下马赛克字节 Patch
-                AntiBlur::Tick(g_ipc);
+                // SEH（访问违例等）由 TickOnceSafely 兜住；这里再接一层 C++ 异常
+                faulted = !TickOnceSafely();
             }
             catch (...)
             {
                 Sleep(1000);
+            }
+
+            if (faulted)
+            {
+                // 踩雷了：停手并卸钩，让游戏回到未注入状态，别每 250ms 反复崩
+                g_ipc->Status = IpcStatus::Error;
+                g_ipc->LastError = 0xE003;
+                break;
             }
 
             Sleep(250);
@@ -330,7 +463,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
     switch (reason)
     {
     case DLL_PROCESS_ATTACH:
-        g_selfModule = hModule;
         DisableThreadLibraryCalls(hModule);
         g_running.store(true, std::memory_order_relaxed);
         if (MH_Initialize() != MH_OK)

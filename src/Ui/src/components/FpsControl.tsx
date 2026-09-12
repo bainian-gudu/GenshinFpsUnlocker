@@ -70,7 +70,7 @@ export function FpsControl({ value, enabled, masterEnabled, onChange, onToggle }
         </div>
       </fieldset>
       <p id="fps-feedback" className={`fps-feedback ${error ? 'field-error' : ''}`} role={error ? 'alert' : undefined}>
-        {error || (!masterEnabled ? '总开关已关闭，请前往设置启用解锁服务。' : !enabled ? '帧率解锁已暂停，你的目标帧率会被保留。' : value > 240 ? '高帧率会增加设备负载，请根据屏幕刷新率与性能选择。' : value < 30 ? '当前上限较低，可能影响游戏流畅度，建议从 60 FPS 开始。' : '拖动滑块或点击数值自定义，设置将自动保存。')}
+        {error || (!masterEnabled ? '总开关已关闭，请前往设置启用解锁服务。' : !enabled ? '帧率解锁已暂停，游戏恢复自身档位；你的目标帧率会被保留。' : value > 240 ? '高帧率会增加设备负载，请根据屏幕刷新率与性能选择。' : value < 30 ? '当前上限较低，可能影响游戏流畅度，建议从 60 FPS 开始。' : '拖动滑块或点击数值自定义，设置将自动保存。')}
       </p>
     </section>
   );

@@ -129,14 +129,22 @@ internal static class DllInjector
                 return false;
             }
 
-            // LoadLibraryW 返回模块句柄；0 表示失败（路径不可达/位数不匹配等）
-            if (!Native.GetExitCodeThread(hThread, out var exitCode) || exitCode == 0)
+            // 线程退出码只有 32 位，而 LoadLibraryW 返回的是 64 位 HMODULE：
+            // DLL 基址低 32 位恰好为 0 时（4 GiB 对齐）会误判成「注入失败」，
+            // 进而触发退避重试和备用 Hook 注入。退出码只写日志，
+            // 成败以「目标进程模块表里有没有这个 DLL」为准。
+            if (Native.GetExitCodeThread(hThread, out var exitCode))
             {
-                error = $"LoadLibraryW 在目标进程返回 0 (err={Marshal.GetLastWin32Error()}) — 路径可能无法被游戏进程访问: {dllPath}";
+                AppLog.Debug($"LoadLibraryW 远程返回值低 32 位=0x{exitCode:X}");
+            }
+
+            if (!WaitForModuleInProcess(processId, dllPath, 3000))
+            {
+                error = $"目标进程模块表中未出现 {Path.GetFileName(dllPath)} — " +
+                        $"路径可能无法被游戏进程访问，或位数/权限不匹配: {dllPath}";
                 return false;
             }
 
-            AppLog.Debug($"LoadLibraryW 远程模块句柄=0x{exitCode:X}");
             return true;
         }
         finally
@@ -155,13 +163,18 @@ internal static class DllInjector
     {
         error = string.Empty;
 
-        var localModule = Native.LoadLibrary(dllPath);
+        // 用 DONT_RESOLVE_DLL_REFERENCES 映射：拿得到导出函数地址，但系统不会调用
+        // Stub 的 DllMain。旧代码用 LoadLibrary，会在 Host 自己进程里把 Stub 跑起来 ——
+        // MinHook 初始化、工作线程启动，还会因为 FindGameModule 的回退分支去扫
+        // Host 自己的 exe，并把共享内存的 Status 写成 Waiting，污染 Host 的判断。
+        var localModule = Native.LoadLibraryEx(dllPath, IntPtr.Zero, Native.DONT_RESOLVE_DLL_REFERENCES);
         if (localModule == IntPtr.Zero)
         {
-            error = $"本地 LoadLibrary 失败 ({Marshal.GetLastWin32Error()}) path={dllPath}";
+            error = $"本地 LoadLibraryEx 失败 ({Marshal.GetLastWin32Error()}) path={dllPath}";
             return false;
         }
 
+        var hook = IntPtr.Zero;
         try
         {
             var wndProc = Native.GetProcAddress(localModule, "WndProc");
@@ -185,21 +198,106 @@ internal static class DllInjector
                 return false;
             }
 
-            var hook = Native.SetWindowsHookEx(Native.WH_GETMESSAGE, wndProc, localModule, threadId);
+            hook = Native.SetWindowsHookEx(Native.WH_GETMESSAGE, wndProc, localModule, threadId);
             if (hook == IntPtr.Zero)
             {
                 error = $"SetWindowsHookEx 失败 ({Marshal.GetLastWin32Error()})";
                 return false;
             }
 
-            // 触发一条消息，促使 Hook 回调在目标线程执行
+            // 触发一条消息（WM_NULL），促使系统把 DLL 映射进目标线程
             Native.PostThreadMessage(threadId, 0, IntPtr.Zero, IntPtr.Zero);
+
+            // 给系统一点时间完成映射，再摘 Hook：早摘会导致目标进程拿不到 DLL 路径。
+            // 本方法只在后台监视线程上调用，睡这一下不会卡 UI。
+            Thread.Sleep(1500);
+
+            if (!WaitForModuleInProcess(process.Id, dllPath, 3000))
+            {
+                error = $"Hook 注入后目标进程模块表中未出现 {Path.GetFileName(dllPath)}";
+                return false;
+            }
+
             return true;
         }
         finally
         {
-            // Hook 存活期间需保持模块加载，此处不 FreeLibrary
+            // 摘掉 Hook（否则游戏每条消息都要过一遍我们的空钩子），再释放本地映射。
+            // 模块是用 DONT_RESOLVE_DLL_REFERENCES 映射的，DllMain 从未执行，释放是安全的。
+            if (hook != IntPtr.Zero)
+            {
+                try { Native.UnhookWindowsHookEx(hook); } catch { /* ignore */ }
+            }
+            try { Native.FreeLibrary(localModule); } catch { /* ignore */ }
         }
+    }
+
+    /// <summary>
+    /// 轮询目标进程的模块表，确认指定 DLL 已经加载。
+    /// 优先按完整路径比对，路径拿不到时退回按文件名比对。
+    /// </summary>
+    private static bool WaitForModuleInProcess(int processId, string dllPath, int timeoutMs)
+    {
+        var fileName = Path.GetFileName(dllPath);
+        var deadline = Environment.TickCount64 + timeoutMs;
+
+        while (Environment.TickCount64 < deadline)
+        {
+            if (IsModuleLoaded(processId, dllPath, fileName))
+            {
+                return true;
+            }
+            Thread.Sleep(100);
+        }
+
+        return false;
+    }
+
+    private static bool IsModuleLoaded(int processId, string fullPath, string fileName)
+    {
+        var snapshot = Native.CreateToolhelp32Snapshot(
+            Native.TH32CS_SNAPMODULE | Native.TH32CS_SNAPMODULE32, (uint)processId);
+        if (snapshot == IntPtr.Zero || snapshot == Native.INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
+
+        try
+        {
+            var entry = new Native.MODULEENTRY32W
+            {
+                dwSize = (uint)Marshal.SizeOf<Native.MODULEENTRY32W>(),
+            };
+
+            if (!Native.Module32First(snapshot, ref entry))
+            {
+                return false;
+            }
+
+            do
+            {
+                if (PathUtil.EqualsPath(entry.szExePath, fullPath))
+                {
+                    return true;
+                }
+                if (!string.IsNullOrEmpty(entry.szModule) &&
+                    string.Equals(entry.szModule, fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            while (Native.Module32Next(snapshot, ref entry));
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug("IsModuleLoaded: " + ex.Message);
+        }
+        finally
+        {
+            Native.CloseHandle(snapshot);
+        }
+
+        return false;
     }
 
     /// <summary>枚举顶层窗口，查找指定 PID 的 Unity 主窗口。</summary>

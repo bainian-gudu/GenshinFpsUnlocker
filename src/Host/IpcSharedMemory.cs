@@ -52,6 +52,22 @@ internal sealed class IpcSharedMemory : IDisposable
     private readonly object _sync = new();
     private bool _disposed;
 
+    // ---- 字段偏移 ----
+    // IpcData 是 Pack=8 的固定布局，偏移在类型加载时算一次。
+    // 必须按字段写：整块「读-改-写」会和 Stub 的写入互相覆盖 —— Stub 只在状态
+    // 跃迁时写一次 Ready，一旦被 Host 回写成 Waiting，它不会重写，Host 就会
+    // 永久显示「Stub 未就绪」（而解锁其实是好的）。CurrentFps / AntiBlurState
+    // 被覆盖则表现为 UI 反馈闪回旧值。
+    private static readonly long OffStatus = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.Status));
+    private static readonly long OffLastError = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.LastError));
+    private static readonly long OffTargetFps = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.TargetFps));
+    private static readonly long OffEnabled = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.Enabled));
+    private static readonly long OffCurrentFps = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.CurrentFps));
+    private static readonly long OffAntiBlurPerspective = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.AntiBlurPerspective));
+    private static readonly long OffAntiBlurDiveMosaic = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.AntiBlurDiveMosaic));
+    private static readonly long OffAntiBlurState = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.AntiBlurState));
+    private static readonly long OffMagic = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.Magic));
+
     public IpcSharedMemory()
     {
         // 非管理员无 Global\ 权限时 CreateOrOpen 会抛；必须回退，且不得让 Host 启动失败
@@ -93,7 +109,10 @@ internal sealed class IpcSharedMemory : IDisposable
         Write(data);
     }
 
-    /// <summary>整体覆盖写入（慎用：会冲掉 Stub 的 Status）。</summary>
+    /// <summary>
+    /// 整体覆盖写入。<b>只允许在构造函数里用</b>（此时 Stub 还没连上来）：
+    /// 运行期整块回写会冲掉 Stub 写入的 Status / CurrentFps / AntiBlurState。
+    /// </summary>
     public void Write(IpcData data)
     {
         lock (_sync)
@@ -123,13 +142,11 @@ internal sealed class IpcSharedMemory : IDisposable
         lock (_sync)
         {
             if (_disposed) return;
-            _accessor.Read(0, out IpcData data);
-            data.TargetFps = Math.Clamp(targetFps, 1, 540);
-            data.Enabled = enabled ? 1 : 0;
-            data.AntiBlurPerspective = antiBlurPerspective ? 1 : 0;
-            data.AntiBlurDiveMosaic = antiBlurDiveMosaic ? 1 : 0;
-            data.Magic = Magic;
-        _accessor.Write(0, ref data);
+            _accessor.Write(OffTargetFps, Math.Clamp(targetFps, 1, 540));
+            _accessor.Write(OffEnabled, enabled ? 1 : 0);
+            _accessor.Write(OffAntiBlurPerspective, antiBlurPerspective ? 1 : 0);
+            _accessor.Write(OffAntiBlurDiveMosaic, antiBlurDiveMosaic ? 1 : 0);
+            _accessor.Write(OffMagic, Magic);
         }
     }
 
@@ -141,17 +158,17 @@ internal sealed class IpcSharedMemory : IDisposable
         lock (_sync)
         {
             if (_disposed) return;
-            _accessor.Read(0, out IpcData data);
-            data.Status = IpcStatus.None;
-            data.LastError = 0;
-            data.CurrentFps = 0;
-            data.AntiBlurState = 0;
-            data.TargetFps = Math.Clamp(targetFps, 1, 540);
-            data.Enabled = enabled ? 1 : 0;
-            data.AntiBlurPerspective = antiBlurPerspective ? 1 : 0;
-            data.AntiBlurDiveMosaic = antiBlurDiveMosaic ? 1 : 0;
-            data.Magic = Magic;
-            _accessor.Write(0, ref data);
+            // 这是唯一一处 Host 主动写 Stub 字段的地方：新一次注入前把上一轮
+            // 的状态清零，否则 WaitForStubReady 会读到上个进程的 Ready/Error。
+            _accessor.Write(OffStatus, (int)IpcStatus.None);
+            _accessor.Write(OffLastError, 0);
+            _accessor.Write(OffCurrentFps, 0);
+            _accessor.Write(OffAntiBlurState, 0);
+            _accessor.Write(OffTargetFps, Math.Clamp(targetFps, 1, 540));
+            _accessor.Write(OffEnabled, enabled ? 1 : 0);
+            _accessor.Write(OffAntiBlurPerspective, antiBlurPerspective ? 1 : 0);
+            _accessor.Write(OffAntiBlurDiveMosaic, antiBlurDiveMosaic ? 1 : 0);
+            _accessor.Write(OffMagic, Magic);
         }
     }
 
@@ -161,16 +178,18 @@ internal sealed class IpcSharedMemory : IDisposable
         lock (_sync)
         {
             if (_disposed) return;
-            _accessor.Read(0, out IpcData data);
-            data.Status = IpcStatus.Exiting;
-            _accessor.Write(0, ref data);
+            _accessor.Write(OffStatus, (int)IpcStatus.Exiting);
         }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        // 先拿锁再置位：读写方法都在锁内检查 _disposed，否则可能正写着就被释放
+        lock (_sync)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
         try { _accessor.Dispose(); } catch { /* ignore */ }
         try { _file.Dispose(); } catch { /* ignore */ }
     }

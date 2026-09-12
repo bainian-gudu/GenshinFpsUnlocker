@@ -53,7 +53,7 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
         <div className="settings-game-grid">
           <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
           <section className="control-panel settings-control"><div className="panel-heading"><h2><ShieldCheck size={18} />解锁行为</h2></div>
-            <ToggleRow title="解锁服务总开关" description="关闭后暂停所有注入与帧率解锁行为" checked={config.masterEnabled} onChange={(value) => updateConfig('masterEnabled', value)} />
+            <ToggleRow title="解锁服务总开关" description="关闭后不再注入、不再强制帧率，游戏会回到自身的帧率档位" checked={config.masterEnabled} onChange={(value) => updateConfig('masterEnabled', value)} />
             <ToggleRow title="自动解锁" description="检测到游戏启动后，自动应用帧率设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} />
             <p className="settings-small-note"><Info size={14} />总开关与帧率解锁同时开启时，目标帧率才会生效。</p>
           </section>

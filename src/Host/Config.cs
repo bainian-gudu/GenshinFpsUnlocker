@@ -112,6 +112,13 @@ internal sealed class AppConfig
 
     private static readonly object IoLock = new();
 
+    // ---- 落盘合并 ----
+    // 批量窗口 >0 时，Save/TrySave 只标脏不写盘，窗口关闭时统一写一次。
+    private int _batchDepth;
+    private bool _batchDirty;
+    /// <summary>上次成功落盘的 JSON；内容没变就跳过整套原子写（备份/Replace/校验读）。</summary>
+    private string? _lastSavedJson;
+
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
@@ -188,7 +195,68 @@ internal sealed class AppConfig
     {
         lock (IoLock)
         {
+            if (_batchDepth > 0)
+            {
+                _batchDirty = true;   // 批量窗口内合并，Dispose/Flush 时落盘一次
+                return;
+            }
             SaveCore(createBackup: true);
+        }
+    }
+
+    /// <summary>
+    /// 开启一个批量修改窗口：窗口内所有 Save/TrySave 合并成退出时的一次落盘。
+    /// 一次 patchConfig 里改多个键时，旧实现每个 setter 都会做一整套原子保存
+    /// （WriteThrough + Flush(true) + 备份拷贝 + File.Replace + 校验读），全部同步
+    /// 跑在 UI 线程上，最多能连着做四次。
+    /// </summary>
+    public BatchScope BeginBatch()
+    {
+        lock (IoLock)
+        {
+            _batchDepth++;
+        }
+        return new BatchScope(this);
+    }
+
+    /// <summary>批量修改窗口。Dispose 时若仍有未落盘的改动则写一次（异常只记日志）。</summary>
+    public sealed class BatchScope : IDisposable
+    {
+        private readonly AppConfig _config;
+        private bool _finished;
+
+        internal BatchScope(AppConfig config) => _config = config;
+
+        /// <summary>立即落盘（若窗口内有改动）。失败会抛出，供调用方置错误状态。</summary>
+        public void Flush()
+        {
+            lock (IoLock)
+            {
+                if (!_config._batchDirty) return;
+                _config._batchDirty = false;
+                _config.SaveCore(createBackup: true);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_finished) return;
+            _finished = true;
+            try
+            {
+                Flush();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(ex, "config batch flush");
+            }
+            finally
+            {
+                lock (IoLock)
+                {
+                    if (_config._batchDepth > 0) _config._batchDepth--;
+                }
+            }
         }
     }
 
@@ -220,6 +288,14 @@ internal sealed class AppConfig
             throw new InvalidOperationException("配置目录无效");
 
         var json = JsonSerializer.Serialize(this, Options);
+
+        // 内容没变就别再走一整套原子写：UI 的热路径（滑块、开关）经常连着触发保存，
+        // 而其中相当一部分根本没有实际改动。文件被外部删掉时仍会重写。
+        if (json == _lastSavedJson && PathUtil.ExistsFile(ConfigPath))
+        {
+            return;
+        }
+
         var bytes = Utf8NoBom.GetBytes(json);
 
         // 独立临时名，避免多实例互相踩 .tmp
@@ -227,8 +303,10 @@ internal sealed class AppConfig
         try
         {
             // 写临时文件并刷盘
+            // Flush(flushToDisk: true) 已经会把文件缓冲刷到盘，不必再叠 WriteThrough
+            // （两者同时用等于每条写指令都绕过系统缓存，配置这种小文件纯属浪费）。
             using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None,
-                       bufferSize: 4096, FileOptions.WriteThrough))
+                       bufferSize: 4096))
             {
                 fs.Write(bytes, 0, bytes.Length);
                 fs.Flush(flushToDisk: true);
@@ -288,6 +366,7 @@ internal sealed class AppConfig
                 File.WriteAllBytes(primary, bytes);
             }
 
+            _lastSavedJson = json;
             AppLog.Debug("config saved " + primary);
         }
         finally

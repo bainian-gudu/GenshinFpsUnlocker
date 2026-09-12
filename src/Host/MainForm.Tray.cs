@@ -62,10 +62,9 @@ internal sealed partial class MainForm
         menu.Items.Add(MakeActionItem("显示主界面", (_, _) => RestoreFromTrayPublic()));
         menu.Items.Add(MakeActionItem("启动游戏", (_, _) =>
         {
-            if (_service.TryLaunchGame(out var msg))
-                ShowTrayBalloon("启动游戏", msg, ToolTipIcon.Info);
-            else
-                ShowTrayBalloon("启动游戏", msg, ToolTipIcon.Warning);
+            // 成败都只发一条信息类通知：文案本身已说明结果，不必再用警告图标
+            _ = _service.TryLaunchGame(out var msg);
+            ShowTrayBalloon("启动游戏", msg);
             PushUiAndRefreshTray();
         }));
         menu.Items.Add(MakeSep());
@@ -335,7 +334,7 @@ internal sealed partial class MainForm
             _service.ApplyFps((int)num.Value);
             _config.TrySave(out _);
             PushUiAndRefreshTray();
-            ShowTrayBalloon("帧率", $"目标 FPS = {_config.TargetFps}", ToolTipIcon.Info);
+            ShowTrayBalloon("帧率", $"目标 FPS = {_config.TargetFps}");
         }
     }
 
@@ -363,7 +362,7 @@ internal sealed partial class MainForm
                 _service.ApplyFps(p);
                 _config.TrySave(out _);
                 PushUiAndRefreshTray();
-                ShowTrayBalloon("帧率", $"目标 FPS = {p}", ToolTipIcon.Info);
+                ShowTrayBalloon("帧率", $"目标 FPS = {p}");
             };
             _trayFpsRoot.DropDownItems.Add(item);
         }
@@ -407,13 +406,18 @@ internal sealed partial class MainForm
         return Truncate(core, 63);
     }
 
-    private void ShowTrayBalloon(string title, string text, ToolTipIcon icon)
+    /// <summary>
+    /// 弹一条 Windows 通知（Win10/11 上即操作中心 Toast）。
+    /// 图标固定为信息类型：这些提示只是状态告知，用警告图标会在操作中心里
+    /// 显示成黄色感叹号，让人误以为出了问题。
+    /// </summary>
+    private void ShowTrayBalloon(string title, string text)
     {
         try
         {
             _tray.BalloonTipTitle = title;
             _tray.BalloonTipText = text;
-            _tray.BalloonTipIcon = icon;
+            _tray.BalloonTipIcon = ToolTipIcon.Info;
             _tray.ShowBalloonTip(2200);
         }
         catch { /* ignore */ }

@@ -164,7 +164,13 @@ namespace Scanner
         {
             return nullptr;
         }
-        if (mbi.State != MEM_COMMIT)
+        if (mbi.State != MEM_COMMIT || (mbi.Protect & PAGE_GUARD) != 0)
+        {
+            return nullptr;
+        }
+        // 要读的是 offset..offset+3 共 4 字节；跨区域边界就放弃，别赌下一页可读
+        const uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (instrAddr + static_cast<uintptr_t>(offset) + sizeof(int32_t) > regionEnd)
         {
             return nullptr;
         }

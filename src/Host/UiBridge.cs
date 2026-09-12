@@ -153,8 +153,12 @@ internal sealed class UiBridge : IDisposable
             {
                 var fps = p["value"]?.GetValue<int>() ?? _config.TargetFps;
                 _config.TargetFps = Math.Clamp(fps, 1, 540);
-                _service.ApplyFps(_config.TargetFps);
-                SaveConfig();
+                using (var batch = _config.BeginBatch())
+                {
+                    _service.ApplyFps(_config.TargetFps);  // 内部 TrySave 被合并进批量窗口
+                    batch.Flush();                         // 真正落盘一次
+                    SaveConfig();                          // 内容未变 → 不再写盘，只维护保存状态
+                }
                 return Task.FromResult<object?>(BuildStateObject());
             }
 
@@ -371,6 +375,10 @@ internal sealed class UiBridge : IDisposable
     private object PatchConfig(JsonObject p)
     {
         Interlocked.Exchange(ref _saveState, 1);
+        // 一次 patchConfig 可能带多个键，而下面每个服务层 setter 都会 TrySave。
+        // 批量窗口把它们合并成最后的一次落盘（旧实现最多连着写 4 次，每次都是
+        // Flush(true) + 备份拷贝 + File.Replace + 校验读，且全在 UI 线程上）。
+        using var batch = _config.BeginBatch();
         try
         {
             if (p["targetFps"] is JsonNode fps)
@@ -446,8 +454,8 @@ internal sealed class UiBridge : IDisposable
                 _config.SuppressAdminHint = adm.GetValue<bool>();
 
             _config.Sanitize();
-            SaveConfig();
-            Interlocked.Exchange(ref _saveState, 0);
+            batch.Flush();      // 合并后的唯一一次落盘
+            SaveConfig();       // 内容未变 → 跳过写盘，只维护 _saveState 与日志设置
             _form.SyncTrayFromConfig();
             return BuildStateObject();
         }
