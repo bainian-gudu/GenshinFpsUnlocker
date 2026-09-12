@@ -9,11 +9,12 @@
 ```
 installer/
 ├── README.md               本文件
-├── kachina.config.json     Kachina 配置（安装目录、ARP 名称、运行库、卸载时清理的数据目录）
+├── kachina.config.json     Kachina 配置（安装目录、ARP 名称、运行库、协议正文、卸载时清理的数据目录与注册表）
 ├── build-kachina.ps1       从 kachina/ 源码构建 kachina-builder.exe
 ├── pack.ps1                打包总入口：dist\ → Install.exe / 便携 zip / 便携 7z
 ├── tools/                  构建产物 kachina-builder.exe（.gitignore，不进版本库）
-└── kachina/                上游 kachina-installer 源码快照（tag 0.5.1，见 kachina/UPSTREAM.md）
+└── kachina/                上游 kachina-installer 源码快照 + 本地修改（tag 0.5.1，
+                            见 kachina/UPSTREAM.md 与 kachina/LOCAL_PATCHES.md）
 ```
 
 ## 一条命令打包
@@ -79,8 +80,72 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 
 | 事项 | 归属 | 说明 |
 | --- | --- | --- |
-| 快捷方式的**中文显示名** | `src/Host/ShortcutHelper.cs` | Kachina 建的是 `GenshinFpsUnlocker.lnk`（英文 `appName`），宿主每次启动把它规范成 `原神帧率解锁.lnk` 并清掉英文重复项 |
-| 开机自启（`HKCU\...\Run`） | `src/Host/Autostart.cs` | 按配置项「开机自启动」同步；Kachina 卸载**不会**删这个值，卸载前请先在设置里关掉 |
+| 快捷方式的**中文显示名** | `src/Host/ShortcutHelper.cs` | Kachina 建的是 `GenshinFpsUnlocker.lnk`（英文 `appName`），宿主每次启动把它规范成 `原神帧率解锁.lnk` 并清掉英文重复项；改名后上游卸载器认不出这个文件，靠 `extraUninstallLnkNames` 补删（见下） |
+| 开机自启（`HKCU\...\Run`） | `src/Host/Autostart.cs` | 按配置项「开机自启动」同步写入/删除；卸载时由 `kachina.config.json` 的 `extraUninstallRegistry` 交给卸载器回收（见下），不需要用户先手动关闭 |
+
+## 本项目给 Kachina 加的三个配置项
+
+上游没有这两项能力，改动都在 `kachina/` 里，逐处说明见
+[`kachina/LOCAL_PATCHES.md`](kachina/LOCAL_PATCHES.md)。
+
+### `extraUninstallRegistry` — 卸载时清理安装期写入的注册表
+
+```json
+"extraUninstallRegistry": [
+  { "hive": "HKCU", "key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "value": "GenshinFpsUnlocker" }
+]
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `hive` | `HKCU` / `HKLM` / `HKCR` / `HKU`（大小写不敏感，也接受全称） |
+| `key` | 子键路径 |
+| `value` | 给了就只删这一个值；省略则**递归删除整个子键**（`remove_tree`），慎用 |
+
+本项目宿主的开机自启写在 `HKCU\...\Run` 的 `GenshinFpsUnlocker` 值上
+（`src/Host/Autostart.cs`），所以卸载必须回收它。注意卸载器一般以管理员身份运行，
+此时 `HKCU` 指向的是管理员账户；因此 `hive: HKCU` 会**额外遍历 `HKEY_USERS`**
+下已加载的用户配置单元（跳过 `*_Classes`、`.DEFAULT`、`S-1-5-18`），
+确保删掉的是登录用户装的那一份。ARP 卸载项仍由上游逻辑按 `regName` 删除，
+不要在这里重复声明。清理失败只记日志，不会中断卸载。
+
+### `extraUninstallLnkNames` — 卸载时清理宿主自建/改名的快捷方式
+
+```json
+"extraUninstallLnkNames": [
+  "原神帧率解锁.lnk",
+  "GenshinFpsUnlocker.lnk",
+  "GenshinFpsUnlocker.exe.lnk",
+  "Genshin FPS Unlocker.lnk"
+]
+```
+
+只写**文件名**，目录由卸载器用 shell API 解析后拼出来，四侧都试：
+公共桌面 / 用户桌面、公共开始菜单 / 用户开始菜单下的 `{appName}\` 文件夹。
+这样即使用户桌面被 OneDrive 重定向、或宿主当初写在了另一侧，也能删干净。
+
+这些路径走的是**尽力删除**：删不掉（无权限、被占用）只写日志，
+不会把卸载判为失败——上游 `extraUninstallPath` 的语义是删不掉就报错中断，
+不适合放这种「清理不干净但不致命」的路径。
+
+### `agreementFile` / `agreementFormat` / `agreementTitle` — 可配置的用户协议
+
+```json
+"agreementFile": "../USER_AGREEMENT.txt",
+"agreementFormat": "text",
+"agreementTitle": "用户协议"
+```
+
+- `agreementFile` 相对**配置文件所在目录**解析，这里指向仓库根的 `USER_AGREEMENT.txt`；
+  与 `pack.ps1` 的工作目录无关。
+- `agreementFormat` 支持 `text`（原样保留换行缩进）/ `markdown` / `html`，
+  三者渲染结果统一过 DOMPurify 再 `v-html`。
+- 打包（`pack`）时正文被**内联进 exe**（`agreement: { title, format, content }`），
+  所以离线安装器、`update.exe`、`uninst.exe` 共用同一份协议，运行期不读文件、不联网。
+- 安装界面的「我已阅读并同意 **用户协议**」里，链接可点击，弹窗显示全文；
+  弹窗底部「我已阅读并同意」会顺手勾上同意框。
+- 读文件失败只打印 warning 并继续打包，此时链接退化为不可点击的纯文字
+  （与上游行为一致）。
 
 ## CI
 
@@ -96,5 +161,6 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 
 ## 升级上游 Kachina
 
-见 `kachina/UPSTREAM.md` 的「升级上游版本」小节；升级后记得同步更新
-`kachina.config.json`（若上游新增了配置项）与本目录的说明。
+见 `kachina/UPSTREAM.md` 的「升级上游版本」小节。注意本目录有本地修改，
+覆盖上游后必须按 `kachina/LOCAL_PATCHES.md` 的「升级上游时的套用顺序」重新套用；
+升级后也要同步检查 `kachina.config.json`（若上游新增了配置项）与本目录的说明。

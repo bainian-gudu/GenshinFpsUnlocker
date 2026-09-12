@@ -6,6 +6,7 @@ import {
   InsightItem,
   InvokeDeepReaddirWithMetadataRes,
   InvokeGetDfsMetadataRes,
+  RegistryCleanupItem,
   TAError,
   TAErrorData,
 } from '../types';
@@ -98,6 +99,10 @@ interface IpcRunUninstall {
   extra_uninstall_path: string[];
   reg_name: string;
   uninstall_name: string;
+  /** 安装期写入、卸载时回收的注册表项（自启动等） */
+  extra_uninstall_registry?: RegistryCleanupItem[];
+  /** 尽力删除的路径（宿主自建/改名的快捷方式），失败不影响卸载 */
+  extra_uninstall_shortcuts?: string[];
 }
 
 interface IpcKillProcess {

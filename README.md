@@ -60,9 +60,10 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 
 ## 安装 / 卸载
 
-安装与卸载**只有 Kachina 一种方式**。主程序自身不带任何安装/卸载入口：
+安装与卸载**只有 Kachina 一种实现**。主程序自身不做任何安装/卸载动作：
 `--install`、`--uninstall`、`Uninstall.cmd` 垫片、自写 ARP 卸载注册表项、
-内置白名单删目录、程序内「卸载本软件」按钮均已移除。
+内置白名单删目录均已移除。程序内的「卸载本软件」按钮只负责**拉起** Kachina 的
+`uninst.exe`，不碰任何文件与注册表（入口：设置页「高级设置 → 卸载」、关于页底部）。
 
 ```powershell
 .\artifacts\GenshinFpsUnlocker.Install.1.0.0.exe
@@ -72,16 +73,27 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 - 安装时按 UAC 策略提权；装完后日常运行与开机自启不再弹 UAC
 - 可自动处理 .NET Desktop Runtime 9 / VCRedist（见配置 `runtimes`）
 - 安装目录生成 **`GenshinFpsUnlocker.uninst.exe`**、**`GenshinFpsUnlocker.update.exe`**
+- 安装界面「我已阅读并同意 **用户协议**」可点击，弹窗显示协议全文
+  （正文由 `kachina.config.json` 的 `agreementFile` 指向仓库根 `USER_AGREEMENT.txt`，
+  打包时内联进 exe，支持 `text` / `markdown` / `html`）
 
-卸载（三选一，都是 Kachina 的卸载器）：
+卸载（四个入口，最终都是同一个 Kachina 卸载器）：
 
+- 程序内：设置页「高级设置 → 卸载 → 卸载本软件」，或关于页底部的「卸载本软件」
+  （弹窗确认后拉起 `uninst.exe` 并退出主程序；便携版没有 `uninst.exe`，会提示直接删目录）
 - 安装目录下的 **`GenshinFpsUnlocker.uninst.exe`**
 - 开始菜单「原神帧率解锁」文件夹里的「卸载 原神帧率解锁」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
 - Windows「设置 → 应用 → 安装的应用」/ 控制面板「应用和功能」（Kachina 写的 ARP 卸载项）
 
-卸载会按 `kachina.config.json` 的 `userDataPath` 一并清掉
-`%LocalAppData%\GenshinFpsUnlocker\`（配置、日志、WebView2 数据）。
-开机自启项（`HKCU\...\Run`）由主程序按配置维护，卸载前先在设置里关掉「开机自启动」即可。
+卸载向导中勾选「同时删除用户数据」会按 `kachina.config.json` 的 `userDataPath`
+清掉 `%LocalAppData%\GenshinFpsUnlocker\`（配置、日志、WebView2 数据）。
+开机自启项（`HKCU\...\Run` 下的 `GenshinFpsUnlocker` 值）由主程序按配置写入，
+卸载器会按配置项 `extraUninstallRegistry` 一并删除（提权卸载时会遍历
+`HKEY_USERS` 保证删到登录用户那一份），**不需要先手动关闭自启动**。
+卸载器同时会删除快捷方式与 ARP 卸载登记项：除了它自己建的
+`GenshinFpsUnlocker.lnk` 与开始菜单文件夹，还会按 `extraUninstallLnkNames`
+补删宿主改名后的中文快捷方式 `原神帧率解锁.lnk`（公共桌面 / 用户桌面 /
+两侧开始菜单都试，OneDrive 重定向的桌面也能命中；删不掉只记日志，不影响卸载）。
 
 在线更新：已安装副本可使用 `GenshinFpsUnlocker.update.exe`，从配置的 GitHub Release 源拉取（需已发布对应 `Install` 包）。
 

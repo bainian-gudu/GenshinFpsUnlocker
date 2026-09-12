@@ -39,6 +39,7 @@ docs/
 !installer/README.md
 !installer/kachina/README.md
 !installer/kachina/UPSTREAM.md
+!installer/kachina/LOCAL_PATCHES.md
 
 # ---------------------------------------------------------------------------
 # 安装器打包（installer/）

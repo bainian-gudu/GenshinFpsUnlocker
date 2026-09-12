@@ -365,6 +365,9 @@ svg { flex-shrink: 0; }
 .config-tool-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
 .reset-button { margin-left: auto; }
 .config-tools .input-help { margin-top: 16px; }
+/* 卸载面板：复用配置管理面板布局，标题用告警色提示「不可自动撤销」 */
+.uninstall-panel .section-intro h2 { color: var(--error); }
+.uninstall-panel .config-tool-buttons { margin-top: 16px; }
 .settings-native-note { display: flex; align-items: flex-start; gap: 9px; color: var(--muted); font-size: 10.5px; line-height: 2; padding: 21px 3px; max-width: 830px; }
 .settings-native-note > svg { margin-top: 3px; }
 
@@ -453,6 +456,9 @@ svg { flex-shrink: 0; }
 .about-disclaimer > svg { color: var(--warning); margin-top: 2px; }
 .about-disclaimer p { font-size: 10.5px; line-height: 2; color: var(--muted); }
 .about-disclaimer .text-button { font-size: 10.5px; margin-left: 6px; }
+.about-uninstall { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 0 4px; }
+.about-uninstall p { font-size: 10.5px; line-height: 1.9; color: var(--muted); margin-top: 4px; max-width: 640px; }
+.about-uninstall .button { flex-shrink: 0; }
 
 /* Dialogs keep destructive actions and native-only capabilities explicit. */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: #07090cc7; backdrop-filter: blur(7px); overflow-y: auto; }
@@ -739,6 +745,8 @@ svg { flex-shrink: 0; }
   .config-tool-buttons .button { font-size: 10px; padding-left: 10px; padding-right: 10px; gap: 6px; }
   .config-tools .input-help { font-size: 10px; }
   .settings-native-note { font-size: 10px; }
+  .about-uninstall { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .about-uninstall p { font-size: 10px; }
   .settings-path-panel .panel-heading .text-button { font-size: 10px; }
   .path-display { padding: 10px; font-size: 10px; }
   .log-toolbar { padding: 14px; }

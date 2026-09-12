@@ -36,7 +36,14 @@
           <div v-if="!isUpdate && !INSTALLER_CONFIG.is_uninstall" class="read">
             <Checkbox v-model="acceptEula" />
             我已阅读并同意
-            <a> 用户协议 </a>
+            <a
+              class="agreement-link"
+              :class="{ 'agreement-link-off': !hasAgreement }"
+              :title="hasAgreement ? `点击查看${agreementTitle}全文` : undefined"
+              @click="openAgreement"
+            >
+              {{ agreementTitle }}
+            </a>
           </div>
           <div v-if="INSTALLER_CONFIG.is_uninstall" class="read">
             <Checkbox v-model="deleteUserData" />
@@ -243,6 +250,31 @@
         </button>
       </template>
     </Dialog>
+    <Dialog v-show="dialog === 'agreement'">
+      <template #title>
+        <div class="title">{{ agreementTitle }}</div>
+      </template>
+      <template #desc>
+        <div class="desc">
+          请在使用 {{ PROJECT_CONFIG.title }} 前完整阅读以下条款。
+        </div>
+      </template>
+      <template #body>
+        <!-- 正文经 DOMPurify 净化，见 utils/agreement.ts -->
+        <div class="agreement-body" v-html="agreementHtml"></div>
+      </template>
+      <template #footer>
+        <button
+          class="btn btn-install btn-install-2rd neutral"
+          @click="closeAgreement(false)"
+        >
+          关闭
+        </button>
+        <button class="btn btn-install" @click="closeAgreement(true)">
+          我已阅读并同意
+        </button>
+      </template>
+    </Dialog>
     <component :is="'style'" v-if="useDynamicCss">{{ dynamicCss }}</component>
   </div>
 </template>
@@ -348,6 +380,92 @@
   a {
     cursor: pointer;
   }
+}
+
+.agreement-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.agreement-link-off {
+  cursor: default;
+  text-decoration: none;
+}
+
+.agreement-body {
+  app-region: no-drag;
+  max-height: 46vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 12px;
+  margin: 8px 0 4px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  text-align: left;
+  word-break: break-word;
+  border: 1px solid var(--colorNeutralStroke1, rgba(0, 0, 0, 0.12));
+  border-radius: 4px;
+  background: var(--colorNeutralBackground2, rgba(0, 0, 0, 0.04));
+}
+
+.agreement-body :deep(.agreement-plain) {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+
+.agreement-body :deep(p) {
+  margin: 0 0 8px;
+}
+
+.agreement-body :deep(h2),
+.agreement-body :deep(h3),
+.agreement-body :deep(h4),
+.agreement-body :deep(h5),
+.agreement-body :deep(h6) {
+  margin: 12px 0 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.agreement-body :deep(ul),
+.agreement-body :deep(ol) {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.agreement-body :deep(li) {
+  margin: 2px 0;
+}
+
+.agreement-body :deep(blockquote) {
+  margin: 8px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--colorBrandStroke1, #0f6cbd);
+}
+
+.agreement-body :deep(pre) {
+  margin: 8px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.agreement-body :deep(code) {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.agreement-body :deep(hr) {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--colorNeutralStroke1, rgba(0, 0, 0, 0.12));
+}
+
+.agreement-body :deep(a) {
+  color: var(--colorBrandForegroundLink, #0f6cbd);
 }
 
 .more {
@@ -657,6 +775,7 @@ import SafeIcon from './components/SafeIcon.vue';
 import FInput from './FInput.vue';
 import { compare } from 'compare-versions';
 import { processMirrorcError } from './mirrorc-errors';
+import { hasAgreementContent, renderAgreement } from './utils/agreement';
 import {
   DfsMetadataHashInfo,
   DfsMetadataHashType,
@@ -700,7 +819,7 @@ const percent = ref<number>(0);
 const source = ref<string>('');
 const progressInterval = ref<number>(0);
 
-const dialog = ref<'' | 'mirrorc' | 'source'>('');
+const dialog = ref<'' | 'mirrorc' | 'source' | 'agreement'>('');
 
 // Dynamic image/CSS state
 const imageSource = ref<string>('');
@@ -797,6 +916,32 @@ const INSTALLER_CONFIG: InstallerConfig = reactive({
   },
   elevated: false,
 });
+
+// 用户协议：正文在打包时由配置项 agreementFile 内联进 embedded_config
+// （见 src-tauri/src/builder/pack.rs 的 resolve_agreement），支持
+// text / markdown / html 三种格式，点击链接弹窗展示全文。
+const agreementTitle = computed<string>(
+  () => PROJECT_CONFIG.agreement?.title?.trim() || '用户协议',
+);
+const hasAgreement = computed<boolean>(() =>
+  hasAgreementContent(PROJECT_CONFIG.agreement),
+);
+const agreementHtml = computed<string>(() =>
+  renderAgreement(PROJECT_CONFIG.agreement),
+);
+function openAgreement() {
+  // 未配置协议内容时，链接保持为纯文字（与旧版本行为一致）
+  if (!hasAgreement.value) {
+    return;
+  }
+  dialog.value = 'agreement';
+}
+function closeAgreement(accepted: boolean) {
+  if (accepted) {
+    acceptEula.value = true;
+  }
+  dialog.value = '';
+}
 
 const getInsightBase = () => {
   const qs = new URLSearchParams();
@@ -1606,6 +1751,43 @@ async function getLnkPath() {
   };
 }
 
+/**
+ * 安装期由宿主自建 / 改名的快捷方式（例如把 Kachina 建的
+ * `GenshinFpsUnlocker.lnk` 规范成中文显示名 `原神帧率解锁.lnk`），不在 Kachina
+ * 默认的清理范围里，卸载后会在桌面留下指向已删除 exe 的死图标。
+ *
+ * 配置项 `extraUninstallLnkNames` 只给**文件名**；这里用 shell API 把四个真实
+ * 目录都解析出来再拼完整路径：
+ * - 公共桌面 / 用户桌面（宿主按可写性二选一，且桌面可能被 OneDrive 重定向，
+ *   所以不能用 `%USERPROFILE%\Desktop` 之类的拼法）
+ * - 公共开始菜单 / 用户开始菜单下的产品文件夹
+ *
+ * 这些路径交给 Rust 侧「尽力删除」，删不掉只记日志，不会让卸载失败。
+ */
+async function getExtraUninstallShortcutPaths(): Promise<string[]> {
+  const names = PROJECT_CONFIG.extraUninstallLnkNames ?? [];
+  if (names.length === 0) {
+    return [];
+  }
+  const paths: string[] = [];
+  for (const elevated of [true, false]) {
+    try {
+      const [programs, desk] = await invoke<InvokeGetDirsRes>('get_dirs', {
+        elevated,
+      });
+      const productDir = `${programs}${sep()}${PROJECT_CONFIG.appName}`;
+      paths.push(productDir);
+      for (const name of names) {
+        paths.push(`${desk}${sep()}${name}`);
+        paths.push(`${productDir}${sep()}${name}`);
+      }
+    } catch (e) {
+      warn(e);
+    }
+  }
+  return paths;
+}
+
 async function finishInstall(
   latest_meta?: InvokeGetDfsMetadataRes,
 ): Promise<void> {
@@ -2084,6 +2266,7 @@ async function uninstall() {
     }
     await ipPrepare(needElevate.value);
     const { programFolder, desktop } = await getLnkPath();
+    const extraShortcuts = await getExtraUninstallShortcutPaths();
     await ipcRunUninstall(
       {
         source: INSTALLER_CONFIG.install_path,
@@ -2102,6 +2285,10 @@ async function uninstall() {
         ],
         reg_name: PROJECT_CONFIG.regName,
         uninstall_name: PROJECT_CONFIG.uninstallName,
+        // 安装期写入的注册表（开机自启动等）随卸载一并回收
+        extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
+        // 宿主自建/改名的快捷方式：尽力删除，失败不影响卸载
+        extra_uninstall_shortcuts: extraShortcuts,
       },
       needElevate.value,
     );

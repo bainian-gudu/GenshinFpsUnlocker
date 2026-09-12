@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Download, FileJson, FolderOpen, Info, LoaderCircle, RotateCcw, Settings2, Shield, ShieldCheck, SlidersHorizontal, Upload, WandSparkles } from 'lucide-react';
+import { Check, ChevronRight, Download, FileJson, FolderOpen, Info, LoaderCircle, RotateCcw, Settings2, Shield, ShieldCheck, SlidersHorizontal, Trash2, Upload, WandSparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { LogLevel, UnlockerConfig, UpdateConfig } from '../lib/config';
@@ -19,8 +19,8 @@ function NumberSetting({ title, description, value, min, max, unit, onChange }: 
   return <div className="setting-row"><div><span className="row-title">{title}</span><p className={error ? 'field-error' : ''}>{error ? `请输入 ${min} 至 ${max} 之间的整数` : description}</p></div><div className="number-setting"><input aria-label={title} type="number" min={min} max={max} value={draft} aria-invalid={error} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{unit}</span></div></div>;
 }
 
-export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, busy, isNative, isElevated, onRestartElevated, elevating }: {
-  config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; busy: boolean; isNative?: boolean;
+export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative, isElevated, onRestartElevated, elevating }: {
+  config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; onUninstall?: () => void; busy: boolean; isNative?: boolean;
   isElevated?: boolean; onRestartElevated?: () => void; elevating?: boolean;
 }) {
   const [tab, setTab] = useState<'game' | 'behavior' | 'advanced'>('game');
@@ -96,9 +96,12 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
           <NumberSetting title="日志保留时间" description="桌面版自动清理超过保留时间的日志，范围 1 - 90 天" min={1} max={90} unit="天" value={config.logRetainDays} onChange={(value) => updateConfig('logRetainDays', value)} />
         </section>
         <section className="control-panel config-tools"><div className="section-intro"><h2>配置管理</h2><p>在不同设备间迁移偏好，或保留一份熟悉的配置。</p></div><div className="config-tool-buttons"><button className="button button-secondary" onClick={onImport} disabled={busy}><Upload size={16} />导入配置</button><button className="button button-secondary" onClick={onExport}><Download size={16} />导出配置</button><button className="button button-quiet reset-button" onClick={onReset} disabled={busy}><RotateCcw size={15} />恢复默认</button></div><p className="input-help">{busy ? '请稍候再导入或恢复配置。导出仍可正常使用。' : isNative ? '导入/导出与桌面版 config.json 字段兼容。' : '导出为原项目兼容的 config.json。'}</p></section>
+        {isNative && onUninstall && (
+          <section className="control-panel config-tools uninstall-panel"><div className="section-intro"><h2>卸载</h2><p>调用安装器（Kachina）的卸载向导：清理程序文件、桌面与开始菜单快捷方式、开机自启动注册表项，以及「安装的应用」中的卸载登记。</p></div><div className="config-tool-buttons"><button className="button button-danger" onClick={onUninstall} disabled={busy}><Trash2 size={16} />卸载本软件</button></div><p className="input-help">卸载向导中可选择是否同时删除配置与日志（%LocalAppData%\GenshinFpsUnlocker）。安装器会自行申请管理员权限。</p></section>
+        )}
       </>}
       {isNative
-        ? <div className="settings-native-note"><Info size={16} /><p>当前已连接桌面服务。配置写入 %LocalAppData%\GenshinFpsUnlocker\config.json；自启、托盘与注入由宿主进程管理。卸载请运行安装目录下的 GenshinFpsUnlocker.uninst.exe，或在 Windows「设置 → 应用 → 安装的应用」中卸载。</p></div>
+        ? <div className="settings-native-note"><Info size={16} /><p>当前已连接桌面服务。配置写入 %LocalAppData%\GenshinFpsUnlocker\config.json；自启、托盘与注入由宿主进程管理。需要卸载时，使用「高级设置 → 卸载」中的按钮，或在 Windows「设置 → 应用 → 安装的应用」中卸载（两者都会调用安装目录下的 GenshinFpsUnlocker.uninst.exe）。</p></div>
         : <div className="settings-native-note"><Info size={16} /><p>当前为网页预览，所有更改保存在此浏览器中。Windows 自启、托盘与进程检测等系统功能，需要连接桌面服务后生效。</p></div>}
     </div>
   </>;

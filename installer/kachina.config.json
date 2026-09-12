@@ -19,7 +19,23 @@
   "ignoreFolderPath": [],
   "userDataPath": ["%LOCALAPPDATA%/GenshinFpsUnlocker"],
   "extraUninstallPath": [],
+  "extraUninstallRegistry": [
+    {
+      "hive": "HKCU",
+      "key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "value": "GenshinFpsUnlocker"
+    }
+  ],
+  "extraUninstallLnkNames": [
+    "原神帧率解锁.lnk",
+    "GenshinFpsUnlocker.lnk",
+    "GenshinFpsUnlocker.exe.lnk",
+    "Genshin FPS Unlocker.lnk"
+  ],
   "uacStrategy": "prefer-admin",
+  "agreementFile": "../USER_AGREEMENT.txt",
+  "agreementFormat": "text",
+  "agreementTitle": "用户协议",
   "runtimes": [
     "Microsoft.DotNet.DesktopRuntime.9",
     "Microsoft.VCRedist.2015+.x64"

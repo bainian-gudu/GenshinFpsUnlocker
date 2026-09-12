@@ -3,6 +3,69 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use crate::{cli::PackArgs, local::get_reader_for_bundle, utils::metadata::RepoMetadata};
 
+/// 把 `agreementFile` 指向的协议正文内联进打包配置（写成 `agreement.content`），
+/// 安装器界面点击「用户协议」即可弹窗显示完整内容，无需联网或额外文件。
+///
+/// - `agreementFile`：协议文件路径，相对于配置文件所在目录。
+/// - `agreementFormat`：`text`（默认，原样换行显示）/ `markdown` / `html`。
+/// - `agreementTitle`：弹窗与链接文字，默认「用户协议」。
+///
+/// 读取失败只打印警告、不中断打包（此时界面上的链接保持不可点击）。
+fn resolve_agreement(config: &mut serde_json::Value, config_path: &std::path::Path) {
+    let obj = match config.as_object_mut() {
+        Some(obj) => obj,
+        None => return,
+    };
+    let file = match obj.get("agreementFile").and_then(|v| v.as_str()) {
+        Some(f) if !f.trim().is_empty() => f.to_string(),
+        _ => return,
+    };
+    let base = config_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let path = base.join(&file);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            eprintln!("Warning: failed to read agreementFile {path:?}: {e}");
+            return;
+        }
+    };
+    // 容忍 UTF-8 BOM 与 CRLF；非法字节按 lossy 处理，避免打包直接失败
+    let text = String::from_utf8_lossy(&bytes)
+        .trim_start_matches('\u{feff}')
+        .replace("\r\n", "\n")
+        .trim_end()
+        .to_string();
+    let format = obj
+        .get("agreementFormat")
+        .and_then(|v| v.as_str())
+        .filter(|f| !f.trim().is_empty())
+        .unwrap_or("text")
+        .to_ascii_lowercase();
+    let title = obj
+        .get("agreementTitle")
+        .and_then(|v| v.as_str())
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or("用户协议")
+        .to_string();
+
+    println!("Agreement embedded: {path:?} (format: {format})");
+
+    let mut agreement = serde_json::Map::new();
+    agreement.insert("title".to_string(), serde_json::Value::String(title));
+    agreement.insert("format".to_string(), serde_json::Value::String(format));
+    agreement.insert("content".to_string(), serde_json::Value::String(text));
+    obj.insert(
+        "agreement".to_string(),
+        serde_json::Value::Object(agreement),
+    );
+    obj.remove("agreementFile");
+    obj.remove("agreementFormat");
+    obj.remove("agreementTitle");
+}
+
 pub struct PackFile {
     pub name: String,
     pub size: usize,
@@ -39,7 +102,9 @@ pub async fn pack_cli(args: PackArgs) {
         eprintln!("Failed to parse config: {:?}", config.err());
         return;
     }
-    let config = config.unwrap();
+    let mut config: serde_json::Value = config.unwrap();
+    // 把 agreementFile 指向的协议正文内联进配置，供安装界面弹窗展示
+    resolve_agreement(&mut config, &args.config);
     let metadata = if let Some(metadata) = args.metadata {
         let metadataf = tokio::fs::read(&metadata).await;
         if metadataf.is_err() {

@@ -6,6 +6,36 @@ export interface SourceItem {
   hidden: boolean;
   icon?: string; // 可选的SVG图标字符串
 }
+/**
+ * 用户协议：打包时由项目配置的 `agreementFile` 内联生成（见
+ * src-tauri/src/builder/pack.rs 的 resolve_agreement），运行期直接读取，
+ * 不依赖网络与外部文件。
+ */
+export type AgreementFormat = 'text' | 'markdown' | 'html';
+
+export type AgreementConfig = {
+  /** 链接与弹窗标题，默认「用户协议」 */
+  title?: string;
+  /** 正文渲染方式，默认 text */
+  format?: AgreementFormat;
+  /** 正文（text/markdown/html 源码） */
+  content: string;
+};
+
+/**
+ * 卸载时额外清理的注册表项：安装期写入、需要随卸载回收的内容，
+ * 例如开机自启动 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
+ * ARP 卸载项由卸载器按 regName 自动清理，无需在此声明。
+ */
+export type RegistryCleanupItem = {
+  /** HKCU / HKLM / HKCR / HKU（大小写不敏感，也接受全称） */
+  hive: string;
+  /** 子键路径，如 `Software\Microsoft\Windows\CurrentVersion\Run` */
+  key: string;
+  /** 仅删除该键下的这一个值；省略则递归删除整个子键 */
+  value?: string;
+};
+
 export type ProjectConfig = {
   source: string | SourceItem[];
   appName: string;
@@ -28,6 +58,17 @@ export type ProjectConfig = {
   uacStrategy: 'prefer-admin' | 'prefer-user' | 'force';
   runtimes?: string[];
   windowBorderless?: boolean;
+  /** 用户协议（有内容时界面上的「用户协议」可点击弹窗查看） */
+  agreement?: AgreementConfig;
+  /** 卸载时额外清理的注册表项 */
+  extraUninstallRegistry?: RegistryCleanupItem[];
+  /**
+   * 卸载时额外清理的快捷方式**文件名**（不是完整路径）。
+   * 目录由卸载器用 shell API 解析（公共桌面 / 用户桌面 / 公共开始菜单 /
+   * 用户开始菜单四侧都试），因此桌面被 OneDrive 重定向也能命中。
+   * 删不掉只记日志，不会让卸载失败。
+   */
+  extraUninstallLnkNames?: string[];
 };
 
 export type InstallStat = {

@@ -297,6 +297,28 @@ internal sealed class UiBridge : IDisposable
                 });
                 return Task.FromResult<object?>(true);
 
+            case "uninstall":
+            {
+                // 只拉起 Kachina 卸载器（uninst.exe）；文件、快捷方式、自启动注册表
+                // 与 ARP 卸载项全部由卸载器清理，宿主不做任何删除动作。
+                var ok = UninstallLauncher.TryLaunch(out var err);
+                if (ok)
+                {
+                    // 先让响应回到 UI（提示「卸载向导已打开」），再退出本进程，
+                    // 否则卸载器会把主程序当作需要先关闭的运行中进程。
+                    _form.BeginInvoke(() =>
+                    {
+                        _form.RequestExit();
+                    });
+                }
+
+                return Task.FromResult<object?>(new
+                {
+                    ok,
+                    message = ok ? "已启动卸载向导，本窗口即将关闭。" : err,
+                });
+            }
+
             case "restartElevated":
             {
                 // 在 UI 线程执行：释放互斥 → runas → 退出

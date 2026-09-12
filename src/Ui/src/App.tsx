@@ -26,7 +26,7 @@ import { GuidePage } from './pages/GuidePage';
 import { LogsPage } from './pages/LogsPage';
 import { SettingsPage } from './pages/SettingsPage';
 
-type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | null;
+type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
 type LaunchState = 'idle' | 'launching' | 'running';
 const PAGE_NAMES: Record<Page, string> = { overview: '游戏概览', settings: '游戏设置', logs: '运行日志', guide: '使用指南', about: '关于项目' };
 const NAV_ITEMS = [{ page: 'overview', label: '游戏概览', icon: LayoutGrid }, { page: 'settings', label: '游戏设置', icon: SlidersHorizontal }, { page: 'logs', label: '运行日志', icon: SquareTerminal }] as const;
@@ -286,6 +286,27 @@ export default function App() {
     }
   }
 
+  /**
+   * 卸载：只负责拉起 Kachina 安装器生成的 uninst.exe，
+   * 文件 / 快捷方式 / 自启动注册表 / 卸载登记项全部由卸载器清理。
+   */
+  async function startUninstall() {
+    if (!native) return;
+    try {
+      const result = await nativeInvoke<{ ok: boolean; message?: string }>('uninstall');
+      if (result?.ok) {
+        notify('正在启动卸载向导', result.message || '卸载向导已打开，本窗口即将关闭。');
+        addLog('Info', '已请求启动 Kachina 卸载程序');
+      } else {
+        notify('无法启动卸载', result?.message || '未找到卸载程序。', 'error');
+        addLog('Warn', result?.message || 'uninstall 失败');
+      }
+    } catch (error) {
+      notify('无法启动卸载', error instanceof Error ? error.message : '未知错误', 'error');
+      addLog('Error', `uninstall 异常: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
     function handleLaunch() {
     if (launchState === 'launching') return;
     if (launchState === 'running' && !native) {
@@ -505,10 +526,10 @@ export default function App() {
                 )}
                 <div className="overview-tip"><ShieldCheck size={16} strokeWidth={1.6} /><p><span>冒险小贴士</span>请先关闭游戏内垂直同步（V-Sync）。第三方工具存在使用风险，使用前请阅读<button onClick={() => setModal('safety')}>用户协议<ArrowUpRight size={12} /></button></p><button className="icon-button tip-help" onClick={() => navigate('guide')} aria-label="查看使用帮助"><CircleHelp size={16} /></button></div>
               </>}
-              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} />}
+              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} />}
               {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} onOpenFolder={native ? () => { void nativeInvoke('openLogFolder').catch(() => undefined); } : undefined} />}
               {page === 'guide' && <GuidePage navigate={navigate} onSafety={() => setModal('safety')} isNative={native} />}
-              {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} />}
+              {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} isNative={native} onUninstall={native ? () => setModal('uninstall') : undefined} />}
             </motion.main>
           </AnimatePresence>
 
@@ -571,6 +592,7 @@ export default function App() {
             setModal(null);
             notify('已恢复默认设置');
           }} />}
+          {modal === 'uninstall' && <ConfirmDialog key="uninstall" title="卸载本软件？" description="将启动安装器（Kachina）的卸载向导：清理程序文件、桌面与开始菜单快捷方式、开机自启动注册表项，以及「安装的应用」中的卸载登记。可在向导中选择是否同时删除配置与日志。此操作不可自动撤销。" action="开始卸载" onClose={() => setModal(null)} onConfirm={async () => { setModal(null); await startUninstall(); }} />}
           {modal === 'clearLogs' && <ConfirmDialog key="clear-logs" title="清空日志列表？" description={`当前列表中的 ${logs.length} 条记录将从界面清除（桌面版不会删除磁盘日志文件）。`} action="清空列表" onClose={() => setModal(null)} onConfirm={() => { setLogs([]); setModal(null); notify('日志列表已清空'); }} />}
         </AnimatePresence>
       </div>

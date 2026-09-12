@@ -191,39 +191,6 @@ internal static class ShortcutHelper
     }
 
     /// <summary>
-    /// 卸载：删除产品开始菜单文件夹，以及桌面上中英文相关 .lnk。
-    /// </summary>
-    public static void RemoveCreatedShortcuts()
-    {
-        try
-        {
-            foreach (var root in new[]
-                     {
-                         Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
-                         Environment.GetFolderPath(Environment.SpecialFolder.Programs),
-                     })
-            {
-                if (string.IsNullOrEmpty(root)) continue;
-                var dir = Path.Combine(root, AppPaths.ProductName);
-                if (Directory.Exists(dir))
-                    Directory.Delete(dir, recursive: true);
-            }
-        }
-        catch (Exception ex) { AppLog.Warn("移除开始菜单: " + ex.Message); }
-
-        try
-        {
-            foreach (var desk in DesktopRoots())
-            {
-                if (string.IsNullOrEmpty(desk)) continue;
-                foreach (var name in ShortcutNameAliases())
-                    TryDelete(Path.Combine(desk, name));
-            }
-        }
-        catch (Exception ex) { AppLog.Warn("移除桌面快捷方式: " + ex.Message); }
-    }
-
-    /// <summary>
     /// 清理桌面/开始菜单中指向本 exe 的重复项，以及英文命名的 Kachina 默认快捷方式。
     /// </summary>
     public static void CleanupDuplicateShortcuts(string? exePath = null)
@@ -300,14 +267,6 @@ internal static class ShortcutHelper
     {
         yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
         yield return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-    }
-
-    private static IEnumerable<string> ShortcutNameAliases()
-    {
-        yield return AppPaths.ProductDisplayName + ".lnk";
-        yield return AppPaths.ProductName + ".lnk";
-        yield return AppPaths.ProductName + ".exe.lnk";
-        yield return "Genshin FPS Unlocker.lnk";
     }
 
     /// <summary>优先 exe 旁 app.ico（完整多尺寸），否则 exe 自身。</summary>
