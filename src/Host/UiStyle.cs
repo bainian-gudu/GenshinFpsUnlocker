@@ -213,6 +213,8 @@ internal static class UiStyle
 
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUND = 2;
     private const int DWMWA_BORDER_COLOR = 34;
     private const int DWMWA_CAPTION_COLOR = 35;
     private const int DWMWA_TEXT_COLOR = 36;
@@ -222,6 +224,28 @@ internal static class UiStyle
 
     /// <summary>RGB → COLORREF (0x00BBGGRR)。</summary>
     private static int ToColorRef(Color c) => c.R | (c.G << 8) | (c.B << 16);
+
+    /// <summary>
+    /// 让 DWM 给窗口做原生圆角（Win11 build 22000+ 的
+    /// <c>DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND</c>）。
+    /// 成功返回 true；Win10 上这个属性不存在，返回 false 让调用方走兜底
+    /// （托盘菜单用 Region 裁角，见 <see cref="TrayMenuCorners"/>）。
+    /// 对弹出式窗口（ContextMenuStrip / 其子菜单 DropDown）同样有效。
+    /// </summary>
+    public static bool TryApplyRoundedCorners(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        try
+        {
+            // 自己判版本而不是调 OsCompatibility：那边带 [SupportedOSPlatform("windows")]，
+            // 本类没有标注，跨过去会招 CA1416。Environment.OSVersion 是跨平台 API。
+            var v = Environment.OSVersion.Version;
+            if (v.Major < 10 || v.Build < 22000) return false;
+            var pref = DWMWCP_ROUND;
+            return DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int)) == 0;
+        }
+        catch { return false; }
+    }
 
     /// <summary>
     /// 标题栏配色与设计稿一致：深色 #121319 / 浅色 #f5f5f8（Win11 caption/text/border；旧系统 immersive dark）。

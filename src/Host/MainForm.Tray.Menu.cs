@@ -123,6 +123,9 @@ internal sealed partial class MainForm
             SyncTrayFromConfig();
         };
 
+        // 四角圆边：Win11 走 DWM 原生圆角，Win10 用 Region 裁角兜底
+        TrayMenuCorners.Apply(menu);
+
         _tray.ContextMenuStrip = menu;
         _tray.DoubleClick += (_, _) =>
         {
@@ -202,7 +205,11 @@ internal sealed partial class MainForm
             _trayFpsRoot.DropDown.Renderer = new TrayMenuRenderer(dark);
             _trayFpsRoot.DropDown.BackColor = _trayMenu.BackColor;
             _trayFpsRoot.DropDown.ForeColor = _trayMenu.ForeColor;
+            // 子菜单（帧率预设）是独立的弹出窗口，圆角要单独设一次；可重复调用
+            TrayMenuCorners.Apply(_trayFpsRoot.DropDown);
         }
+
+        TrayMenuCorners.Apply(_trayMenu);
     }
 
     private static void StyleTrayItem(ToolStripItem it, bool dark)

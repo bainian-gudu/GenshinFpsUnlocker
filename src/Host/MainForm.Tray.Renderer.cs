@@ -69,11 +69,27 @@ internal sealed partial class MainForm
             var r = e.AffectedBounds;
             r.Width -= 1;
             r.Height -= 1;
+            // Win10 兜底路径下窗口四角被 Region 裁掉，边框也要画成同样的圆角矩形，
+            // 否则边框会在被裁掉的角上断开（Win11 走 DWM 圆角，边框保持直角矩形即可：
+            // DWM 的圆角比这 1px 边框更靠外，裁不到它）。
+            if (TrayMenuCorners.RegionActive && e.ToolStrip is not null)
+            {
+                var g = e.Graphics;
+                var prev = g.SmoothingMode;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using var path = TrayMenuCorners.RoundRect(r, TrayMenuCorners.RadiusFor(e.ToolStrip));
+                g.DrawPath(_sepPen, path);
+                g.SmoothingMode = prev;
+                return;
+            }
+
             e.Graphics.DrawRectangle(_sepPen, r);
         }
 
-        /// <summary>勾选槽宽与文字左缘：所有项（含无勾选项）同一 X 起排，避免参差。</summary>
+        /// <summary>勾选槽宽：√ 固定画在这一槽内（水平居中于槽、垂直居中于行）。</summary>
         private const int CheckGutter = 28;
+
+        /// <summary>分隔线左缘（文字改为整行居中后不再需要「文字左缘」这个常量）。</summary>
         private const int TextLeft = 32;
 
         protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
@@ -98,7 +114,7 @@ internal sealed partial class MainForm
             if (!item.Enabled) return;
             if (!item.Selected && !item.Pressed) return;
 
-            using var path = RoundRect(bounds, 6);
+            using var path = TrayMenuCorners.RoundRect(bounds, 6);
             g.FillPath(_hoverBrush, path);
             g.FillRectangle(_accentBrush, new Rectangle(bounds.X + 1, bounds.Y + 5, 3, Math.Max(4, bounds.Height - 10)));
         }
@@ -124,16 +140,18 @@ internal sealed partial class MainForm
                         ? _accent
                         : _text;
 
-            // 文字统一左缘 TextLeft、整行高度内垂直居中：矩形直接取整行高度，
-            // 由 VerticalCenter 负责对中，别再自己叠 ContentRectangle.Y / 内边距
-            // （叠了会偏高偏矮不一，和勾选标记对不齐）。
+            // 文字在**整行宽度内水平居中**、整行高度内垂直居中：矩形直接取整行，
+            // 由 HorizontalCenter / VerticalCenter 负责对中，别再自己叠
+            // ContentRectangle.Y / 内边距（叠了会偏高偏矮不一，和勾选标记对不齐）。
+            //
+            // 左右不再各留不对称的内缩：菜单宽度本来就是由最宽那一项撑出来的，
+            // 再内缩会让最宽项被 EndEllipsis 截掉一截。√ 仍在左侧 CheckGutter 槽内，
+            // 勾选项目前最长的是「移除水下马赛克」（≈7 个汉字），居中后左右各余
+            // 40px 以上，不会压到 √；带子菜单箭头的「修改帧率 · N FPS」也不是最宽项，
+            // 居中后离右侧箭头还有富余。
             var font = e.TextFont ?? item.Font ?? SystemFonts.MenuFont ?? SystemFonts.DefaultFont;
             var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
-            var textRect = new Rectangle(
-                TextLeft,
-                0,
-                Math.Max(8, item.Width - TextLeft - 12),
-                item.Height);
+            var textRect = new Rectangle(0, 0, Math.Max(8, item.Width), item.Height);
 
             TextRenderer.DrawText(
                 g,
@@ -141,7 +159,10 @@ internal sealed partial class MainForm
                 font,
                 textRect,
                 e.TextColor,
-                flags | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+                flags
+                    | TextFormatFlags.HorizontalCenter
+                    | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.SingleLine);
             // 不再调用 base，避免系统再画一次偏移文字
         }
 
@@ -169,18 +190,6 @@ internal sealed partial class MainForm
         {
             var y = e.Item.ContentRectangle.Top + e.Item.ContentRectangle.Height / 2;
             e.Graphics.DrawLine(_sepPen, TextLeft, y, Math.Max(TextLeft + 8, e.Item.Width - 12), y);
-        }
-
-        private static System.Drawing.Drawing2D.GraphicsPath RoundRect(Rectangle bounds, int radius)
-        {
-            var path = new System.Drawing.Drawing2D.GraphicsPath();
-            var d = radius * 2;
-            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
-            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
-            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
-            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
         }
     }
 
