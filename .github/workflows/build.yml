@@ -35,6 +35,10 @@ env:
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   CARGO_TERM_COLOR: "always"
+  # actions/setup-node 自己（以及它的 post-job 缓存步骤）会打 [DEP0040] punycode /
+  # [DEP0169] url.parse() 弃用告警，是 action 内部依赖的事，跟本仓库无关。
+  # env 对所有步骤（包括 node 类 action）都生效，所以在这里统一静音。
+  NODE_NO_WARNINGS: "1"
   # 第三方 action 若仍声明 node20，强制落到 runner 默认 Node 24，消减弃用告警
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
