@@ -131,6 +131,14 @@ tools/devcheck/
   让子进程往 stderr 灌 300 KB 再写 stdout，串行版必挂。现在用两个
   `ReadToEndAsync()` 任务并发读，并带 `-TimeoutSec`（默认 600 秒）兜底：超时就
   `Kill($true)` 杀整个进程树并抛错，而不是无声地等到 CI 超时。
+- **换行差异会让 `prettier --check` 只在 Windows 上失败。** windows-latest 的 git 默认
+  `core.autocrlf=true`，检出时把 LF 换成 CRLF，而 prettier 2.x 起默认 `endOfLine: "lf"`，
+  于是同一个提交 ubuntu 绿、windows 红，报的是
+  `[warn] Code style issues found in the above file`（本地复现：把文件转成 CRLF 再
+  `prettier --check`，加 `--end-of-line auto` 就通过）。真正的修法是仓库根的
+  `.gitattributes`（`* text=auto eol=lf`，让所有平台都检出 LF，顺带让
+  `hashFiles('installer/kachina/**')` 这类按工作区算的缓存 key 跨平台一致）；
+  devcheck 里再传 `--end-of-line auto` 兜底，避免在没重新规范化的旧工作区上误报。
 - **`Get-Tool` 在 Windows 上要避开 `.ps1` shim。** npm/npx 会同时装 `npm.cmd` 和
   `npm.ps1`，而 `ProcessStartInfo`（`UseShellExecute=false`）执行不了 `.ps1`，
   执行策略也可能拦；所以同名时优先 `.cmd`。

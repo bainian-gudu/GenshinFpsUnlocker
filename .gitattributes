@@ -1,0 +1,39 @@
+# 全仓库统一换行：入库 LF、检出也是 LF。
+#
+# 为什么必须有这个文件：windows-latest runner 的 git 默认 core.autocrlf=true，
+# 检出时会把工作区文件换成 CRLF。仓库里的文本文件本来就是 LF 入库的，
+# 于是同一个提交在 ubuntu-latest 上是绿的、在 windows-latest 上 prettier --check
+# 必然报「Code style issues found」（prettier 2.x 起默认 endOfLine=lf）。
+# 顺带也让 hashFiles('installer/kachina/**') 这类按工作区内容算的缓存 key
+# 在两个平台上保持一致。
+* text=auto eol=lf
+
+# 明确声明二进制，避免被当成文本做换行转换（text=auto 一般能自动识别，
+# 这里对容易被误判的类型兜底）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.exe binary
+*.dll binary
+*.pdb binary
+*.msi binary
+*.zip binary
+*.7z binary
+*.gz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.pdf binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+
+# 万一以后加入 Windows 批处理：cmd.exe 解析 CRLF 最稳，不要被上面的规则改成 LF
+*.bat text eol=crlf
+*.cmd text eol=crlf

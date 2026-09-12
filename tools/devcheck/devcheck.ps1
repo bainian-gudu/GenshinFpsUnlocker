@@ -394,7 +394,11 @@ function Test-Frontend {
         @{ What = '.vue 单文件组件编译'; Exe = $node; Args = @('sfccheck.mjs') }
         # 只查我们自己写的文件：types.ts / App.vue 是上游代码，本身就不满足仓库的
         # prettier 风格，查它们只会天天误报（要格式化请在 installer/kachina 里用上游的工具链）。
-        @{ What = 'prettier --check'; Exe = $npx; Args = @('prettier', '--check', 'gen/src/utils/agreement.ts') }
+        # --end-of-line auto：仓库已用 .gitattributes 强制 LF 入库/检出，但 Windows 上
+        # 若有人是在加 .gitattributes 之前 clone 的（工作区已是 CRLF 且没重新规范化），
+        # prettier 默认的 endOfLine=lf 会因为纯粹的换行差异报「格式不对」，
+        # 把真正需要关注的风格问题淹掉。换行由 .gitattributes 管，这里只管格式。
+        @{ What = 'prettier --check'; Exe = $npx; Args = @('prettier', '--check', '--end-of-line', 'auto', 'gen/src/utils/agreement.ts') }
     )
     foreach ($c in $checks) {
         $r = Invoke-Native -FilePath $c.Exe -Arguments $c.Args -WorkingDirectory $front -Tail 30
