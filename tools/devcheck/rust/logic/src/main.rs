@@ -36,6 +36,17 @@ pub mod windows_registry {
             super::log(&format!("VALUE {}\\{}", self.name, name));
             Ok(())
         }
+        /// 只认 `ProfileImagePath`：返回 `<KCHECK_MOCK_PROFILE_BASE>\<SID>`。
+        /// 用绝对路径（而不是 %SystemDrive%\Users\xxx）是为了在 Linux 上也能跑。
+        pub fn get_string(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
+            super::log(&format!("GET {} {name}", self.name));
+            if name != "ProfileImagePath" {
+                return Err("no such value".into());
+            }
+            let base = std::env::var("KCHECK_MOCK_PROFILE_BASE").unwrap_or_else(|_| "/kcheck-none".to_string());
+            let sid = self.name.rsplit('\\').next().unwrap_or("sid");
+            Ok(format!("{base}/{sid}"))
+        }
         pub fn keys(&self) -> Result<KeyIterator, Box<dyn std::error::Error>> {
             Ok(KeyIterator {
                 items: vec![
@@ -373,6 +384,211 @@ fn path_eq_cases() {
     }
 }
 
+
+fn expand_env_cases() {
+    println!("[8] %VAR% 展开（配置里的用户数据路径）");
+    std::env::set_var("KCHECK_LAD", "/tmp/kcheck-expand/AppData/Local");
+    let cases: Vec<(&str, &str)> = vec![
+        (
+            "%KCHECK_LAD%/GenshinFpsUnlocker",
+            "/tmp/kcheck-expand/AppData/Local/GenshinFpsUnlocker",
+        ),
+        // 未知变量原样保留：宁可少删，也不要拼出半个路径去删
+        ("%KCHECK_NOPE%/GenshinFpsUnlocker", "%KCHECK_NOPE%/GenshinFpsUnlocker"),
+        ("C:\\a\\b", "C:\\a\\b"),
+        ("100% done", "100% done"),
+        ("a%%b", "a%b"),
+    ];
+    for (input, want) in cases {
+        let got = expand_env_vars(input);
+        check(&format!("{input:?} => {want:?}"), got == want, format!("got {got:?}"));
+    }
+    // 回归：不展开 %VAR% 的话，安全阀会因为「不是绝对路径」把整条跳过 ——
+    // 这正是「勾了删除用户数据也一个字节没删」的根因。
+    let expanded = expand_path_list(&[
+        "%KCHECK_LAD%/GenshinFpsUnlocker".to_string(),
+        "   ".to_string(),
+    ]);
+    check(
+        "expand_path_list 展开变量并丢掉空项",
+        expanded.len() == 1 && Path::new(&expanded[0]).is_absolute(),
+        format!("{expanded:?}"),
+    );
+    let raw = is_safe_delete_target(Path::new("%KCHECK_LAD%/GenshinFpsUnlocker"));
+    let done = is_safe_delete_target(Path::new(&expanded[0]));
+    check("展开前被安全阀拦掉、展开后放行", !raw && done, format!("raw={raw} done={done}"));
+}
+
+fn profile_tail_cases() {
+    println!("[9] 多用户清理的相对尾部 profile_relative_tail");
+    let profile = std::env::temp_dir().join("kcheck-profile").join("alice");
+    std::env::set_var("USERPROFILE", &profile);
+    let cases: Vec<(PathBuf, bool)> = vec![
+        (profile.join("AppData/Local/GenshinFpsUnlocker"), true),
+        (profile.join("AppData/Roaming/GenshinFpsUnlocker"), true),
+        (profile.join("Documents/GenshinFpsUnlocker"), true),
+        (
+            profile.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs/GenshinFpsUnlocker"),
+            true,
+        ),
+        (profile.join("Desktop/原神帧率解锁.lnk"), true),
+        // 桌面上的非 .lnk：别人桌面的文档一概不碰
+        (profile.join("Desktop/notes.txt"), false),
+        // 尾部只有一级（等于把整个容器目录端掉）：不碰
+        (profile.join("AppData"), false),
+        (profile.join("Documents"), false),
+        (profile.join("Foo"), false),
+        // 白名单外的容器：不碰
+        (profile.join("Downloads/GenshinFpsUnlocker"), false),
+        (profile.join("Videos/a/b"), false),
+        // 路径穿越
+        (profile.join("AppData/../secret"), false),
+        // 压根不在配置目录下（公共开始菜单、安装目录等）：与「哪个用户」无关
+        (
+            std::env::temp_dir().join("kcheck-elsewhere/AppData/Local/GenshinFpsUnlocker"),
+            false,
+        ),
+    ];
+    for (path, want) in cases {
+        let got = profile_relative_tail(&path).is_some();
+        check(&format!("{} => {want}", p(&path)), got == want, format!("got {got}"));
+    }
+}
+
+async fn per_user_sweep_cases() {
+    println!("[10] 多用户残留清理（ProfileList 扫描 + 尽力删除）");
+    let base = std::env::temp_dir().join("kcheck-multiuser");
+    let _ = std::fs::remove_dir_all(&base);
+    let profiles = base.join("profiles");
+    let alice = base.join("alice");
+    std::env::set_var("USERPROFILE", &alice);
+    std::env::set_var("KCHECK_MOCK_PROFILE_BASE", &profiles);
+    std::fs::create_dir_all(&alice).unwrap();
+
+    // mock 的 ProfileList 会给出这些 SID：一个真实用户 + 三个必须跳过的
+    let roots = [
+        ("user", profiles.join("S-1-5-21-111-222-333-1001")),
+        ("system", profiles.join("S-1-5-18")),
+        ("default", profiles.join(".DEFAULT")),
+        ("classes", profiles.join("S-1-5-21-111-222-333-1001_Classes")),
+    ];
+    for (_, root) in &roots {
+        let data = root.join("AppData/Local/GenshinFpsUnlocker");
+        std::fs::create_dir_all(data.join("logs")).unwrap();
+        std::fs::write(data.join("config.json"), b"{}").unwrap();
+        std::fs::create_dir_all(root.join("Desktop")).unwrap();
+        std::fs::write(root.join("Desktop/原神帧率解锁.lnk"), b"x").unwrap();
+        std::fs::write(root.join("Desktop/keep.txt"), b"x").unwrap();
+    }
+    let other = profiles.join("S-1-5-21-111-222-333-1001");
+
+    let configured = vec![
+        p(&alice.join("AppData/Local/GenshinFpsUnlocker")),
+        p(&alice.join("Desktop/原神帧率解锁.lnk")),
+        p(&alice.join("Desktop/keep.txt")),
+        p(&base.join("ProgramData/GenshinFpsUnlocker")),
+    ];
+    let targets = collect_all_users_cleanup_targets(&configured);
+    let shown = format!("{targets:?}");
+    check(
+        "候选只落在真实用户的配置目录里",
+        !targets.is_empty() && targets.iter().all(|t| t.starts_with(&other)),
+        shown.clone(),
+    );
+    check(
+        "跳过 S-1-5-18 / .DEFAULT / *_Classes",
+        !targets.iter().any(|t| {
+            t.starts_with(&profiles.join("S-1-5-18"))
+                || t.starts_with(&profiles.join(".DEFAULT"))
+                || t.starts_with(&profiles.join("S-1-5-21-111-222-333-1001_Classes"))
+        }),
+        shown.clone(),
+    );
+    check(
+        "其它账户的数据目录进了候选",
+        targets.iter().any(|t| path_eq(t, &other.join("AppData/Local/GenshinFpsUnlocker"))),
+        shown.clone(),
+    );
+    check(
+        "其它账户桌面上的产品 .lnk 进了候选",
+        targets.iter().any(|t| path_eq(t, &other.join("Desktop/原神帧率解锁.lnk"))),
+        shown.clone(),
+    );
+    check(
+        "桌面上的非 .lnk 与配置目录外的路径都没进候选",
+        !targets.iter().any(|t| t.to_string_lossy().contains("keep.txt")
+            || t.to_string_lossy().contains("ProgramData")),
+        shown,
+    );
+
+    clean_per_user_leftovers(&configured).await;
+    check("其它账户的数据目录已删", !other.join("AppData/Local/GenshinFpsUnlocker").exists(), "");
+    check("其它账户的桌面 .lnk 已删", !other.join("Desktop/原神帧率解锁.lnk").exists(), "");
+    check("其它账户桌面上的别的文件原样保留", other.join("Desktop/keep.txt").exists(), "");
+    for (tag, root) in &roots {
+        if *tag == "user" {
+            continue;
+        }
+        check(
+            &format!("{tag} 配置目录原样保留"),
+            root.join("AppData/Local/GenshinFpsUnlocker/config.json").exists(),
+            p(root),
+        );
+    }
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+async fn temp_artifact_cases() {
+    println!("[11] %TEMP% 里本安装器的残留 clean_installer_temp_files");
+    let temp = std::env::temp_dir();
+    let mine = [
+        "KachinaInstaller.log",
+        "Kachina.RuntimePackage.Microsoft.DotNet.DesktopRuntime.9.exe",
+        "kachina.uninst.1700000000.exe",
+        "kachina.MicrosoftEdgeWebview2Setup.exe",
+    ];
+    for name in mine {
+        std::fs::write(temp.join(name), b"x").unwrap();
+    }
+    // 含 kachina 但不在白名单里的，必须原样保留
+    let keep = ["kcheck-keep-kachina.txt", "Kachina.RuntimePackage.foo.txt", "kachina.exe"];
+    for name in keep {
+        std::fs::write(temp.join(name), b"x").unwrap();
+    }
+    check("认得安装器日志", is_installer_temp_artifact("KachinaInstaller.log"), "");
+    check(
+        "认得运行时安装包（安装失败时会留下几十 MB）",
+        is_installer_temp_artifact("Kachina.RuntimePackage.Microsoft.VCRedist.2015+.x64.exe"),
+        "",
+    );
+    check("认得卸载器自身副本", is_installer_temp_artifact("kachina.uninst.1700000000.exe"), "");
+    check("认得 WebView2 引导器", is_installer_temp_artifact("kachina.MicrosoftEdgeWebview2Setup.exe"), "");
+    check(
+        "不按「名字里含 kachina 就删」",
+        !keep.iter().any(|n| is_installer_temp_artifact(n)),
+        format!("{keep:?}"),
+    );
+
+    // 正在运行的卸载器自身（skip 参数）不许删
+    let self_path = temp.join("kachina.uninst.1700000000.exe");
+    clean_installer_temp_files(Some(&p(&self_path))).await;
+    check("白名单内的临时文件已删", !temp.join("KachinaInstaller.log").exists(), "");
+    check(
+        "运行时安装包已删",
+        !temp.join("Kachina.RuntimePackage.Microsoft.DotNet.DesktopRuntime.9.exe").exists(),
+        "",
+    );
+    check("正在运行的卸载器副本被跳过", self_path.exists(), "");
+    check(
+        "非白名单文件原样保留",
+        keep.iter().all(|n| temp.join(n).exists()),
+        format!("{keep:?}"),
+    );
+    for name in mine.iter().chain(keep.iter()) {
+        let _ = std::fs::remove_file(temp.join(name));
+    }
+}
+
 #[tokio::main]
 async fn main() {
     reg_target_cases();
@@ -382,6 +598,10 @@ async fn main() {
     agreement_wiring_case();
     delete_target_cases();
     path_eq_cases();
+    expand_env_cases();
+    profile_tail_cases();
+    per_user_sweep_cases().await;
+    temp_artifact_cases().await;
     let (pass, fail) = (PASS.load(Ordering::Relaxed), FAIL.load(Ordering::Relaxed));
     println!("\n==== PASS {pass} / FAIL {fail} ====");
     if fail > 0 {

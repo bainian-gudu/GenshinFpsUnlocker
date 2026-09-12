@@ -391,6 +391,270 @@ fn is_safe_delete_target(path: &Path) -> bool {
     !is_protected_root(path)
 }
 
+/// 展开 `%VAR%` 形式的环境变量。
+///
+/// 注册表里的 `ProfileImagePath` 常写成 `%SystemDrive%\Users\xxx`（REG_EXPAND_SZ），
+/// 不展开就不能当路径用。未知变量原样保留：宁可少删，也不要拼出半个路径去删。
+fn expand_env_vars(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    loop {
+        let (head, tail) = match rest.split_once('%') {
+            Some(v) => v,
+            None => {
+                out.push_str(rest);
+                break;
+            }
+        };
+        out.push_str(head);
+        match tail.split_once('%') {
+            // 只剩前半个 %：后面的原样输出
+            None => {
+                out.push('%');
+                out.push_str(tail);
+                break;
+            }
+            Some((name, after)) => {
+                if name.is_empty() {
+                    // "%%" 当成一个字面 %
+                    out.push('%');
+                    rest = &tail[1..];
+                    continue;
+                }
+                match std::env::var(name) {
+                    Ok(value) => out.push_str(&value),
+                    Err(_) => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = after;
+            }
+        }
+    }
+    out
+}
+
+/// 批量展开路径里的 `%VAR%`，顺手去空白与空项。
+fn expand_path_list(paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|p| expand_env_vars(p.trim()))
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+/// 允许做「多用户清理」的每用户容器（相对 `%USERPROFILE%` 的第一级目录）。
+///
+/// 只有落在这些容器下面的路径，才会被映射到别的用户配置目录去删。这样即使
+/// 配置里写了安装目录、`ProgramData` 或某个不相干的路径，也不会被当成
+/// 「每个用户都有一份」而到处删。
+const PER_USER_CLEANUP_ROOTS: &[&str] = &["AppData", "Documents", "Desktop"];
+
+/// 取路径相对当前用户配置目录（`%USERPROFILE%`）的尾部，并校验它确实落在
+/// 允许清理的每用户容器里；不满足返回 `None`（说明这条路径与「哪个用户」无关，
+/// 例如公共开始菜单、安装目录本身）。
+///
+/// 额外限制，避免把配置目录整个端掉：
+/// - 尾部至少两级（不接受 `%USERPROFILE%\Foo` 这种直接挂在配置目录下的）
+/// - `Desktop` 下只放行 `.lnk`（别人桌面上的文档一概不碰）
+fn profile_relative_tail(path: &Path) -> Option<PathBuf> {
+    let profile = std::env::var_os("USERPROFILE").map(PathBuf::from)?;
+    if profile.as_os_str().is_empty() {
+        return None;
+    }
+    let tail = path.strip_prefix(profile.as_path()).ok()?;
+    if tail
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    let first = match tail.components().next() {
+        Some(std::path::Component::Normal(s)) => s.to_str()?,
+        _ => return None,
+    };
+    if !PER_USER_CLEANUP_ROOTS
+        .iter()
+        .any(|r| r.eq_ignore_ascii_case(first))
+    {
+        return None;
+    }
+    if tail.components().count() < 2 {
+        return None;
+    }
+    if first.eq_ignore_ascii_case("Desktop")
+        && !tail
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .ends_with(".lnk")
+    {
+        return None;
+    }
+    Some(tail.to_path_buf())
+}
+
+/// 枚举本机已加载的用户配置目录（`ProfileList\<SID>\ProfileImagePath`）。
+///
+/// 卸载器通常以管理员身份运行，`%LOCALAPPDATA%` 指向的是**执行卸载的账户**；
+/// 当初安装/使用本软件的可能是另一个账户。注册表清理已经按 `HKEY_USERS` 补齐了
+/// （见 `apply_registry_cleanup_for_all_users`），文件这边靠这个函数补齐。
+/// 未加载的配置单元打不开，静默跳过。
+fn loaded_profile_roots() -> Vec<PathBuf> {
+    const PROFILE_LIST: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+    let list = match windows_registry::LOCAL_MACHINE.open(PROFILE_LIST) {
+        Ok(key) => key,
+        Err(_) => return Vec::new(),
+    };
+    let sids = match list.keys() {
+        Ok(sids) => sids,
+        Err(_) => return Vec::new(),
+    };
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for sid in sids {
+        // `*_Classes` 只是视图键；`.DEFAULT` / LocalSystem 不是普通登录用户
+        if sid.ends_with("_Classes") || sid == ".DEFAULT" || sid == "S-1-5-18" {
+            continue;
+        }
+        let key = match list.open(&sid) {
+            Ok(key) => key,
+            Err(_) => continue,
+        };
+        let raw = match key.get_string("ProfileImagePath") {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let expanded = expand_env_vars(raw.trim());
+        if expanded.is_empty() {
+            continue;
+        }
+        let root = PathBuf::from(expanded);
+        if !root.is_absolute() {
+            continue;
+        }
+        if !roots.iter().any(|r| path_eq(r, &root)) {
+            roots.push(root);
+        }
+    }
+    roots
+}
+
+/// 把「当前用户展开后的数据目录 / 快捷方式」映射到所有已加载用户配置目录下的
+/// 同一相对位置，得到还需要补删的候选路径。
+///
+/// 每个候选都要过 `is_safe_delete_target`，并且必须真实存在；文件只放行 `.lnk`，
+/// 目录不限（数据目录里可能有 webview2 缓存等任意内容）。
+fn collect_all_users_cleanup_targets(paths: &[String]) -> Vec<PathBuf> {
+    let mut tails: Vec<PathBuf> = Vec::new();
+    for pathstr in paths {
+        if let Some(tail) = profile_relative_tail(Path::new(pathstr)) {
+            if !tails.iter().any(|t| t == &tail) {
+                tails.push(tail);
+            }
+        }
+    }
+    if tails.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for root in loaded_profile_roots() {
+        for tail in &tails {
+            let candidate = root.join(tail);
+            if !is_safe_delete_target(&candidate) {
+                tracing::warn!("跳过不安全的多用户清理路径: {}", candidate.display());
+                continue;
+            }
+            let is_lnk = tail
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .ends_with(".lnk");
+            if !candidate.is_dir() && !(is_lnk && candidate.is_file()) {
+                continue;
+            }
+            if !out.iter().any(|o| path_eq(o, &candidate)) {
+                out.push(candidate);
+            }
+        }
+    }
+    out
+}
+
+/// 多用户残留清理：尽力而为，删不掉只记日志，绝不让卸载失败。
+async fn clean_per_user_leftovers(paths: &[String]) {
+    for target in collect_all_users_cleanup_targets(paths) {
+        // 别叫 display：tracing 的宏会把 `{display}` 当成 field::display 函数
+        let target_str = target.display().to_string();
+        let res = if target.is_dir() {
+            tokio::fs::remove_dir_all(&target)
+                .await
+                .map_err(|e| e.to_string())
+        } else {
+            tokio::fs::remove_file(&target)
+                .await
+                .map_err(|e| e.to_string())
+        };
+        match res {
+            Ok(()) => tracing::info!("已清理其它账户的残留 {target_str}"),
+            Err(e) => tracing::warn!("清理其它账户的残留失败（已忽略）{target_str}: {e}"),
+        }
+    }
+}
+
+/// `%TEMP%` 里属于本安装器（Kachina）的文件名白名单。
+///
+/// 只认这几个固定形状，绝不按「含 kachina 就删」这种模糊规则来：
+/// - `KachinaInstaller.log`：安装/卸载日志，一直在追加，从来没人删
+/// - `Kachina.RuntimePackage.<tag>.exe`：.NET / VCRedist 运行时安装包
+///   （安装成功会删，失败时 return Err 就留在临时目录里，几十 MB）
+/// - `kachina.MicrosoftEdgeWebview2Setup.exe`：WebView2 引导安装器
+/// - `kachina.uninst.<时间戳>.exe`：卸载器把自己挪到临时目录后的副本
+///   （正常由 `delete_self_on_exit` 删，失败时留下）
+fn is_installer_temp_artifact(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "kachinainstaller.log"
+        || lower == "kachina.microsoftedgewebview2setup.exe"
+        || (lower.starts_with("kachina.runtimepackage.") && lower.ends_with(".exe"))
+        || (lower.starts_with("kachina.uninst.") && lower.ends_with(".exe"))
+}
+
+/// 清理 `%TEMP%` 里本安装器留下的东西。`skip` 是正在运行的卸载器自身
+/// （删不掉也不该删，交给 `delete_self_on_exit`）。失败只记日志。
+async fn clean_installer_temp_files(skip: Option<&str>) {
+    let temp = std::env::temp_dir();
+    let mut entries = match tokio::fs::read_dir(&temp).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            tracing::warn!("读取临时目录失败（已忽略）{}: {e}", temp.display());
+            return;
+        }
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|s| s.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        if !is_installer_temp_artifact(&name) {
+            continue;
+        }
+        if let Some(self_path) = skip {
+            if path_eq(&path, Path::new(self_path)) {
+                continue;
+            }
+        }
+        // 只删文件：同名目录不是本安装器造的
+        match entry.file_type().await {
+            Ok(ft) if ft.is_file() => {}
+            _ => continue,
+        }
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => tracing::info!("已删除临时文件 {}", path.display()),
+            Err(e) => tracing::warn!("删除临时文件失败（已忽略）{}: {e}", path.display()),
+        }
+    }
+}
+
 /// 尽力删除一批路径：不存在则跳过，删不掉只记日志。
 ///
 /// 用于安装期由宿主自建/改名的快捷方式（例如把 `GenshinFpsUnlocker.lnk`
@@ -553,11 +817,18 @@ pub async fn run_uninstall(
     .flatten()
     .filter(|n| !n.trim().is_empty())
     .collect::<Vec<_>>();
-    rm_best_effort(&extra_uninstall_shortcuts, &allowed_names).await;
+    // 快捷方式路径同样可能带 %VAR%（前端只展开 ${INSTALL_PATH} / ${APP_NAME}）
+    let extra_shortcuts = expand_path_list(&extra_uninstall_shortcuts);
+    rm_best_effort(&extra_shortcuts, &allowed_names).await;
 
     // delete user data
     // merge user_data_path and extra_uninstall_path
-    let to_be_delete = [&user_data_path[..], &extra_uninstall_path[..]].concat();
+    //
+    // 配置里允许写 `%LOCALAPPDATA%/GenshinFpsUnlocker` 这种带环境变量的路径，而前端
+    // 的 replacePathEnvirables 只展开 `${INSTALL_PATH}` / `${APP_NAME}`，不碰 `%VAR%`。
+    // 不在这里展开的话，下面的安全阀会因为「不是绝对路径」把整条跳过 —— 结果就是
+    // 用户勾了「删除配置与日志」也一个字节都没删（config.json / logs / webview2 全留下）。
+    let to_be_delete = expand_path_list(&[&user_data_path[..], &extra_uninstall_path[..]].concat());
     for pathstr in to_be_delete.iter() {
         let path = Path::new(pathstr);
         if !is_safe_delete_target(path) {
@@ -583,6 +854,15 @@ pub async fn run_uninstall(
             }
         }
     }
+
+    // 多用户补齐：上面那轮删的是「执行卸载的账户」的数据目录 / 快捷方式，
+    // 其它登录过的账户（当初安装、使用本软件的那个）按 ProfileList 再扫一遍。
+    // 注册表那边早就这么做了（见 apply_registry_cleanup_for_all_users）。
+    clean_per_user_leftovers(&to_be_delete).await;
+
+    // %TEMP% 里本安装器留下的运行时安装包 / 日志：安装成功会删，失败就留着
+    let self_tmp = DELETE_SELF_ON_EXIT_PATH.read().unwrap().clone();
+    clean_installer_temp_files(self_tmp.as_deref()).await;
 
     // recursively delete empty folders
     clear_empty_dirs(source).await?;

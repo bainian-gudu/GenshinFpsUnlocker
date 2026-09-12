@@ -15,6 +15,7 @@
 | 3 | 安全加固：收敛卸载器的删除范围与提权面 | `src-tauri/src/installer/uninstall.rs`、`src/utils/agreement.ts`、`src/App.vue`（另有宿主侧 `src/Host/UninstallLauncher.cs`、`src/Host/RuntimePrerequisite.cs`，不属于本目录） |
 | 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增，vendored 依赖 + 1 行 C++ 修复） |
 | 5 | 弹窗里的按钮不再遮住正文（协议全文能完整看到） | `src/Dialog.vue`、`src/App.vue` |
+| 6 | 卸载后不再残留文件（`%VAR%` 展开、所有登录用户、`%TEMP%`、先结束运行中的主程序） | `src-tauri/src/installer/uninstall.rs`、`src/App.vue` |
 
 ---
 
@@ -331,27 +332,151 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 ---
 
+## 6. 卸载残留清理：`%VAR%` 展开、所有登录用户、`%TEMP%`、运行中的进程
+
+上游卸载器只删「配置里写的那几条路径」，有四个洞会让文件在卸载后仍然残留。
+其中第 1 个洞在本项目是**必然**发生的，不是边缘情况：
+
+| # | 洞 | 现象 |
+| --- | --- | --- |
+| 1 | `%VAR%` 形式的路径**从不展开** | 前端 `replacePathEnvirables` 只认 `${INSTALL_PATH}` / `${APP_NAME}` 两种写法，配置里的 `%LOCALAPPDATA%/GenshinFpsUnlocker` 原样传进 Rust；`is_safe_delete_target` 又要求绝对路径，于是这条被当成「不安全路径」**静默跳过**——勾了「同时删除用户数据」也一个字节都不会删 |
+| 2 | 只清理**当前进程**的用户目录 | 卸载器一般以管理员身份运行，`%LOCALAPPDATA%` 指向管理员账户；当初装软件的普通用户那份数据（连同该用户桌面上的 `.lnk`、开始菜单文件夹）全部留在原地 |
+| 3 | 安装 / 卸载过程写进 `%TEMP%` 的文件没人管 | 运行时安装包（几十 MB）、`KachinaInstaller.log`、WebView2 引导器、卸载器自己的临时副本，失败时全留在 `%TEMP%` 里 |
+| 4 | 卸载流程**不结束正在运行的主程序** | 上游只在安装流程 `installPrepare` 里做「检测 → 询问 → 结束进程」；从「设置 → 应用」/ 开始菜单发起卸载时主程序还常驻托盘，它的 exe、`logs\`、WebView2 的 `EBWebView` 缓存全被占用，删不掉 → 残留 |
+
+### `src-tauri/src/installer/uninstall.rs`
+
+- `fn expand_env_vars(input: &str) -> String`：用
+  `windows::Win32::System::Environment::ExpandEnvironmentStringsW` 展开 `%VAR%`
+  （Windows 原生的子串语法 `%VAR:~a,b%` 也一并支持）。展开失败、结果为空或
+  不是绝对路径时**原样返回**，交给后面的安全阀拒绝，不做任何猜测。
+- `fn expand_path_list(paths: &[String]) -> Vec<String>`：逐项展开 + 大小写不敏感去重。
+  在 `run_uninstall` 里对 `to_be_delete`（`userDataPath` + `extraUninstallPath`）
+  与 `extra_uninstall_shortcuts` 各调一次，位置**必须在 `is_safe_delete_target` 之前**——
+  顺序反了就等于洞 1 没修。
+- 多用户清理（洞 2），四个函数串成一条流水线：
+  - `const PER_USER_CLEANUP_ROOTS: &[&str] = &["AppData", "Documents", "Desktop"]`；
+  - `fn profile_relative_tail(path: &Path) -> Option<PathBuf>`：按 `%USERPROFILE%`
+    `strip_prefix` 出「相对用户配置目录的尾巴」。`..`（`ParentDir`）直接拒绝；
+    第一段必须命中 `PER_USER_CLEANUP_ROOTS`（不区分大小写）；至少两级
+    （不接受直接挂在配置目录下的东西）；`Desktop` 下只放行 `.lnk`
+    （别人桌面上的文档一概不碰）。返回 `None` 表示「这条路径与哪个用户无关」
+    （公共开始菜单、安装目录本身），本来就已经被上游逻辑处理了；
+  - `fn loaded_profile_roots() -> Vec<PathBuf>`：枚举
+    `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList` 下的 SID，
+    读 `ProfileImagePath` 后再 `expand_env_vars` 一次，跳过 `*_Classes` / `.DEFAULT` /
+    `S-1-5-18`，只保留绝对路径，用上游已有的 `path_eq` 去重。打不开的配置单元
+    （未加载的用户）静默跳过；
+  - `fn collect_all_users_cleanup_targets(paths: &[String]) -> Vec<PathBuf>`：把尾巴
+    重放到每个用户目录上，逐个过 `is_safe_delete_target`，然后要求**是目录，
+    或者是 `.lnk` 文件**（数据目录里可能有 WebView2 缓存等任意内容，所以目录不限；
+    文件只认快捷方式），再去重；
+  - `async fn clean_per_user_leftovers(paths: &[String])`：对上面的候选做
+    `remove_dir_all` / `remove_file`，**成功 `info`、失败 `warn`，绝不上抛**。
+    在 `run_uninstall` 里于删完当前用户数据之后、`clear_empty_dirs` 之前调用。
+    **勾选语义自动跟随**：传进去的就是 `to_be_delete`（= `user_data_path` +
+    `extra_uninstall_path`），而前端只在勾了「同时删除用户数据」时才把
+    `userDataPath` 填进 `user_data_path`，没勾就是空数组，所以数据目录天然不会被
+    跨用户删除，不需要额外开关。`extra_uninstall_path` 不受勾选影响（里面是开始菜单
+    的 `{appName}\` 文件夹与桌面 `.lnk`），因此**其它用户桌面上指向已删除 exe 的
+    死图标、开始菜单里的死文件夹，即使用户选择保留数据也会被清掉** —— 这正是想要的。
+- `%TEMP%` 清理（洞 3）：`fn is_installer_temp_artifact(name: &str) -> bool`
+  + `async fn clean_installer_temp_files(skip: Option<&str>)`。白名单是四个**固定形状**
+  的文件名（全部小写比较），不按「含 kachina 就删」这种模糊规则：
+
+  | 文件名 | 来源 |
+  | --- | --- |
+  | `KachinaInstaller.log` | 安装 / 卸载日志，一直追加，从来没人删 |
+  | `Kachina.RuntimePackage.<tag>.exe` | .NET / VCRedist 运行时安装包（几十 MB；安装成功会删，中途 `return Err` 就留下） |
+  | `kachina.MicrosoftEdgeWebview2Setup.exe` | WebView2 引导安装器 |
+  | `kachina.uninst.<时间戳>.exe` | 卸载器把自己挪到临时目录后的副本（正常由 `delete_self_on_exit` 删，失败时留下） |
+
+  扫描目录是 `std::env::temp_dir()`；`skip` 传正在运行的卸载器自身路径
+  （`DELETE_SELF_ON_EXIT_PATH`，删不掉也不该删）；**只删文件不删目录、不递归**，
+  失败只 `warn`。注意这些名字是所有 Kachina 打包的产品共用的，但正在被别的安装器
+  使用的文件本身删不掉（占用），只会留下一条日志。
+
+> 为什么 `expand_env_vars` 放在 Rust 而不是去修前端：卸载器提权后，前端所在进程的
+> 环境变量指向的是**发起卸载的用户**，而 `%LOCALAPPDATA%` 在提权进程里是管理员的；
+> 展开必须发生在「真正要删的那一刻、那个进程里」。另外 `uninst.exe` 是打包时把配置
+> 内联进去的单文件，前端改 `replacePathEnvirables` 也覆盖不到它。
+
+### `src/App.vue`
+
+- **卸载前结束正在运行的主程序**（洞 4）：新增
+  `async function killRunningAppForUninstall(): Promise<boolean>`，在 `uninstall()`
+  开头（`step = 5` 之后、读卸载元数据之前）调用。逻辑照搬上游 `installPrepare`
+  里的那一段：`ipcFindProcessByName(exeName)` → 有则询问
+  「检测到…正在运行。不结束进程的话，程序文件与用户数据（配置、日志、界面缓存）
+  会因为被占用而删不掉，卸载后会留下残留。是否结束进程并继续卸载？」→
+  `ipcKillProcess`（先按 `needElevate`，失败再按管理员重试）。
+  `silent` / `non_interactive` 不询问直接结束；**用户拒绝则回到卸载界面
+  （`step = 1`）不执行卸载**；结束进程失败只 `warn` 后继续（后面的删除都是尽力而为）。
+  结束后 `setTimeout` 等 1 秒再删，因为 WebView2 的缓存文件在进程退出后仍会被
+  短暂占用。
+- 卸载勾选框文案从「同时删除用户数据」改成
+  「同时删除用户数据（配置、日志与界面缓存）」，并加 `title` 悬浮说明
+  （删的是哪几样、其它账户的同名目录也会一并清、不勾选则保留便于重装）。
+
+### `src/App.vue`
+
+只改文案，不涉及逻辑：卸载勾选框从「同时删除用户数据」改为
+「同时删除用户数据（配置、日志与界面缓存）」，并加 `title` 悬浮说明
+（包含本机所有已登录用户的数据目录与安装期临时文件；不勾选则保留，便于重装后沿用设置）。
+
+### 本项目配置（`installer/kachina.config.json`，不在本目录内）
+
+`userDataPath` 从 1 项扩到 3 项，覆盖历史版本可能用过的落盘位置：
+`%LOCALAPPDATA%`、`%APPDATA%`、`%USERPROFILE%/Documents` 下各一个
+`GenshinFpsUnlocker`。三项都走同一套安全阀，并被多用户重放覆盖。
+
+### 已知仍不覆盖
+
+- **OneDrive 重定向**过的 `Documents` / `AppData`：ProfileList 里的
+  `ProfileImagePath` 是真实用户目录，重定向后的实际位置不在其中；这类目录只能靠
+  `%VAR%` 展开命中当前进程用户那一份；
+- 凭据管理器条目（本项目不写凭据）。
+
+> WebView2 的 `EBWebView` 目录**是**覆盖到的：宿主用
+> `CoreWebView2Environment.CreateAsync(userDataFolder: dataDir)` 把它建在数据目录里面
+> （`src/Host/MainForm.Web.cs`），随 `remove_dir_all` 一起删；前提是主程序已退出，
+> 所以才有上面 `killRunningAppForUninstall` 那一步。
+
+---
+
 ## 升级上游时的套用顺序
 
 1. 按 `UPSTREAM.md` 覆盖整个目录；
 2. 恢复本文件（`LOCAL_PATCHES.md`）与 `UPSTREAM.md`；
 3. 依次套用上面的改动：`uninstall.rs`（注册表清理 + `rm_best_effort` + 第 3 节的
-   全部安全阀）→ `pack.rs` → `types.ts` → `api/ipc.ts` → `utils/agreement.ts`
-   （整份新增，含 DOMPurify 收紧策略）→ `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处
-   + 链接点击拦截 + `acceptEula` 初始化 + 第 5 节的两处样式）→ `Dialog.vue`
-   （第 5 节的 flex 骨架）；
+   全部安全阀 + 第 6 节的 `%VAR%` 展开 / 多用户清理 / `%TEMP%` 白名单）→ `pack.rs`
+   → `types.ts` → `api/ipc.ts` → `utils/agreement.ts`（整份新增，含 DOMPurify 收紧策略）
+   → `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处 + 链接点击拦截 + `acceptEula`
+   初始化 + 第 5 节的两处样式 + 第 6 节的 `killRunningAppForUninstall` 与勾选框文案）
+   → `Dialog.vue`（第 5 节的 flex 骨架）；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
    `installer\pack.ps1`，确认：安装界面能弹出协议全文；卸载后
    `HKCU\...\Run` 里的 `GenshinFpsUnlocker` 值消失；桌面上的
-   `原神帧率解锁.lnk` 与开始菜单文件夹一并消失。
+   `原神帧率解锁.lnk` 与开始菜单文件夹一并消失；勾选「同时删除用户数据」后
+   **每一个**登录过的用户账户下的 `%LocalAppData%\GenshinFpsUnlocker` 都消失
+   （以管理员身份从普通用户装的副本上卸载时尤其要验这一条，即洞 2）；
+   主程序在托盘里运行时发起卸载，会先弹「是否结束进程」的询问，结束后
+   `EBWebView` 缓存与 `logs\` 也一并删掉（洞 4）。
 
 > 上述 Rust 逻辑（`clean_extra_registry` / `rm_best_effort` / `is_safe_registry_target` /
-> `is_safe_shortcut_target` / `is_safe_delete_target` / `resolve_agreement`）已在 Linux 上
-> 用 mock 版 `windows-registry` + 真实 `serde_json` / `tokio` 逐条跑过 53 个断言
-> （含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 / 系统目录 /
-> 路径穿越 / 受保护根目录、协议 BOM/CRLF 与文件缺失等边界），其中
+> `is_safe_shortcut_target` / `is_safe_delete_target` / `resolve_agreement`，以及第 6 节的
+> `expand_env_vars` / `expand_path_list` / `profile_relative_tail` / `loaded_profile_roots` /
+> `collect_all_users_cleanup_targets` / `is_installer_temp_artifact`）
+> 已在 Linux 上用 mock 版 `windows-registry` + 真实 `serde_json` / `tokio` 逐条跑过
+> **93 个断言**（含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 /
+> 系统目录 / 路径穿越 / 受保护根目录、协议 BOM/CRLF 与文件缺失、用户目录尾巴的
+> 形状与 `Desktop` 白名单、多用户重放、`%TEMP%` 条目的命中与放行边界），其中
 > `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
-> `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`）在
-> harness 里用桩替代。整套逻辑**没有**在 Windows 上实机验证过。
+> `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`、
+> `ExpandEnvironmentStringsW`、ProfileList）在 harness 里用桩替代；
+> `clean_installer_temp_files` / `clean_per_user_leftovers` 是纯 IO 包装，只断言其
+> 判定函数（`is_installer_temp_artifact` / `profile_relative_tail`）。
+> 前端侧的 `killRunningAppForUninstall` 只有 `tsc --strict` + SFC 编译 + prettier 把关。
+> 整套逻辑**没有**在 Windows 上实机验证过。

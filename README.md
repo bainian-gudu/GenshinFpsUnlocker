@@ -145,8 +145,20 @@ TS 类型、`.vue` 模板），确认每一层都会报错 —— 避免「检�
 - 开始菜单「原神帧率解锁」文件夹里的「卸载 原神帧率解锁」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
 - Windows「设置 → 应用 → 安装的应用」/ 控制面板「应用和功能」（Kachina 写的 ARP 卸载项）
 
-卸载向导中勾选「同时删除用户数据」会按 `kachina.config.json` 的 `userDataPath`
-清掉 `%LocalAppData%\GenshinFpsUnlocker\`（配置、日志、WebView2 数据）。
+卸载向导中勾选「同时删除用户数据（配置、日志与界面缓存）」会按
+`kachina.config.json` 的 `userDataPath` 清掉 `%LocalAppData%\GenshinFpsUnlocker\`
+（配置、日志、WebView2 的 `EBWebView` 界面缓存），并同时尝试 `%AppData%\` 与
+`文档\` 下的同名目录——宿主的 `AppPaths.DataDirectory` 就是按
+「LocalAppData → Roaming → 文档」取第一个可写的目录，数据不一定落在第一处。
+清理覆盖**本机所有登录过的用户**：卸载器一般以管理员身份运行，只清管理员自己的
+`%LocalAppData%` 会漏掉当初装软件的那个账户。`%TEMP%` 里安装 / 卸载过程产生的
+文件（`KachinaInstaller.log`、运行时安装包、WebView2 引导器、卸载器临时副本）
+也按固定文件名白名单删掉，不认识的条目不碰。卸载开始前若检测到主程序还在运行
+（常驻托盘时很常见），会先询问并结束进程——否则它自己的 exe、日志与界面缓存
+都被占用，删不掉就是残留。
+不勾选则数据完整保留，重装后能沿用原设置（但其它用户桌面上指向已删除 exe 的
+死图标、开始菜单里的死文件夹仍会清掉，那不属于用户数据）。被 OneDrive 重定向过的
+`文档` / `AppData` 只能命中当前用户那一份，这是已知边界。
 开机自启项（`HKCU\...\Run` 下的 `GenshinFpsUnlocker` 值）由主程序按配置写入，
 卸载器会按配置项 `extraUninstallRegistry` 一并删除（提权卸载时会遍历
 `HKEY_USERS` 保证删到登录用户那一份），**不需要先手动关闭自启动**。

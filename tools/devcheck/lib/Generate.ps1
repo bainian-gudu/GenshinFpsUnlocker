@@ -21,6 +21,15 @@ $script:LogicItems = @(
     @{ Kind = 'fn';     Name = 'is_safe_delete_target' }
     @{ Kind = 'fn';     Name = 'rm_best_effort' }
     @{ Kind = 'fn';     Name = 'clean_extra_registry' }
+    @{ Kind = 'fn';     Name = 'expand_env_vars' }
+    @{ Kind = 'fn';     Name = 'expand_path_list' }
+    @{ Kind = 'const';  Name = 'PER_USER_CLEANUP_ROOTS' }
+    @{ Kind = 'fn';     Name = 'profile_relative_tail' }
+    @{ Kind = 'fn';     Name = 'loaded_profile_roots' }
+    @{ Kind = 'fn';     Name = 'collect_all_users_cleanup_targets' }
+    @{ Kind = 'fn';     Name = 'clean_per_user_leftovers' }
+    @{ Kind = 'fn';     Name = 'is_installer_temp_artifact' }
+    @{ Kind = 'fn';     Name = 'clean_installer_temp_files' }
 )
 
 # pack.rs 里只抽 resolve_agreement（整个文件依赖 builder 的一堆东西，不适合最小 crate）

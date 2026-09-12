@@ -83,8 +83,8 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 **负责**：铺文件到 `Program Files\GenshinFpsUnlocker`、写「应用和功能」卸载项、
 生成 `uninst.exe` / `update.exe`、按 `runtimes` 装 .NET Desktop Runtime 9 与 VCRedist、
 按 `uacStrategy` 提权、安装时创建桌面 + 开始菜单快捷方式（安装界面有勾选项，默认勾上）、
-卸载时删除这些快捷方式、删除 ARP 注册表项，并按 `userDataPath` 清
-`%LOCALAPPDATA%\GenshinFpsUnlocker`（配置 / 日志 / WebView2 数据）。
+卸载时删除这些快捷方式、删除 ARP 注册表项，并按 `userDataPath` 清用户数据
+（配置 / 日志 / WebView2 数据，见下）。
 
 **不负责**，由宿主自己维护：
 
@@ -93,10 +93,10 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 | 快捷方式的**中文显示名** | `src/Host/ShortcutHelper.cs` | Kachina 建的是 `GenshinFpsUnlocker.lnk`（英文 `appName`），宿主每次启动把它规范成 `原神帧率解锁.lnk` 并清掉英文重复项；改名后上游卸载器认不出这个文件，靠 `extraUninstallLnkNames` 补删（见下） |
 | 开机自启（`HKCU\...\Run`） | `src/Host/Autostart.cs` | 按配置项「开机自启动」同步写入/删除；卸载时由 `kachina.config.json` 的 `extraUninstallRegistry` 交给卸载器回收（见下），不需要用户先手动关闭 |
 
-## 本项目给 Kachina 加的三个配置项
+## 本项目给 Kachina 加 / 改的配置项
 
-上游没有这两项能力，改动都在 `kachina/` 里，逐处说明见
-[`kachina/LOCAL_PATCHES.md`](kachina/LOCAL_PATCHES.md)。
+下面几项上游都没有（`userDataPath` 上游有字段但行为有坑），改动都在 `kachina/` 里，
+逐处说明见 [`kachina/LOCAL_PATCHES.md`](kachina/LOCAL_PATCHES.md)。
 
 ### `extraUninstallRegistry` — 卸载时清理安装期写入的注册表
 
@@ -138,6 +138,49 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 不会把卸载判为失败——上游 `extraUninstallPath` 的语义是删不掉就报错中断，
 不适合放这种「清理不干净但不致命」的路径。
 
+### `userDataPath` — 卸载时清理用户数据（勾选后才生效）
+
+```json
+"userDataPath": [
+  "%LOCALAPPDATA%/GenshinFpsUnlocker",
+  "%APPDATA%/GenshinFpsUnlocker",
+  "%USERPROFILE%/Documents/GenshinFpsUnlocker"
+]
+```
+
+这三个目录**不是**历史遗留兜底，而是宿主当前就在用的可写性回退链：
+`src/Host/AppPaths.cs` 的 `DataDirectory` 依次尝试
+`LocalApplicationData` → `ApplicationData`(Roaming) → `MyDocuments`，
+用**第一个能创建并通过写探测的**目录（`%LOCALAPPDATA%` 被组策略 / ACL /
+漫游配置挡住时就会落到后两个）。所以卸载必须三处都试，否则换了落盘位置的
+用户数据就清不掉。不存在的目录自动跳过。
+
+上游卸载器在这里有两个坑，本地补丁都填了（详见
+[`kachina/LOCAL_PATCHES.md`](kachina/LOCAL_PATCHES.md) 第 6 节）：
+
+| 坑 | 后果 | 补丁 |
+| --- | --- | --- |
+| 配置里的 `%VAR%` **从不展开**（前端只认 `${INSTALL_PATH}` / `${APP_NAME}`） | 字面量 `%LOCALAPPDATA%/...` 不是绝对路径，被删除安全阀当成「不安全路径」静默跳过——**勾了也不会删** | 卸载器在安全检查之前用 `ExpandEnvironmentStringsW` 展开 |
+| 只清理**当前进程**的用户目录，而卸载器通常以管理员身份运行 | 当初装软件的普通用户那份数据、以及该用户桌面 / 开始菜单里的快捷方式全部残留 | 把路径剥成「相对用户目录的尾巴」，重放到 `ProfileList` 里所有已加载的用户目录上 |
+
+跨用户重放对「数据目录」和「快捷方式 / 开始菜单文件夹」分别跟随各自的语义：
+数据目录只在勾选后才会跨用户删（前端没勾就传空数组），而快捷方式与开始菜单文件夹
+不受勾选影响 —— 其它用户桌面上指向已删除 exe 的死图标总归要清掉。
+
+另外两类残留也一并处理：
+
+- `%TEMP%` 里 Kachina 自己留下的文件（`KachinaInstaller.log` 日志、
+  `Kachina.RuntimePackage.*.exe` 运行时安装包、`kachina.MicrosoftEdgeWebview2Setup.exe`
+  引导器、`kachina.uninst.*.exe` 卸载器临时副本）按**固定文件名白名单**删，
+  只删文件、不递归、跳过正在运行的卸载器自身；
+- 卸载开始前会检测主程序是否在运行（常驻托盘时很常见），询问后结束进程再删 ——
+  否则它自己的 exe、`logs\` 与 WebView2 的 `EBWebView` 缓存都被占用，删不掉就是残留。
+  拒绝结束进程则整个卸载不执行，回到卸载界面。`silent` / `non_interactive` 直接结束。
+
+**已知不覆盖**：被 OneDrive 重定向过的 `Documents` / `AppData`
+（重定向后的真实位置不在 `ProfileList` 的 `ProfileImagePath` 里）只能命中当前进程
+用户那一份；WebView2 的 `EBWebView` 目录与凭据管理器条目本项目不产生，未处理。
+
 ### `agreementFile` / `agreementFormat` / `agreementTitle` — 可配置的用户协议
 
 ```json
@@ -178,6 +221,8 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 | `extraUninstallRegistry` 删整棵子键 | 至少三级，且末级不能是共享容器（`Run`/`RunOnce`/`Uninstall`/`Policies`/`Explorer`/`Classes`/`Windows`/`Services`…）；`value` 写成空字符串视为配置错误，整条跳过 |
 | `extraUninstallLnkNames` 快捷方式 | 绝对路径、无 `..`、自身与所有父级都不是符号链接 / junction、不在 `%SystemRoot%` 内；目录只放行 `Programs\<产品名>`，文件只放行 `Desktop\*.lnk` 或 `Programs\<产品名>\*.lnk` |
 | `userDataPath` / `extraUninstallPath` | 同样的形状校验 + 至少两级 + 不能是受保护根目录本身（盘符根、`%SystemRoot%`、`%ProgramFiles%`、`%ProgramData%`、`%USERPROFILE%`、`%APPDATA%`、`%LOCALAPPDATA%`、`%PUBLIC%`、`%TEMP%`） |
+| 同上路径重放到**其他用户**目录 | 尾巴第一段必须是 `AppData` / `Documents` / `Desktop`、至少两级、无 `..`；`Desktop` 下只放行 `.lnk`；重放结果再过一遍上面的 `is_safe_delete_target` 且必须真实存在 |
+| `%TEMP%` 下的安装期临时文件 | 只认四个固定文件名形状（`KachinaInstaller.log`、`Kachina.RuntimePackage.*.exe`、`kachina.MicrosoftEdgeWebview2Setup.exe`、`kachina.uninst.*.exe`）；只删文件不删目录、不递归、跳过正在运行的卸载器自身 |
 
 被拒绝的路径只记 `warn` 日志，卸载继续。本项目现有配置全部落在放行范围内。
 

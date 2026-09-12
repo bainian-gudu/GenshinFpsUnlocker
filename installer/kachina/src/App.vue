@@ -45,9 +45,13 @@
               {{ agreementTitle }}
             </a>
           </div>
-          <div v-if="INSTALLER_CONFIG.is_uninstall" class="read">
+          <div
+            v-if="INSTALLER_CONFIG.is_uninstall"
+            class="read"
+            title="删除 %LOCALAPPDATA%\GenshinFpsUnlocker（含 config.json、logs、webview2 界面缓存）；本机其它账户的同名数据目录也会一并清理。不勾选则保留，方便日后重装。"
+          >
             <Checkbox v-model="deleteUserData" />
-            同时删除用户数据
+            同时删除用户数据（配置、日志与界面缓存）
           </div>
           <div class="more">
             <span>
@@ -2303,9 +2307,50 @@ async function dialog_error(message: string, title = '出错了'): Promise<void>
 async function confirm(message: string, title = '提示'): Promise<boolean> {
   return await invoke<boolean>('confirm_dialog', { message, title });
 }
+/// 卸载前结束正在运行的主程序。
+///
+/// 进程活着的时候，它自己的 exe、`logs\` 与 WebView2 的界面缓存
+/// （`%LOCALAPPDATA%\GenshinFpsUnlocker\EBWebView`）都被占用，删除会失败 ——
+/// 上游只在安装流程（`installPrepare`）里做了「检测 → 询问 → 结束进程」，
+/// 卸载流程没有，于是从「设置 → 应用」或开始菜单发起卸载时（主程序常驻托盘）
+/// 必然留下残留。
+async function killRunningAppForUninstall(): Promise<boolean> {
+  const runningExes =
+    (await ipcFindProcessByName(PROJECT_CONFIG.exeName).catch(log)) || [];
+  if (runningExes.length === 0) return true;
+  const ok =
+    INSTALLER_CONFIG.args.non_interactive ||
+    INSTALLER_CONFIG.args.silent ||
+    (await confirm(
+      `检测到${PROJECT_CONFIG.appName}正在运行。不结束进程的话，程序文件与用户数据（配置、日志、界面缓存）会因为被占用而删不掉，卸载后会留下残留。是否结束进程并继续卸载？`,
+      '提示',
+    ));
+  if (!ok) return false;
+  try {
+    try {
+      await Promise.all(
+        runningExes.map((e) => ipcKillProcess(e[0], needElevate.value)),
+      );
+    } catch (e) {
+      await Promise.all(runningExes.map((e) => ipcKillProcess(e[0], true)));
+    }
+  } catch (e) {
+    // 结束不掉不拦卸载：后面的删除都是尽力而为，删不掉的会记日志
+    warn('结束进程失败:', e);
+    return true;
+  }
+  // 等句柄释放：WebView2 的缓存文件在进程退出后仍会被短暂占用
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  return true;
+}
+
 async function uninstall() {
   step.value = 5;
   sendInsight(getInsightBase(), 'uninstall');
+  if (!(await killRunningAppForUninstall())) {
+    step.value = 1;
+    return;
+  }
   try {
     const uninstallConfig = (await invoke(
       'read_uninstall_metadata',
