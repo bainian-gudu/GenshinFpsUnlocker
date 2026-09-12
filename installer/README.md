@@ -212,6 +212,27 @@ npm 依赖全部来自 registry），并且每次 push 都会在 Devcheck 工作
 CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace action ——
 这是任何构建都免不了的；被禁止的是「kachina 本体来自本仓库之外」。
 
+### 已经在 CI 上跑通
+
+2026-09-12，commit `3f7c770`，手动触发（勾了 `rebuild_kachina`），**三个 job 全绿，
+用时 17 分 40 秒**，产物：
+
+| 产物 | 大小 |
+| --- | --- |
+| `GenshinFpsUnlocker.Install.1.0.0.exe`（离线安装器） | 14.39 MB |
+| `GenshinFpsUnlocker_v1.0.0.7z`（便携版） | 7.60 MB |
+| `kachina-builder.exe`（从 `installer/kachina/` 源码构建） | 11.59 MB |
+
+### Build 日志里这些告警是正常的（都不是本项目的代码）
+
+| 字样 | 来源 |
+| --- | --- |
+| `warning: suspicious definition of the runtime memcmp/memcpy/memmove/memset/strlen symbol`（各 5 条 ×2） | kachina 自带的 C 库 `hdiff-sys` / `hpatch-sys` 自己实现了这些符号 |
+| `warning: field \`0\` is never read` → `kachina-installer (bin "kachina-builder") generated 1 warning` | 上游 `src/cli/arg.rs:42` 的 `Command::Other(Vec<String>)`，不是我们改过的文件；替上游改会给以后升级添乱 |
+| `warning: the following packages contain code that will be rejected by a future version of Rust: russh v0.54.5` | 第三方依赖的 future-incompat 提示 |
+| `Could Not Find ...\target\x86_64-win7-windows-msvc\release\kachina-builder...` | tauri CLI 自己探测产物路径的输出；实际产物落在不带三元组的 `target\release\`，`build-kachina.ps1` 的兜底分支会接住它 |
+| `##[warning]Node.js 20 is deprecated ... forced to run on Node.js 24` | `ilammy/msvc-dev-cmd@v1`、`pnpm/action-setup@v4`、`actions/download-artifact@v6` 的 action.yml 仍声明 node20；msvc-dev-cmd 已是最新 v1.13.0，只能等上游 |
+
 ## 升级上游 Kachina
 
 见 `kachina/UPSTREAM.md` 的「升级上游版本」小节。注意本目录有本地修改，
