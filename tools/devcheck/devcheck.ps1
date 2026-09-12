@@ -6,6 +6,9 @@
 .DESCRIPTION
     分层检查，越靠前越快、依赖越少：
 
+      vendor kachina 只用仓库内源码：不是 submodule、快照完整、工作流与打包脚本里
+             没有任何从上游（YuehaiTeam/kachina-installer）拉源码或下二进制的动作、
+             git 依赖在 Cargo.lock 里锁到 commit、npm 依赖全部来自 registry
       ps1    所有 .ps1 的语法解析（PowerShell Parser，秒级，无依赖）
       gen    从 installer/kachina 源码生成检查用的 Rust/TS 源（秒级，无依赖）
       rust   kachina 卸载器逻辑的**类型检查**：整份 uninstall.rs + utils/error.rs 塞进
@@ -76,7 +79,15 @@ $script:SkipCount = 0
 function Get-Tool {
     param([Parameter(Mandatory)][string]$Name)
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
+    if ($cmd) {
+        $src = $cmd.Source
+        # Windows 上 npm/npx 会同时有 .ps1 与 .cmd；ProcessStartInfo 不能直接执行 .ps1
+        if ($script:IsWin -and $src -like '*.ps1') {
+            $cmdExe = Join-Path (Split-Path -Parent $src) ($Name + '.cmd')
+            if (Test-Path -LiteralPath $cmdExe) { return $cmdExe }
+        }
+        return $src
+    }
     $ext = if ($script:IsWin) { '.exe' } else { '' }
     foreach ($c in @((Join-Path $HOME ".cargo/bin/$Name$ext"), (Join-Path $HOME ".dotnet/$Name$ext"))) {
         if (Test-Path -LiteralPath $c) { return $c }
@@ -177,6 +188,106 @@ if ($Fix) {
 # ---------------------------------------------------------------------------
 # 各层实现
 # ---------------------------------------------------------------------------
+function Test-VendoredSource {
+    # kachina 必须是「仓库内的源码快照」：CI 与打包脚本都不许从上游
+    # YuehaiTeam/kachina-installer 拉源码或下二进制，只能从本仓库构建。
+    $notes = [System.Collections.Generic.List[string]]::new()
+
+    # 1) 不是 submodule
+    if (Test-Path -LiteralPath (Join-Path $RepoRoot '.gitmodules')) {
+        throw '存在 .gitmodules —— kachina 必须是仓库内的源码快照，不是 submodule'
+    }
+
+    # 2) 快照完整（缺一个就说明 vendored 源码被误删，CI 会退化成「去别处找」）
+    $required = @(
+        'installer/kachina/package.json',
+        'installer/kachina/pnpm-lock.yaml',
+        'installer/kachina/src-tauri/Cargo.toml',
+        'installer/kachina/src-tauri/Cargo.lock',
+        'installer/kachina/src-tauri/src/installer/uninstall.rs',
+        'installer/kachina/src-tauri/src/builder/pack.rs',
+        'installer/kachina/src/App.vue',
+        'installer/build-kachina.ps1',
+        'installer/pack.ps1'
+    )
+    foreach ($r in $required) {
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $r))) { throw "kachina 源码快照不完整，缺 $r" }
+    }
+    $notes.Add("快照完整($($required.Count) 个关键文件)")
+
+    # 3) 工作流与打包脚本里不许出现「从外部拉源码/下二进制」的动作
+    #    只扫可执行内容：注释行（# 开头）跳过，避免误伤说明性文字
+    $scan = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot '.github/workflows') -Filter '*.yml' -File)
+    $scan += @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'installer') -Filter '*.ps1' -File)
+    $rootBuild = Join-Path $RepoRoot 'build.ps1'
+    if (Test-Path -LiteralPath $rootBuild) { $scan += @(Get-Item -LiteralPath $rootBuild) }
+
+    $badPatterns = @(
+        'YuehaiTeam', 'kachina-installer\.git', 'releases/download', 'release-downloader',
+        'git\s+clone', 'git\s+submodule', 'Invoke-WebRequest', 'Invoke-RestMethod',
+        'DownloadFile', 'curl\s', 'wget\s'
+    )
+    $inBlockComment = $false
+    foreach ($f in $scan) {
+        $lineNo = 0
+        foreach ($line in [System.IO.File]::ReadLines($f.FullName)) {
+            $lineNo++
+            $t = $line.Trim()
+            if ($t -match '^<#' -or $inBlockComment) {
+                $inBlockComment = -not ($t -match '#>')
+                continue
+            }
+            if ($t.StartsWith('#')) { continue }
+            foreach ($pat in $badPatterns) {
+                if ($t -match $pat) {
+                    throw "$($f.Name):$lineNo 出现从外部拉取的语句 [$pat]: $t"
+                }
+            }
+        }
+    }
+    $notes.Add("$($scan.Count) 个工作流/脚本无外部拉取")
+
+    # 4) build.yml 必须真的走「源码构建」这条路
+    $buildYml = [System.IO.File]::ReadAllText((Join-Path $RepoRoot '.github/workflows/build.yml'))
+    if ($buildYml -notmatch 'build-kachina\.ps1') {
+        throw 'build.yml 没有调用 installer/build-kachina.ps1 —— kachina 必须从仓库内源码构建'
+    }
+    if ($buildYml -notmatch [regex]::Escape("hashFiles('installer/kachina/**')")) {
+        throw 'build.yml 的 kachina 缓存 key 没有基于 installer/kachina 源码哈希'
+    }
+    $notes.Add('CI 从源码构建 + 源码哈希缓存')
+
+    # 5) kachina 的 git 依赖必须在 Cargo.lock 里锁到 commit，且不得指向上游
+    $cargoToml = [System.IO.File]::ReadAllText((Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.toml'))
+    $cargoLock = [System.IO.File]::ReadAllText((Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.lock'))
+    $gitDeps = @([regex]::Matches($cargoToml, 'git\s*=\s*"([^"]+)"') |
+        ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+    foreach ($g in $gitDeps) {
+        if ($g -match 'YuehaiTeam') { throw "kachina 的 cargo 依赖指向上游仓库: $g" }
+        $esc = [regex]::Escape($g)
+        if ($cargoLock -notmatch "source = `"git\+$esc[^`"]*#[0-9a-f]{40}") {
+            throw "git 依赖没有在 Cargo.lock 里锁定 commit（CI 可能拉到漂移的分支）: $g"
+        }
+    }
+    $notes.Add("$($gitDeps.Count) 个 git 依赖已锁 commit")
+
+    # 6) npm 依赖里不许有 git/http/file/link 形式（只能是 registry 版本）
+    $pkg = Get-Content -LiteralPath (Join-Path $RepoRoot 'installer/kachina/package.json') -Raw | ConvertFrom-Json
+    foreach ($section in @('dependencies', 'devDependencies')) {
+        $node = $pkg.$section
+        if (-not $node) { continue }
+        foreach ($prop in $node.PSObject.Properties) {
+            if ($prop.Value -match '^(git|git\+|https?|github|file|link|workspace):' -or
+                $prop.Value -match 'YuehaiTeam') {
+                throw "kachina 的 npm 依赖 $($prop.Name) 不是 registry 版本: $($prop.Value)"
+            }
+        }
+    }
+    $notes.Add('npm 依赖全部来自 registry')
+
+    return ($notes -join '；')
+}
+
 function Test-Ps1Syntax {
     $files = @(Get-ChildItem -Path $RepoRoot -Recurse -Filter '*.ps1' -File |
         Where-Object { $_.FullName -notmatch '[\\/](node_modules|target|dist|bin|obj|gen|\.git)[\\/]' })
@@ -318,9 +429,39 @@ function Invoke-SelfTest {
     $cases = [System.Collections.Generic.List[object]]::new()
 
     function Add-Case {
-        param([string]$Name, [scriptblock]$Mutate, [scriptblock]$Run)
-        $cases.Add([pscustomobject]@{ Name = $Name; Mutate = $Mutate; Run = $Run })
+        param([string]$Name, [scriptblock]$Mutate, [scriptblock]$Run, [scriptblock]$Cleanup = {})
+        $cases.Add([pscustomobject]@{ Name = $Name; Mutate = $Mutate; Run = $Run; Cleanup = $Cleanup })
     }
+
+    # --- 0a) vendor：出现 .gitmodules 就必须报错（kachina 不能是 submodule）---
+    $gitmodules = Join-Path $RepoRoot '.gitmodules'
+    Add-Case 'vendor 层能抓到 kachina 变成 submodule' `
+        -Mutate {
+            Set-Content -Path $gitmodules -Encoding utf8 -Value @'
+[submodule "installer/kachina"]
+	path = installer/kachina
+	url = https://example.invalid/upstream.git
+'@
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup { if (Test-Path -LiteralPath $gitmodules) { Remove-Item -LiteralPath $gitmodules -Force } }
+
+    # --- 0b) vendor：工作流里出现从外部拉取的动作就必须报错 ---
+    $badWorkflow = Join-Path $RepoRoot '.github/workflows/zz-devcheck-selftest.yml'
+    Add-Case 'vendor 层能抓到工作流从上游拉取' `
+        -Mutate {
+            Set-Content -Path $badWorkflow -Encoding utf8 -Value @'
+name: selftest
+on: workflow_dispatch
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - run: Invoke-WebRequest https://example.invalid/kachina-builder.exe -OutFile installer/tools/kachina-builder.exe
+'@
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup { if (Test-Path -LiteralPath $badWorkflow) { Remove-Item -LiteralPath $badWorkflow -Force } }
 
     # --- 1) ps1：临时放一个语法错误的 .ps1 进仓库 ---
     Add-Case 'ps1 层能抓到 PowerShell 语法错误' `
@@ -404,6 +545,7 @@ const a: number = 1;
         }
         catch [LayerSkipped] { $outcome = 'SKIPPED' }
         catch { $outcome = 'CAUGHT' }
+        try { & $c.Cleanup } catch { }
 
         switch ($outcome) {
             'CAUGHT'  { $caught++;  Write-Ok "  ✓ $($c.Name)" }
@@ -415,6 +557,10 @@ const a: number = 1;
     # 收尾：删掉临时目录并恢复干净的生成物
     foreach ($d in @($tmpDir, (Join-Path $front '_selftest'))) {
         if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
+    }
+    foreach ($f in @((Join-Path $RepoRoot '.gitmodules'),
+                     (Join-Path $RepoRoot '.github/workflows/zz-devcheck-selftest.yml'))) {
+        if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force }
     }
     New-GenSources | Out-Null
 
@@ -439,13 +585,13 @@ if ($SelfTest) {
     exit 0
 }
 
-$validLayers = @('all', 'ps1', 'gen', 'rust', 'logic', 'front', 'host', 'ui')
+$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'front', 'host', 'ui')
 $requested = @($Layer -split '[,\s]+' | Where-Object { $_ })
 if (-not $requested.Count) { $requested = @('all') }
 foreach ($r in $requested) {
     if ($validLayers -notcontains $r) { throw "未知的层 '$r'，可选: $($validLayers -join ', ')" }
 }
-$wanted = if ($requested -contains 'all') { @('ps1', 'gen', 'rust', 'logic', 'front', 'host') } else { $requested }
+$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'front', 'host') } else { $requested }
 # gen 是 rust/logic/front 的前置
 if (($wanted -contains 'rust' -or $wanted -contains 'logic' -or $wanted -contains 'front') -and ($wanted -notcontains 'gen')) {
     $wanted = @('gen') + $wanted
@@ -458,6 +604,7 @@ Write-Host ''
 
 foreach ($l in $wanted) {
     switch ($l) {
+        'vendor' { Invoke-Layer 'vendor kachina 只用仓库内源码' { Test-VendoredSource } }
         'ps1'   { Invoke-Layer 'ps1   PowerShell 脚本语法'    { Test-Ps1Syntax } }
         'gen'   { Invoke-Layer 'gen   生成检查用源码'         { New-GenSources } }
         'rust'  { Invoke-Layer 'rust  kachina 类型检查 msvc'  { Test-RustTypecheck } }

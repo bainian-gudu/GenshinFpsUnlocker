@@ -17,10 +17,15 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 
 任何一层失败 → 退出码 1。缺工具链的层标记 `SKIP` 并给出提示，不算失败。
 
+这套检查也在 CI 里**自动执行**：`.github/workflows/devcheck.yml`（push 到 main、
+任何 PR、手动触发；ubuntu + windows 双 runner）依次跑 `-Layer vendor` → `all` →
+`-SelfTest` → Web UI 构建。完整的打包工作流 `build.yml` 仍然只手动触发。
+
 ## 分层
 
 | 层 | 检查什么 | 需要的工具 | 热跑耗时 |
 | --- | --- | --- | --- |
+| `vendor` | **kachina 只用仓库内源码**：不是 submodule、快照完整、工作流与打包脚本里没有任何从上游拉源码/下二进制的动作、CI 确实走源码构建、git 依赖锁到 commit、npm 依赖全来自 registry | pwsh 7 | <0.1s |
 | `ps1` | 仓库里全部 `.ps1` 的语法（PowerShell Parser） | pwsh 7 | <0.1s |
 | `gen` | 从 `installer/kachina` 源码生成检查用的 Rust / TS 文件 | pwsh 7 | ~0.3s |
 | `rust` | **整份** `installer/uninstall.rs` + `utils/error.rs` 的类型检查：塞进一个只有 11 个依赖的 crate，`cargo check --target x86_64-pc-windows-msvc`。不需要 tauri、不需要 Windows 机器 | cargo + `rustup target add x86_64-pc-windows-msvc` | 首次 ~30s，之后 ~0.2s |
@@ -30,6 +35,29 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `ui` | `src/Ui` 的 `vite build`（**不在 `all` 里**，要先 `cd src/Ui && npm install`） | node + npm | 视机器 |
 
 全套热跑 ≈ 6–12 秒。
+
+## `vendor` 层：kachina 只从本仓库拉
+
+`installer/kachina/` 是上游 kachina-installer 的**源码快照**，构建必须完全基于它。
+这一层把这条约束变成可执行的断言（六项，任何一项不满足就失败）：
+
+1. 仓库根不存在 `.gitmodules`（kachina 不是 submodule）
+2. 快照完整：`package.json` / `pnpm-lock.yaml` / `src-tauri/Cargo.toml` /
+   `src-tauri/Cargo.lock` / `uninstall.rs` / `pack.rs` / `App.vue` /
+   `installer/build-kachina.ps1` / `installer/pack.ps1` 都在
+3. `.github/workflows/*.yml`、`installer/*.ps1`、`build.ps1` 里**没有任何**从外部拉取的
+   动作：`YuehaiTeam`、`kachina-installer.git`、`releases/download`、`release-downloader`、
+   `git clone`、`git submodule`、`Invoke-WebRequest`、`Invoke-RestMethod`、`DownloadFile`、
+   `curl`、`wget`（只扫可执行内容，`#` 注释行与 `<# #>` 块跳过）
+4. `build.yml` 确实调用 `installer/build-kachina.ps1`，且 kachina 缓存 key 基于
+   `hashFiles('installer/kachina/**')`
+5. kachina 的每个 `git = "..."` cargo 依赖都在 `Cargo.lock` 里锁到 40 位 commit
+   （否则 CI 可能拉到漂移的分支），且没有一个指向上游仓库
+6. kachina 的 npm 依赖全部是 registry 版本，没有 `git:` / `http:` / `github:` /
+   `file:` / `link:` 形式
+
+> CI 仍然会联网取 crates.io / npm registry / rustup 工具链 / marketplace action ——
+> 那是任何构建都免不了的；这一层保证的是**kachina 本身**只来自本仓库。
 
 ## `-SelfTest`：证明这套检查不是空壳
 
@@ -44,7 +72,8 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `gen/src/utils/agreement.ts` 末尾追加 `const x: number = 'not a number';` | `front` 的 tsc 报错 |
 | `front/_selftest/Broken.vue`（`<div>` 未闭合） | `front` 的 SFC 编译报错 |
 
-跑完自动删掉临时目录并重新生成干净的检查源。任何一个「注入了却没报错」→ 退出码 1。
+跑完自动删掉临时目录/临时文件并重新生成干净的检查源（用 `git status` 可验证零残留）。
+任何一个「注入了却没报错」→ 退出码 1。
 
 ## 实现方式（为什么这样能代表真实构建）
 
@@ -75,7 +104,8 @@ tools/devcheck/
 
 ## 覆盖范围（诚实地说）
 
-**能抓到**：Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
+**能抓到**：kachina 被改成从上游拉取（submodule / 下载二进制 / git clone）、
+快照文件缺失、git 依赖没锁 commit、Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 `windows-registry` 的 API 误用）、`uninstall.rs` 里安全阀逻辑被改坏、
 协议内联（`resolve_agreement`）行为变化、TS 类型错误、`.vue` 模板/`<script setup>`
 语法错误、C# 编译错误与警告、`.ps1` 语法错误、我们维护文件的格式漂移。
@@ -83,6 +113,7 @@ tools/devcheck/
 **抓不到**（这些还得靠真实构建 / 实机）：
 
 - `#[tauri::command]` 宏展开、IPC 参数名与前端 `invoke` 的对齐
+- 上游 npm/cargo 依赖自身的供应链问题（只检查「来源形式」与「是否锁版本」）
 - `builder/pack.rs` 除 `resolve_agreement` 之外的部分（依赖 builder 的一大堆模块）
 - kachina 其余 Rust 模块（`installer/lnk.rs`、`dfs.rs`、`local.rs` …）
 - CI 用的 `x86_64-win7-windows-msvc` 自定义 target + `-Z build-std`（这里用标准

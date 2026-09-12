@@ -70,9 +70,15 @@ CI 里用 `Swatinem/rust-cache` 缓存后通常几分钟内完成。
 本目录作为构建工具的源码快照引入，并在其上有本地修改（`LOCAL_PATCHES.md`）；
 如需对外分发本仓库，请先向上游确认授权（含修改与再分发的权利），
 或改为 git submodule / CI 下载官方 Release 二进制的方式（那样就需要放弃这两项
-本地增强，改用外部手段实现）。
+本地增强，改用外部手段实现；同时要改 `tools/devcheck` 的 `vendor` 层 ——
+它现在会把这两种做法判定为失败）。
 
 ## 升级上游版本
+
+> **这是人工在本地做的操作，CI 永远不会执行它。**
+> 构建（本地 `installer\build-kachina.ps1` 与 CI 的 `build-kachina` job）只用
+> 本目录里已经在版本库中的源码；工作流与打包脚本里不允许出现任何从上游拉取的
+> 动作，`pwsh tools/devcheck/devcheck.ps1 -Layer vendor` 会断言这一点。
 
 ```powershell
 # 在仓库外克隆上游，切到目标 tag，再整体覆盖本目录

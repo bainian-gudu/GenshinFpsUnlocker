@@ -183,7 +183,10 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 
 ## CI
 
-`.github/workflows/build.yml` 三个 job：
+两个工作流：**Devcheck**（`devcheck.yml`，push/PR 自动执行，跑 `tools/devcheck` 的
+全部检查层 + 自检，几分钟）与 **Build**（`build.yml`，仅手动触发，出安装包）。
+
+`build.yml` 三个 job：
 
 1. `build-kachina` —— 用 `installer/kachina` 源码构建 `kachina-builder.exe`；
    源码未变时命中 `actions/cache`（key = `hashFiles('installer/kachina/**')`）直接复用，
@@ -191,7 +194,15 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 2. `build-app` —— `build.ps1 -SkipSetup` 产出 `dist\`。
 3. `pack` —— 下载前两者，执行 `installer\pack.ps1 -SkipKachinaBuild`。
 
-**不再从上游 Release 下载 `kachina-builder.exe`。**
+**不再从上游 Release 下载 `kachina-builder.exe`**，也不会从上游仓库拉源码：
+kachina 只来自本仓库的 `installer/kachina/` 快照。这条约束由
+`pwsh tools/devcheck/devcheck.ps1 -Layer vendor` 自动断言（不是 submodule、
+快照完整、工作流与打包脚本里没有任何 `git clone` / `releases/download` /
+`Invoke-WebRequest` 之类的外部拉取动作、git 依赖在 `Cargo.lock` 里锁到 commit、
+npm 依赖全部来自 registry），并且每次 push 都会在 Devcheck 工作流里跑一遍。
+
+CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace action ——
+这是任何构建都免不了的；被禁止的是「kachina 本体来自本仓库之外」。
 
 ## 升级上游 Kachina
 

@@ -1,0 +1,99 @@
+name: Devcheck
+
+# 自动执行：push 到 main、任何 PR、以及手动触发。
+# 这是「快速体检」工作流（tools/devcheck），几分钟内出结果；
+# 完整的打包工作流 build.yml 仍然只手动触发（Windows + nightly + build-std，很慢）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devcheck-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "9.0.x"
+  NODE_VERSION: "22"
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  CARGO_TERM_COLOR: "always"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  devcheck:
+    name: devcheck (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu 验证脚本的跨平台分支；windows 验证用户实际会跑的那条路径
+        # （Get-Tool 的 .cmd 解析、路径分隔符、dotnet 原生构建）
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          # 两个 lockfile 都要缓存：devcheck 前端层 + Web UI 构建
+          cache-dependency-path: |
+            tools/devcheck/front/package-lock.json
+            src/Ui/package-lock.json
+
+      # windows-latest 的 MSVC 工具链自带该 target；ubuntu 需要显式安装
+      - name: Install windows-msvc rust target
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Cache cargo (devcheck crates)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            tools/devcheck/rust/typecheck
+            tools/devcheck/rust/logic
+          cache-targets: true
+          key: devcheck
+
+      # vendor 层断言：kachina 只从本仓库的源码快照构建，工作流与打包脚本里
+      # 没有任何从上游仓库拉源码 / 下二进制的动作（详见 tools/devcheck/README.md）。
+      # 单独跑一次，让这条约束在日志里有独立、显眼的结论。
+      # 注意：本文件的注释里不要写上游仓库名，vendor 层会扫工作流文件。
+      - name: Vendored source guard
+        shell: pwsh
+        run: pwsh -NoProfile -File ./tools/devcheck/devcheck.ps1 -Layer vendor
+
+      - name: devcheck (all layers)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./tools/devcheck/devcheck.ps1
+
+      # 自检：往生成物里注入 5 个错误，确认每一层真的会报错
+      # （防止「检查跑通了但其实什么都没查」）
+      - name: devcheck -SelfTest
+        shell: pwsh
+        run: pwsh -NoProfile -File ./tools/devcheck/devcheck.ps1 -SelfTest
+
+      # Web UI 构建不在 all 里（要先 npm ci），这里单独跑；只在 ubuntu 上跑，省时间
+      - name: Web UI build
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Push-Location src/Ui
+          try { npm ci --no-audit --no-fund } finally { Pop-Location }
+          pwsh -NoProfile -File ./tools/devcheck/devcheck.ps1 -Layer ui

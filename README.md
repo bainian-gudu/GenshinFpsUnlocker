@@ -65,7 +65,7 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 `tools/devcheck` 把**我们真正改过的那部分**放进最小依赖的检查环境，热跑 6–12 秒：
 
 ```powershell
-pwsh tools/devcheck/devcheck.ps1                # all：ps1 语法 / Rust 类型检查 / 行为断言 / TS+.vue / Host 构建
+pwsh tools/devcheck/devcheck.ps1                # all：vendored 源 / ps1 语法 / Rust 类型检查 / 行为断言 / TS+.vue / Host 构建
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
 pwsh tools/devcheck/devcheck.ps1 -SelfTest      # 自检：注入 5 个错误，确认每层真的会报错
 ```
@@ -80,8 +80,13 @@ Rust 那两层是关键：
   `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement`，
   逐字节比对内联结果。
 
-`-SelfTest` 会往生成物里注入 5 个错误（PowerShell 语法、Rust 类型、安全阀被放宽、
-TS 类型、`.vue` 模板），确认每一层都会报错——避免「检查跑通了但其实什么都没查」。
+`vendor` 层把「kachina 只从本仓库拉」变成可执行断言：不是 submodule、快照完整、
+工作流与打包脚本里没有任何从上游拉源码/下二进制的动作、CI 确实走源码构建、
+git 依赖在 `Cargo.lock` 里锁到 commit、npm 依赖全来自 registry。
+
+`-SelfTest` 会注入 7 个错误（`.gitmodules`、含 `Invoke-WebRequest` 的假工作流、
+PowerShell 语法、Rust 类型、安全阀被放宽、TS 类型、`.vue` 模板），确认每一层都会报错
+—— 避免「检查跑通了但其实什么都没查」。
 覆盖范围、抓不到的东西与维护约定见 [`tools/devcheck/README.md`](tools/devcheck/README.md)。
 
 ## 安装 / 卸载
@@ -166,8 +171,18 @@ TS 类型、`.vue` 模板），确认每一层都会报错——避免「检查�
 
 ## CI
 
-GitHub Actions **仅手动运行**（Actions → Build → Run workflow），不会在 push/PR 时自动执行。
-三个 job 并行/串行协作，**不再从上游 Release 下载 `kachina-builder.exe`**：
+两个工作流：
+
+| 工作流 | 触发 | 内容 | 耗时 |
+| --- | --- | --- | --- |
+| **Devcheck**（`.github/workflows/devcheck.yml`） | push 到 main / PR / 手动，**自动执行** | `tools/devcheck` 全部检查层 + 自检 + Web UI 构建，ubuntu 与 windows 双 runner | 几分钟 |
+| **Build**（`.github/workflows/build.yml`） | **仅手动**（Actions → Build → Run workflow） | kachina-builder + 应用本体 + 打包安装器 | 十几分钟起 |
+
+Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**，CI 与打包脚本都不从上游
+仓库拉源码或下载二进制 —— 这条约束由 devcheck 的 `vendor` 层自动断言（不是 submodule、
+快照完整、工作流与脚本里没有任何外部拉取动作、git 依赖锁到 commit），每次 push 都会验。
+
+Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kachina-builder.exe`**：
 
 1. `build-kachina` —— 用 `installer/kachina/` 源码构建 `kachina-builder.exe`。
    源码未变时命中 `actions/cache`（key = `hashFiles('installer/kachina/**')`）直接复用；
