@@ -184,6 +184,14 @@ internal sealed partial class MainForm : Form
             try
             {
                 if (IsDisposed || _reallyExit) return;
+                // 句柄可能还没创建（构造函数里就起了监听线程，而句柄要等
+                // Application.Run → SetVisibleCore → CreateHandle）。
+                // 此时 BeginInvoke 会抛 InvalidOperationException「在创建窗口句柄之前，
+                // 不能在控件上调用 Invoke 或 BeginInvoke」，被外层 catch 吞掉后
+                // 表现为「双击快捷方式没反应」。这里在监听线程上等句柄就绪再投递。
+                for (var i = 0; i < 100 && !IsHandleCreated && !IsDisposed && !_reallyExit; i++)
+                    Thread.Sleep(100);
+                if (!IsHandleCreated || IsDisposed || _reallyExit) return;
                 BeginInvoke(() =>
                 {
                     try

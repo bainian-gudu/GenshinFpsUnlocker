@@ -145,6 +145,7 @@ internal sealed class AppConfig
                     var cfg = JsonSerializer.Deserialize<AppConfig>(json, Options);
                     if (cfg is null) continue;
 
+                    cfg.Migrate();
                     cfg.Sanitize();
                     cfg.LoadedFromDisk = true;
                     AppLog.Info($"config loaded from {path}");
@@ -173,6 +174,7 @@ internal sealed class AppConfig
 
             AppLog.Warn("config not found or unreadable — using defaults");
             var defaults = new AppConfig();
+            defaults.Migrate();
             defaults.Sanitize();
             // 首次运行写出默认配置，确保目录与文件存在
             try { defaults.SaveCore(createBackup: false); }
@@ -307,8 +309,18 @@ internal sealed class AppConfig
             catch { /* 保留原串 */ }
         }
 
+    }
+
+    /// <summary>
+    /// 一次性 schema 迁移。<b>只在从磁盘加载后调用，不要放进 <see cref="Sanitize"/></b>：
+    /// Sanitize() 会被「每次保存」和「UI 改配置」的热路径反复执行，把破坏性的默认值回退
+    /// 放里面会导致——用户在设置里刚勾选「启动后最小化到托盘」，同一次 PatchConfig 里的
+    /// Sanitize() 就把它抹回 false（表现为开关自己弹回去、重启后不进托盘）。
+    /// </summary>
+    private void Migrate()
+    {
         // v1：旧默认 startMinimized=true 导致「打开没窗口」；一次性改回 false。
-        // 用户此后可再手动开启「启动后最小化到托盘」。
+        // 用户此后可再手动开启「启动后最小化到托盘」，之后的值一律尊重用户选择。
         if (ConfigSchemaVersion < 1)
         {
             if (StartMinimized)
