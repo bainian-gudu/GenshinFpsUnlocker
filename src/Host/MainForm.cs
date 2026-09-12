@@ -115,13 +115,30 @@ internal sealed partial class MainForm : Form
                         ShowWindow(Handle, 0); // SW_HIDE
                 }
                 catch { /* ignore */ }
+
+                // 修复「无法启动：在创建窗口句柄之前，不能在控件上调用 Invoke 或 BeginInvoke」：
+                // 原实现在构造函数里直接 BeginInvoke，此时窗口句柄尚未创建
+                // （Application.Run → SetVisibleCore → CreateHandle 才创建），
+                // StartMinimized（启动后最小化/开机自启最小化/--minimized）时必定抛
+                // InvalidOperationException 并被 Program.Main 兜底捕获成「无法启动」弹窗。
+                // 正确做法：等 HandleCreated 事件（句柄已就绪）后再投递到消息队列。
+                if (!_startupTrayPending) return; // 句柄重建时不重复执行
+                try
+                {
+                    BeginInvoke(() =>
+                    {
+                        try { FinishStartupToTray(); }
+                        catch (Exception ex) { AppLog.Warn("early FinishStartupToTray: " + ex.Message); }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn("early tray BeginInvoke: " + ex.Message);
+                    // 兜底：消息队列不可用时直接完成，保证托盘图标一定出现
+                    try { FinishStartupToTray(); }
+                    catch (Exception ex2) { AppLog.Warn("early FinishStartupToTray(direct): " + ex2.Message); }
+                }
             };
-            // 下一消息泵立刻完成托盘（气泡 + 可见托盘图标）
-            BeginInvoke(() =>
-            {
-                try { FinishStartupToTray(); }
-                catch (Exception ex) { AppLog.Warn("early FinishStartupToTray: " + ex.Message); }
-            });
         }
 
         // 窗体句柄就绪后再强制刷新一次托盘可见性（部分环境构造阶段 Visible 会被吞）
