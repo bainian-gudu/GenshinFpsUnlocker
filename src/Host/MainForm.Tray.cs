@@ -512,16 +512,16 @@ internal sealed partial class MainForm
                         ? _accent
                         : _text;
 
-            // 强制文字左对齐到同一基线（修正 CheckMargin/ImageMargin 造成的错位）
+            // 文字统一左缘 TextLeft、整行高度内垂直居中：矩形直接取整行高度，
+            // 由 VerticalCenter 负责对中，别再自己叠 ContentRectangle.Y / 内边距
+            // （叠了会偏高偏矮不一，和勾选标记对不齐）。
             var font = e.TextFont ?? item.Font ?? SystemFonts.MenuFont ?? SystemFonts.DefaultFont;
             var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
-            var textH = TextRenderer.MeasureText(e.Text ?? item.Text ?? "", font, new Size(int.MaxValue, int.MaxValue), flags).Height;
-            var y = item.ContentRectangle.Y + Math.Max(0, (item.Height - textH) / 2);
             var textRect = new Rectangle(
                 TextLeft,
-                y,
+                0,
                 Math.Max(8, item.Width - TextLeft - 12),
-                Math.Max(textH, item.Height - 4));
+                item.Height);
 
             TextRenderer.DrawText(
                 g,
@@ -529,15 +529,22 @@ internal sealed partial class MainForm
                 font,
                 textRect,
                 e.TextColor,
-                flags | TextFormatFlags.VerticalCenter);
+                flags | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             // 不再调用 base，避免系统再画一次偏移文字
         }
 
+        /// <summary>
+        /// 自绘勾选标记：与文字共用「整行高度的中线」这一条基线，勾形包围盒
+        /// （11×8）在勾选槽内水平居中、在行内垂直居中，√ 与文字因此严格对齐。
+        /// 早先的写法把 ContentRectangle.Y 又加了一遍行高的一半，√ 比文字低 3~4px。
+        /// </summary>
         private void DrawCheckMark(Graphics g, ToolStripItem item)
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var cx = 8 + CheckGutter / 2 - 6;
-            var cy = item.ContentRectangle.Y + item.Height / 2;
+            const float glyphW = 11f;   // 勾形包围盒宽
+            const float glyphH = 8f;    // 勾形包围盒高（cy-4 .. cy+4）
+            var cx = (CheckGutter - glyphW) / 2f;
+            var cy = item.Height / 2f;
             using var pen = new Pen(_accent, 1.9f)
             {
                 StartCap = System.Drawing.Drawing2D.LineCap.Round,
@@ -546,9 +553,9 @@ internal sealed partial class MainForm
             };
             g.DrawLines(pen, new[]
             {
-                new Point(cx, cy),
-                new Point(cx + 4, cy + 4),
-                new Point(cx + 11, cy - 5),
+                new PointF(cx, cy),
+                new PointF(cx + 4, cy + glyphH / 2f),
+                new PointF(cx + glyphW, cy - glyphH / 2f),
             });
         }
 

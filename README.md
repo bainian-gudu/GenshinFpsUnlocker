@@ -1,5 +1,16 @@
 # 原神帧率解锁 (GenshinFpsUnlocker)
 
+> **项目性质（请先读这一段）**
+>
+> - **个人自用**：本项目只为作者自己玩游戏服务，不提供任何形式的对外服务、
+>   不做商业化、不接受付费；仓库公开仅作为个人备份与学习记录。
+> - **AI 生成**：代码与文档**主要由 AI 生成**（Arena.ai Agent Mode 的多模型协作会话；
+>   历史提交里的 `arena-agent` 即 AI 会话，后已统一改写为项目所有者署名）。
+>   作者负责提需求、验收结果与承担风险。**它没有经过任何安全审计，
+>   请不要把它当作生产级软件对待。**
+> - **与米哈游无关**：「原神 / Genshin Impact」及其角色、图标、场景素材的版权归
+>   米哈游 / HoYoverse 所有，本项目未获授权或背书，详见下文「素材与版权」。
+
 自定义目标 FPS · 反角色虚化 / 移除水下马赛克（反虚化注入） · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（无 UAC）
 
 界面为设计稿一比一实现的 Web UI（WebView2 嵌入）：概览 / 设置 / 日志 / 指南 / 关于；深浅色切换。
@@ -18,6 +29,21 @@
   - **无** Node / Python 等其它编程语言运行时依赖
   - **.NET Desktop Runtime 9**、**VC++ 2015+ x64**：由 **Kachina** 安装器按配置检测/安装（亦可首次运行时由主程序提示下载）
   - 可选 `build.ps1 -SelfContained` 将 .NET 也打进主程序（离线、包体更大）
+
+## 技术栈
+
+| 部分 | 技术 | 位置与说明 |
+| --- | --- | --- |
+| 宿主主程序 | C# / .NET 9（`net9.0-windows10.0.17763.0`）/ WinForms | `src/Host/`：WebView2 承载 Web UI、系统托盘、自绘标题栏、注入调度、游戏定位、配置与日志 |
+| Web UI | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS 4 + framer-motion + lucide-react | `src/Ui/`：按设计稿 1:1 实现；`vite-plugin-singlefile` 打成单文件 `ui/index.html` |
+| 注入模块 | C++20（CMake）+ MinHook（BSD-2-Clause），CRT 静态链接（`/MT`） | `src/Stub/`：帧率解锁与反虚化的特征码自适配扫描 + Hook/Patch |
+| 安装 / 卸载 / 更新器 | Kachina：Rust + Tauri 2（nightly + `-Z build-std`）+ Vue 3.5 + Rsbuild | `installer/kachina/`：上游源码快照（tag `0.5.1`），本地修改清单见 `installer/kachina/LOCAL_PATCHES.md` |
+| exe 图标 / 版本资源写入 | vendored `rcedit-rs`（C++，MSVC 编译） | `installer/kachina/vendor/rcedit-rs/`，与上游差异见其 `LOCAL_PATCHES.md` |
+| 构建 / 打包 / 自检 | PowerShell 7 | `build.ps1`、`installer/pack.ps1`、`installer/build-kachina.ps1`、`tools/devcheck/` |
+| CI | GitHub Actions（`ubuntu-latest` + `windows-latest`） | `devcheck.yml`（push/PR 自动）、`build.yml`（仅手动） |
+
+运行侧只依赖 **WebView2 Runtime** 与（默认构建下的）**.NET Desktop Runtime 9 / VC++ 运行库**，
+后两者由安装器按配置检测安装；**不需要** Node / Python 等任何开发运行时。
 
 ## 构建
 
@@ -84,9 +110,9 @@ Rust 那两层是关键：
 工作流与打包脚本里没有任何从上游拉源码/下二进制的动作、CI 确实走源码构建、
 git 依赖在 `Cargo.lock` 里锁到 commit、npm 依赖全来自 registry。
 
-`-SelfTest` 会注入 7 个错误（`.gitmodules`、含 `Invoke-WebRequest` 的假工作流、
-PowerShell 语法、Rust 类型、安全阀被放宽、TS 类型、`.vue` 模板），确认每一层都会报错
-—— 避免「检查跑通了但其实什么都没查」。
+`-SelfTest` 会注入 8 个错误（`.gitmodules`、含 `Invoke-WebRequest` 的假工作流、
+`rescle.cc` 用回 `locale::empty()`、PowerShell 语法、Rust 类型、安全阀被放宽、
+TS 类型、`.vue` 模板），确认每一层都会报错 —— 避免「检查跑通了但其实什么都没查」。
 覆盖范围、抓不到的东西与维护约定见 [`tools/devcheck/README.md`](tools/devcheck/README.md)。
 
 ## 安装 / 卸载
@@ -213,11 +239,49 @@ Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kach
 本工具属于第三方注入类软件，适用《米哈游用户协议》第十条第二款相关表述，**使用风险由您自行承担**。
 请关闭游戏 V-Sync 后使用自定义帧率。
 
-Kachina 安装界面自带「我已阅读并同意用户协议」勾选（上游内置，无法去掉）。**安装器内不展示协议全文**；完整协议见仓库 [`USER_AGREEMENT.txt`](USER_AGREEMENT.txt)，安装后亦释放到安装目录，并在首次运行的程序内「用户协议与安全声明」中展示。
+安装界面的「用户协议」链接可点击，**弹窗内展示协议全文**（正文由 `agreementFile`
+在打包时内联进 exe，支持 `text` / `markdown` / `html`）；配置了协议就必须勾选
+「我已阅读并同意」才能点安装。完整协议见仓库 [`USER_AGREEMENT.txt`](USER_AGREEMENT.txt)，
+安装后亦释放到安装目录，并在首次运行的程序内「用户协议与安全声明」中展示。
+
+## 参考、素材与版权
+
+### 思路参考的项目
+
+- 帧率解锁与反虚化（反角色虚化 / 移除水下马赛克）的特征码与 Hook/Patch 思路参考
+  [DGP Studio 的 Snap.Hutao.Remastered.UnlockerIsland](https://github.com/SnapHutaoRemasteringProject/Snap.Hutao.Remastered.UnlockerIsland)（MIT），
+  已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp`。
+- 安装 / 卸载 / 更新器整体方案来自 [YuehaiTeam/kachina-installer](https://github.com/YuehaiTeam/kachina-installer)
+  （源码快照见 `installer/kachina/`，版本与来源见 `installer/kachina/UPSTREAM.md`）。
+- 其余实现层面的参考（上游 issue、MSVC/Windows 行为变更等）一律记在对应目录的
+  `LOCAL_PATCHES.md` / `tools/devcheck/README.md` 里，代码注释只留一句指针。
+
+### 图片与素材来源
+
+| 文件 | 内容 | 来源 | 版权归属 |
+| --- | --- | --- | --- |
+| `src/Ui/public/images/game-icon.webp` | 《原神》官方应用图标（派蒙头像 + miHoYo 字标） | 米哈游官方素材 | © 米哈游 / HoYoverse |
+| `src/Host/Assets/app.png` / `app.ico` / `favicon.ico`、`src/Ui/public/favicon.ico` / `favicon.png` | 应用图标：chibi 风格的猫耳角色抱纸箱 | **AI 生成**（提交 `afdf028`），形象借鉴《原神》角色 | 角色形象 © 米哈游；图本身为 AI 生成 |
+| `installer/kachina/src/left.webp` | 安装器左侧立绘：chibi 猫耳角色抱纸箱 | **上游 kachina-installer 自带**（与 tag `0.5.1` 逐字节一致，未改动） | 上游仓库素材（上游未提供 LICENSE，来源未注明） |
+| `installer/kachina/src-tauri/icons/icon.ico` | 安装器 / 卸载器 exe 图标 | **上游 kachina-installer 自带**（与 tag `0.5.1` 逐字节一致） | 同上 |
+| `src/Ui/public/images/teyvat-landscape.jpg` | 概览页 / 指南页的璃月风格山水横幅 | 随设计稿提供的插画 | 见下注 |
+| `src/Ui/public/favicon.svg` | 星芒形单色 logo（纯几何路径，304 字节） | 本项目手写 SVG | 本项目（MIT） |
+
+> 注 1：AI 生成的素材（应用图标、横幅）是在「个人自用、非商业」前提下生成的，
+> 生成时参考了《原神》的角色与美术风格；**角色名称与形象本身的版权仍归米哈游**。
+> 注 2：校验方式 `md5sum` 与上游 tag `0.5.1` 逐文件比对 —— `left.webp`、
+> `src-tauri/icons/icon.ico` 与上游完全一致，属于上游快照的一部分，
+> 升级上游时按 `installer/kachina/UPSTREAM.md` 的流程一起更新。
+> 若其中任何一张图的权利人提出异议，将从仓库中移除并替换。
+
+### 商标与作品归属（米哈游）
+
+「原神」「Genshin Impact」「派蒙」「绮良良」等名称、角色形象、游戏内场景与官方图标，
+版权均归**上海米哈游网络科技股份有限公司 / miHoYo / HoYoverse（COGNOSPHERE PTE. LTD.）**所有。
+本项目是独立第三方工具，与米哈游**无任何关联**，未获得其授权、赞助或背书；
+上述素材仅随本自用项目保存与展示，不用于任何商业目的。
 
 ## License
 
-MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（[kachina-installer](https://github.com/YuehaiTeam/kachina-installer)，源码快照见 `installer/kachina/`）按其上游许可使用 —— **注意：上游仓库未提供 LICENSE 文件**，详见 `installer/kachina/UPSTREAM.md`
-
-帧率解锁与反虚化（反角色虚化 / 移除水下马赛克）的特征码与 Hook/Patch 思路参考
-[DGP Studio 的 Snap.Hutao.Remastered.UnlockerIsland](https://github.com/SnapHutaoRemasteringProject/Snap.Hutao.Remastered.UnlockerIsland)（MIT），已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp`。
+MIT · MinHook：BSD-2-Clause · 安装包构建工具 Kachina（[kachina-installer](https://github.com/YuehaiTeam/kachina-installer)，源码快照见 `installer/kachina/`）按其上游许可使用 —— **注意：上游仓库未提供 LICENSE 文件**，详见 `installer/kachina/UPSTREAM.md`。
+代码与文档主要由 AI 生成并按上述 MIT 许可发布；**素材不随 MIT 许可授权**（见上节）。
