@@ -50,6 +50,10 @@ param(
     [switch]$SelfTest
 )
 
+# npm / npx / node 自身会打 DEP0040（punycode）、DEP0169（url.parse）这类
+# 弃用告警，跟本仓库无关，只会把真正需要看的输出淹掉。子进程继承这个变量。
+$env:NODE_NO_WARNINGS = '1'
+
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw "devcheck 需要 PowerShell 7+（当前 $($PSVersionTable.PSVersion)）。Windows PowerShell 5.1 请用: pwsh -File tools/devcheck/devcheck.ps1"
 }
@@ -173,7 +177,16 @@ function Invoke-Native {
     try { $stdout = $outTask.Result } catch { }
     try { $stderr = $errTask.Result } catch { }
 
-    $all = (($stdout + "`n" + $stderr).Trim())
+    # 两个流是分别读完再拼接的（并发读才不会死锁），所以 stderr 的内容一律排在
+    # stdout 后面，时间顺序会错位。两边都非空时插一行分隔，读日志的人才不会把
+    # 末尾的 stderr 误当成「跑完之后又出事了」。
+    $parts = @()
+    if ($stdout.Trim()) { $parts += $stdout.Trim() }
+    if ($stderr.Trim()) {
+        if ($parts.Count) { $parts += '──── 以上 stdout / 以下 stderr（顺序不代表先后） ────' }
+        $parts += $stderr.Trim()
+    }
+    $all = ($parts -join "`n")
     if ($all) {
         $lines = $all -split "`r?`n"
         $shown = if ($lines.Count -gt $Tail) { @("…(省略 $($lines.Count - $Tail) 行)") + $lines[-$Tail..-1] } else { $lines }
@@ -495,12 +508,16 @@ jobs:
         } `
         -Run { Test-RustTypecheck }
 
-    # --- 3) logic：把注册表安全阀的深度要求改成 0 ---
+    # --- 3) logic：把注册表安全阀的深度要求从 2 段放宽到 1 段 ---
+    # 用 1 而不是 0：usize >= 0 恒真，编译器会额外打一条
+    # `warning: comparison is useless due to type limits`，那是注入带来的噪音，
+    # 不是我们代码的问题；>= 1 同样是真放宽（"Software" 这种单段键会被放过），
+    # 断言照样能抓到，日志里干净。
     Add-Case 'logic 层能抓到安全阀被放宽' `
         -Mutate {
             $f = Join-Path $DevCheckRoot 'rust/logic/src/gen/extracted.rs'
             $t = [System.IO.File]::ReadAllText($f)
-            $t2 = $t.Replace('Some(_) => segments.len() >= 2,', 'Some(_) => segments.len() >= 0,')
+            $t2 = $t.Replace('Some(_) => segments.len() >= 2,', 'Some(_) => segments.len() >= 1,')
             if ($t2 -eq $t) { throw '注入失败：没找到 is_safe_registry_target 的深度判断（上游改了？）' }
             Write-GeneratedFile -Path $f -Content $t2
         } `
@@ -542,8 +559,9 @@ const a: number = 1;
         }
 
     Write-Step 'selftest 注入错误自检'
-    $caught = 0; $missed = 0; $skipped = 0
+    $caught = 0; $missed = 0; $skipped = 0; $idx = 0
     foreach ($c in $cases) {
+        $idx++
         # 每次都从干净的生成物开始
         New-GenSources | Out-Null
         try {
@@ -554,6 +572,8 @@ const a: number = 1;
             Write-Bad "  ✗ $($c.Name) —— 注入失败: $($_.Exception.Message)"
             continue
         }
+        Write-Host "  ── 注入 $idx/$($cases.Count)：$($c.Name)" -ForegroundColor DarkYellow
+        Write-Host '     ↓ 接下来这段报错是故意注入的，看到它才说明这层没被架空' -ForegroundColor DarkGray
         $outcome = 'CAUGHT'
         try {
             & $c.Run | Out-Null

@@ -37,6 +37,13 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
+      # actions/checkout 会先 git init，ubuntu 镜像上的 git 默认分支名还是 master，
+      # 于是每次都要打 8 行 "hint: Using 'master' as the name for the initial branch..."。
+      # 放在 checkout 之前设好默认分支名，日志里就干净了。
+      - name: Silence git default-branch hint
+        if: runner.os == 'Linux'
+        run: git config --global init.defaultBranch main
+
       - name: Checkout
         uses: actions/checkout@v5
 

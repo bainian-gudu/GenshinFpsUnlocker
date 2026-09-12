@@ -151,6 +151,31 @@ tools/devcheck/
   生成文件里的 `super::` 指向 crate 根，不是它「逻辑上」的上游模块路径
   （所以 `error.rs` 里 `super::sentry` 的桩要放在 crate 根）。
 
+## 日志里哪些 `Warning` / `error` 是正常的
+
+全绿的一遍跑完，日志里仍然会出现下面这些字样，它们**不是**故障：
+
+| 出现位置 | 字样 | 为什么正常 |
+| --- | --- | --- |
+| `logic` 层末尾 | `Warning: failed to read agreementFile ".../NO_SUCH_FILE.txt"` | 反例用例：协议文件缺失时 `resolve_agreement` 必须告警且不写出 `content`（前端链接保持不可点）。紧邻上一行有「（预期告警 ↓ …）」标注 |
+| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 7 个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/7：…」横幅 |
+| `rust` / `logic` 层 | `Agreement embedded: ".../USER_AGREEMENT.txt"` | 正常路径的信息输出，说明协议真的被读进来并内联了 |
+
+已经消掉的噪音（别再把它们加回来）：
+
+- node 自身的 `[DEP0040] punycode` / `[DEP0169] url.parse()`：npm、npx 内部用的，
+  跟本仓库无关 → `devcheck.ps1` 开头设 `NODE_NO_WARNINGS=1`，子进程继承。
+- `git init` 的 8 行 `hint: Using 'master' as the name for the initial branch...`：
+  `actions/checkout` 自己 `git init` 打的 → 工作流在 checkout 之前先
+  `git config --global init.defaultBranch main`。
+- `-SelfTest` 注入 `segments.len() >= 0` 时编译器额外打的
+  `warning: comparison is useless due to type limits`：`usize >= 0` 恒真才会有这条，
+  改成注入 `>= 1`（同样是真放宽，`"Software"` 这种单段键会被放过，断言照样抓到）。
+- stdout / stderr 错位：`Invoke-Native` 并发读两个流（否则 Windows 上死锁），
+  读完再拼接，所以 stderr 一律排在 stdout 后面。两边都非空时插一行
+  `──── 以上 stdout / 以下 stderr（顺序不代表先后） ────`，避免把末尾那段
+  stderr 误读成「跑完之后又出事了」。
+
 ## 维护约定
 
 - 在 `uninstall.rs` 里新增/重命名安全阀函数 → 同步 `lib/Generate.ps1` 的

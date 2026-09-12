@@ -309,7 +309,12 @@ fn agreement_wiring_case() {
             "",
         );
     }
-    // 反例：agreementFile 指向不存在的文件时，不得写出 content
+    // 反例：agreementFile 指向不存在的文件时，不得写出 content。
+    // resolve_agreement 内部会往 stderr 打一条 "Warning: failed to read agreementFile ..."，
+    // 这正是我们要的行为，但光看日志会以为是故障 —— 所以先用 eprintln 把说明打到
+    // 同一个流里，让它紧挨着那条 Warning（devcheck 是把 stdout / stderr 分别读完再拼的，
+    // 用 println 打说明会跑到前半段去，跟 Warning 分家）。
+    eprintln!("（预期告警 ↓ 反例用例：agreementFile 指向不存在的文件，应告警且不写出 content）");
     let mut bad: serde_json::Value = serde_json::from_str(
         r#"{"agreementFile":"../NO_SUCH_FILE.txt","agreementFormat":"text"}"#,
     )
