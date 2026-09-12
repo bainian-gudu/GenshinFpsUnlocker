@@ -30,6 +30,28 @@ internal static class Program
         catch (Exception ex) { AppLog.Warn("ReleaseSingleInstance dispose: " + ex.Message); }
     }
 
+    /// <summary>
+    /// 把单实例锁重新拿回来。提权重启失败（用户在 UAC 点「否」）时必须调用：
+    /// 锁已经释放但本进程还在跑，此时用户再点一次快捷方式就会双开，
+    /// 两个 Host 同时写共享内存、同时对同一个游戏进程注入。
+    /// </summary>
+    internal static bool ReacquireSingleInstance()
+    {
+        if (_activeInstance is not null) return true;
+
+        var inst = new SingleInstance();
+        if (!inst.TryAcquire())
+        {
+            inst.Dispose();
+            AppLog.Warn("ReacquireSingleInstance: 已被其它实例占用");
+            return false;
+        }
+
+        _activeInstance = inst;
+        AppLog.Info("single-instance reacquired: " + (inst.Name ?? "(none)"));
+        return true;
+    }
+
     [STAThread]
     private static void Main(string[] args)
     {

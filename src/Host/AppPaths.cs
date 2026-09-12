@@ -39,7 +39,10 @@ internal static class AppPaths
         PathUtil.Normalize(Environment.ProcessPath ?? Path.Combine(ExeDirectory, "GenshinFpsUnlocker.exe"));
 
     /// <summary>与 Host 同目录的注入 Stub DLL。</summary>
-    public static string StubDllPath => Path.Combine(ExeDirectory, "FpsUnlockerStub.dll");
+    /// <summary>注入模块的约定文件名（注入前的可信度校验要用）。</summary>
+    public const string StubDllFileName = "FpsUnlockerStub.dll";
+
+    public static string StubDllPath => Path.Combine(ExeDirectory, StubDllFileName);
 
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");

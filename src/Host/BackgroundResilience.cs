@@ -16,10 +16,12 @@ internal static class BackgroundResilience
     private const uint PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1;
     private const int ProcessPowerThrottling = 4;
 
-    // EXECUTION_STATE 组合：持续运行 + 远离显示休眠策略干扰
+    // EXECUTION_STATE 组合：仅在解锁生效期间请求系统保持唤醒
     private const uint ES_CONTINUOUS = 0x80000000;
     private const uint ES_SYSTEM_REQUIRED = 0x00000001;
-    private const uint ES_AWAYMODE_REQUIRED = 0x00000040;
+
+    /// <summary>当前的「游戏附着」执行状态（0/1），用于跳过重复请求。</summary>
+    private static int _gameActive;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PROCESS_POWER_THROTTLING_STATE
@@ -56,7 +58,8 @@ internal static class BackgroundResilience
         }
 
         TryDisablePowerThrottling();
-        TrySetExecutionState();
+        // 注意：这里不再请求执行状态。程序常驻托盘，启动即设 ES_SYSTEM_REQUIRED
+        // 等于永久禁用自动睡眠；改成由 SetGameActive 在游戏附着期间才请求。
         AppLog.Info("BackgroundResilience.Apply 完成");
     }
 
@@ -71,8 +74,9 @@ internal static class BackgroundResilience
                 ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
                 StateMask = 0, // 0 = 不启用节流
             };
+            using var self = Process.GetCurrentProcess();   // 别把 Process 句柄丢给 GC
             var ok = SetProcessInformation(
-                Process.GetCurrentProcess().Handle,
+                self.Handle,
                 ProcessPowerThrottling,
                 ref state,
                 Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
@@ -84,14 +88,25 @@ internal static class BackgroundResilience
         }
     }
 
-    /// <summary>提示系统本进程需要持续运行（不阻止用户手动睡眠）。</summary>
-    private static void TrySetExecutionState()
+    /// <summary>
+    /// 游戏是否正在被解锁：只有这段时间才请求「系统不要自动睡眠」。
+    /// 不阻止用户手动睡眠；也不再用 ES_AWAYMODE_REQUIRED（那是给媒体应用 away mode
+    /// 用的，普通后台程序带着它没有收益）。
+    /// </summary>
+    public static void SetGameActive(bool active)
     {
+        var next = active ? 1 : 0;
+        if (Interlocked.Exchange(ref _gameActive, next) == next)
+        {
+            return;   // 状态没变，省一次系统调用
+        }
+
         try
         {
-            // CONTINUOUS | SYSTEM_REQUIRED | AWAYMODE — 退出时须 Clear，否则可能影响休眠
-            var flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED;
-            SetThreadExecutionState(flags);
+            SetThreadExecutionState(active ? ES_CONTINUOUS | ES_SYSTEM_REQUIRED : ES_CONTINUOUS);
+            AppLog.Debug(active
+                ? "ExecutionState: 游戏运行中 — 请求系统保持唤醒"
+                : "ExecutionState: 游戏已退出 — 交还系统睡眠策略");
         }
         catch (Exception ex)
         {

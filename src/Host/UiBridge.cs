@@ -87,7 +87,23 @@ internal sealed class UiBridge : IDisposable
         catch { /* ignore */ }
     }
 
+    /// <summary>
+    /// WebView 消息入口。<b>async void 的异常没有任何调用方能接住</b>，会直接掀掉进程，
+    /// 所以真正的处理放到 <see cref="HandleWebMessageAsync"/> 里，这里整体兜一层。
+    /// </summary>
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            await HandleWebMessageAsync(e).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("UiBridge 消息处理异常: " + ex.Message);
+        }
+    }
+
+    private async Task HandleWebMessageAsync(CoreWebView2WebMessageReceivedEventArgs e)
     {
         string raw;
         try { raw = e.TryGetWebMessageAsString(); }
@@ -116,11 +132,14 @@ internal sealed class UiBridge : IDisposable
         }
 
         if (root is null) return;
-        var type = root["type"]?.GetValue<string>();
-        if (type != "call") return;
+
+        // 一律用 TryGetString 取值：GetValue<string>() 在值不是字符串时会抛
+        // InvalidOperationException，而 root["x"] 在 root 不是对象时也会抛 ——
+        // 页面发来一条畸形消息就能让宿主崩掉。
+        if (TryGetString(root["type"]) != "call") return;
 
         var id = root["id"]?.ToString() ?? "";
-        var method = root["method"]?.GetValue<string>() ?? "";
+        var method = TryGetString(root["method"]) ?? "";
         var paramsNode = root["params"] as JsonObject ?? new JsonObject();
 
         try
@@ -134,6 +153,10 @@ internal sealed class UiBridge : IDisposable
             Post(new { type = "response", id, ok = false, error = ex.Message });
         }
     }
+
+    /// <summary>安全取字符串：节点不是字符串（或不存在）时返回 null，不抛异常。</summary>
+    private static string? TryGetString(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
     private Task<object?> HandleCallAsync(string method, JsonObject p)
     {

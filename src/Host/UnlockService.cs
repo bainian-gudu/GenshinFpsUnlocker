@@ -263,7 +263,7 @@ internal sealed partial class UnlockService : IDisposable
                 WorkingDirectory = PathUtil.GetDirectoryNameSafe(path) ?? "",
                 UseShellExecute = true,
             };
-            Process.Start(psi);
+            Process.Start(psi)?.Dispose();
             message = $"已启动: {path}";
             AppLog.Info(message);
             return true;

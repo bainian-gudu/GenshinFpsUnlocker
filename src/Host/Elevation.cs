@@ -46,7 +46,7 @@ internal static class Elevation
                 Verb = "runas", // 触发一次 UAC（用户主动）
                 WorkingDirectory = AppPaths.ExeDirectory,
             };
-            Process.Start(psi);
+            Process.Start(psi)?.Dispose();   // 只要句柄别留给 GC，进程本身照跑
             return true;
         }
         catch (Exception ex)
@@ -77,7 +77,15 @@ internal static class Elevation
 
         // --show：提权后显示主窗；不带 --autostart，避免与自启语义混淆
         if (!TryRelaunchElevated("--show", out error))
+        {
+            // 提权没成（多半是用户在 UAC 点了「否」）：把刚释放的锁拿回来，
+            // 否则本进程还在跑却不再持有单实例锁 → 再点快捷方式就双开。
+            if (!Program.ReacquireSingleInstance())
+            {
+                error = "提权已取消，且无法恢复单实例状态（可能已有另一个实例在运行）。" + error;
+            }
             return false;
+        }
 
         AppLog.Info("已请求以管理员身份重新启动");
         return true;

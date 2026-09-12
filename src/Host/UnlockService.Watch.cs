@@ -44,7 +44,7 @@ internal sealed partial class UnlockService
                 {
                     if (_attachedPid != 0 || _injectAttemptedPid != 0)
                     {
-                        Volatile.Write(ref _attachedPid, 0);
+                        SetAttached(0);
                         Volatile.Write(ref _injectAttemptedPid, 0);
                         _injectFailStreak = 0;
                         SetStatus("游戏已退出 — 继续后台等待");
@@ -75,13 +75,13 @@ internal sealed partial class UnlockService
                     {
                         if (process.HasExited)
                         {
-                            Volatile.Write(ref _attachedPid, 0);
+                            SetAttached(0);
                             Volatile.Write(ref _injectAttemptedPid, 0);
                         }
                     }
                     catch
                     {
-                        Volatile.Write(ref _attachedPid, 0);
+                        SetAttached(0);
                         Volatile.Write(ref _injectAttemptedPid, 0);
                     }
 
@@ -93,6 +93,23 @@ internal sealed partial class UnlockService
                 if (!PathUtil.ExistsFile(_stubPath))
                 {
                     SetStatus($"缺少 FpsUnlockerStub.dll（应位于: {_stubPath}）");
+                    await Task.Delay(5000, token);
+                    continue;
+                }
+
+                // 注入前校验模块可信度：已提权时安装目录必须受保护（Program Files），
+                // 否则用户可写目录里的同名 DLL 会被我们的管理员令牌注入游戏，
+                // 或在备用 Hook 注入路径下被映射进 Host 自己。与卸载器同一套检查。
+                if (!ModuleTrust.IsTrustworthy(
+                        _stubPath,
+                        AppPaths.StubDllFileName,
+                        "注入模块",
+                        out var trustError,
+                        elevatedHint: "请把程序安装到 Program Files 下，或退出管理员实例后以普通权限运行。"))
+                {
+                    SetStatus($"拒绝注入：{trustError}");
+                    AppLog.Error("stub 可信度校验失败: " + trustError);
+                    _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(60);
                     await Task.Delay(5000, token);
                     continue;
                 }
@@ -150,7 +167,7 @@ internal sealed partial class UnlockService
                 var ok = await WaitForStubReadyAsync(token, TimeSpan.FromSeconds(90));
                 if (ok)
                 {
-                    Volatile.Write(ref _attachedPid, process.Id);
+                    SetAttached(process.Id);
                     AppLog.Info($"stub Ready pid={process.Id} targetFps={_config.TargetFps}");
                     SetStatus($"解锁成功 PID {process.Id} | 目标 {_config.TargetFps} FPS");
                 }
@@ -159,14 +176,14 @@ internal sealed partial class UnlockService
                     var st = _ipc.Read();
                     AppLog.Error($"stub not ready pid={process.Id} status={st.Status} lastError=0x{st.LastError:X}");
                     // 已注入但未 Ready：短时保活观察；若长期 Error/None 则允许冷却后重试
-                    Volatile.Write(ref _attachedPid, process.Id);
+                    SetAttached(process.Id);
                     if (st.Status == IpcStatus.Error)
                     {
                         _injectFailStreak++;
                         var backoff = Math.Min(90, 15 * _injectFailStreak);
                         _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(backoff);
                         Volatile.Write(ref _injectAttemptedPid, 0);
-                        Volatile.Write(ref _attachedPid, 0);
+                        SetAttached(0);
                         SetStatus($"Stub 报告错误 0x{st.LastError:X}（{backoff}s 后可重试注入）");
                     }
                     else
@@ -190,7 +207,7 @@ internal sealed partial class UnlockService
                     await Task.Delay(activePoll, token);
                 }
 
-                Volatile.Write(ref _attachedPid, 0);
+                SetAttached(0);
                 Volatile.Write(ref _injectAttemptedPid, 0);
                 SetStatus("游戏已退出 — 继续后台等待下次启动");
                 await Task.Delay(1500, token);
@@ -208,6 +225,16 @@ internal sealed partial class UnlockService
         }
 
         AppLog.Info("UnlockService watch loop ended");
+    }
+
+    /// <summary>
+    /// 统一维护附着 PID：同时把「系统保持唤醒」的请求绑定到游戏是否真的在跑。
+    /// 旧实现在启动时就一直请求，程序常驻托盘 → 系统永不自动睡眠。
+    /// </summary>
+    private void SetAttached(int pid)
+    {
+        Volatile.Write(ref _attachedPid, pid);
+        BackgroundResilience.SetGameActive(pid != 0);
     }
 
     /// <summary>从运行中进程回写游戏路径（中文路径优先 QueryFullProcessImageName）。</summary>
@@ -293,6 +320,4 @@ internal sealed partial class UnlockService
             catch (Exception ex) { AppLog.Debug("StateChanged handler: " + ex.Message); }
         }
     }
-
-
 }

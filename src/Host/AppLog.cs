@@ -131,7 +131,7 @@ internal static class AppLog
             {
                 FileName = AppPaths.LogDirectory,
                 UseShellExecute = true,
-            });
+            })?.Dispose();
         }
         catch (Exception ex)
         {
@@ -155,7 +155,7 @@ internal static class AppLog
             {
                 FileName = _filePath,
                 UseShellExecute = true,
-            });
+            })?.Dispose();
         }
         catch (Exception ex)
         {

@@ -26,6 +26,10 @@ on:
         default: false
         type: boolean
 
+# 只需要 checkout 与上传 artifact，不需要写权限（与 devcheck.yml 一致）
+permissions:
+  contents: read
+
 env:
   DOTNET_VERSION: "9.0.x"
   NODE_VERSION: "22"

@@ -415,7 +415,7 @@ internal static class RuntimePrerequisite
     {
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true })?.Dispose();
         }
         catch (Exception ex)
         {
