@@ -68,6 +68,14 @@ jobs:
         shell: pwsh
         run: rustup target add x86_64-pc-windows-msvc
 
+      # native 层要用 cl.exe 真编 vendored rcedit-sys 的 C++（rescle.cc / librcedit.cpp）。
+      # 不注入 MSVC 开发环境时该层会自动 SKIP，不算失败。
+      - name: Add MSVC Developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Cache cargo (devcheck crates)
         uses: Swatinem/rust-cache@v2
         with:

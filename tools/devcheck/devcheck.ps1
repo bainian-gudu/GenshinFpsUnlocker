@@ -15,6 +15,8 @@
              一个最小依赖 crate，cargo check --target x86_64-pc-windows-msvc。
              不需要 tauri、不需要 Windows 机器，能抓到绝大多数 Rust 编译错误。
       logic  同一批函数的**行为断言**（mock windows-registry），任意平台可跑。
+      native vendored rcedit-sys 的 C++（rescle.cc / librcedit.cpp）真用 MSVC 编一遍。
+             只在有 cl.exe 的机器上跑，其它平台 SKIP。
       front  agreement.ts / types.ts 的 tsc --strict 类型检查 + 全部 .vue 的
              @vue/compiler-sfc 编译 + 我们维护文件的 prettier 检查。
       host   src/Host 的 dotnet build（Release，EnableWindowsTargeting）。
@@ -285,7 +287,11 @@ function Test-VendoredSource {
     # 5) kachina 的 git 依赖必须在 Cargo.lock 里锁到 commit，且不得指向上游
     $cargoToml = [System.IO.File]::ReadAllText((Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.toml'))
     $cargoLock = [System.IO.File]::ReadAllText((Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.lock'))
-    $gitDeps = @([regex]::Matches($cargoToml, 'git\s*=\s*"([^"]+)"') |
+    # 剥掉整行注释再扫：Cargo.toml 里的注释会写「原为 git = ".../rcedit-rs.git"」这类
+    # 说明文字，不剥掉就会被当成真依赖，然后因为在 Cargo.lock 里找不到而误报。
+    $cargoTomlCode = (([System.IO.File]::ReadAllLines((Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.toml'))) |
+        Where-Object { -not $_.Trim().StartsWith('#') }) -join "`n"
+    $gitDeps = @([regex]::Matches($cargoTomlCode, 'git\s*=\s*"([^"]+)"') |
         ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
     foreach ($g in $gitDeps) {
         if ($g -match 'YuehaiTeam') { throw "kachina 的 cargo 依赖指向上游仓库: $g" }
@@ -309,6 +315,39 @@ function Test-VendoredSource {
         }
     }
     $notes.Add('npm 依赖全部来自 registry')
+
+    # 7) rcedit-rs 的 vendored 副本：kachina 唯一需要 C++ 编译器的依赖。
+    #    上游（Devolutions/rcedit-rs，最新提交 2025-10-29）的 rescle.cc 用了
+    #    std::locale::empty() —— MSVC 的非标准扩展，VS 2022 17.14 弃用、
+    #    MSVC 14.51（VS 2026 = 现在的 windows-latest）移除（microsoft/STL#5834），
+    #    编译直接 error C2039，所以改成用仓库内的副本 + 一行修复。
+    $rc = 'installer/kachina/vendor/rcedit-rs'
+    $rcRequired = @(
+        "$rc/Cargo.toml", "$rc/LICENSE", "$rc/LICENSE.rcedit", "$rc/src/lib.rs",
+        "$rc/rcedit-sys/Cargo.toml", "$rc/rcedit-sys/build.rs", "$rc/rcedit-sys/src/lib.rs",
+        "$rc/rcedit-sys/src/rescle.cc", "$rc/rcedit-sys/src/rescle.h",
+        "$rc/rcedit-sys/src/librcedit.cpp"
+    )
+    foreach ($r in $rcRequired) {
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $r))) { throw "rcedit-rs vendored 副本不完整，缺 $r" }
+    }
+    # 只看可执行代码：rescle.cc 里解释这处修改的注释本身就会写出 locale::empty()，
+    # 不剥掉 // 注释会自己误报自己（跟上面扫工作流时跳过 # 注释是同一个道理）。
+    $rescle = (([System.IO.File]::ReadAllLines((Join-Path $RepoRoot "$rc/rcedit-sys/src/rescle.cc"))) |
+        ForEach-Object { ($_ -replace '//.*$', '') }) -join "`n"
+    if ($rescle -match 'locale::empty\s*\(') {
+        throw 'rescle.cc 用回了 std::locale::empty() —— MSVC 14.51(VS 2026) 起已移除，windows-latest 上必然 error C2039'
+    }
+    if ($cargoTomlCode -match '(?m)^\s*rcedit\s*=\s*\{[^\n]*\bgit\s*=') {
+        throw 'kachina 的 rcedit 依赖又指回 git 上游了 —— 必须用 installer/kachina/vendor/rcedit-rs 的副本'
+    }
+    if ($cargoTomlCode -notmatch '(?m)^\s*rcedit\s*=\s*\{[^\n]*path\s*=') {
+        throw 'kachina 的 rcedit 依赖不是 path 形式（应指向 ../vendor/rcedit-rs）'
+    }
+    if ($cargoLock -match 'source = "git\+https://github\.com/Devolutions/rcedit-rs') {
+        throw 'Cargo.lock 里 rcedit 仍然是 git 来源 —— 应随 path 依赖一起更新'
+    }
+    $notes.Add('rcedit-rs 已 vendored(含 MSVC 14.51 修复)')
 
     return ($notes -join '；')
 }
@@ -379,6 +418,35 @@ function Test-RustLogic {
     $summary = ($r.Output -split "`r?`n" | Where-Object { $_ -match '====' } | Select-Object -Last 1)
     if (-not $summary) { $summary = '断言全部通过' }
     return $summary.Trim()
+}
+
+function Test-NativeDeps {
+    # vendored 的 rcedit-sys 带 C++（rescle.cc / librcedit.cpp），只能靠 MSVC 编。
+    # 这一层就在有 cl.exe 的机器上真编一遍：工具链或 C++ 侧的变化
+    # （例如 MSVC 14.51 移除 std::locale::empty 导致 error C2039）会在自动跑的
+    # Devcheck 工作流里立刻暴露，不必等手动触发 Build、跑 6 分钟才发现。
+    $crate = Join-Path $RepoRoot 'installer/kachina/vendor/rcedit-rs/rcedit-sys'
+    if (-not (Test-Path -LiteralPath (Join-Path $crate 'Cargo.toml'))) {
+        throw "找不到 $crate（vendored 副本被删了？）"
+    }
+    $cargo = Get-Tool 'cargo'
+    if (-not $cargo) { Skip-Layer 'cargo 不在 PATH' }
+    if (-not (Get-Tool 'cl')) { Skip-Layer 'cl.exe 不在 PATH（需要 Windows + MSVC 开发环境）' }
+
+    # 独立 target 目录：既不污染 kachina 自己的构建产物，也不打乱 CI 的 cargo 缓存
+    $prev = $env:CARGO_TARGET_DIR
+    $env:CARGO_TARGET_DIR = (Join-Path $DevCheckRoot 'rust/native/target')
+    try {
+        $r = Invoke-Native -FilePath $cargo `
+            -Arguments @('build', '--manifest-path', (Join-Path $crate 'Cargo.toml')) `
+            -WorkingDirectory $crate -Tail 25
+    }
+    finally {
+        if ($null -eq $prev) { Remove-Item Env:\CARGO_TARGET_DIR -ErrorAction SilentlyContinue }
+        else { $env:CARGO_TARGET_DIR = $prev }
+    }
+    if ($r.ExitCode -ne 0) { throw 'rcedit-sys 编译失败（C++ 或 Rust 侧，详见上面的 cl.exe / cargo 输出）' }
+    return 'vendored rcedit-sys 的 rescle.cc + librcedit.cpp 用 MSVC 编译通过'
 }
 
 function Test-Frontend {
@@ -491,6 +559,24 @@ jobs:
         } `
         -Run { Test-VendoredSource } `
         -Cleanup { if (Test-Path -LiteralPath $badWorkflow) { Remove-Item -LiteralPath $badWorkflow -Force } }
+
+    # --- 0c) vendor：rescle.cc 里再出现 locale::empty() 就必须报错 ---
+    #     这是 vendored 副本里唯一的「MSVC 版本敏感」代码，用注释形式注入不算
+    #     （检查会剥掉 // 注释），所以注入一行真代码。
+    $rescleFile = Join-Path $RepoRoot 'installer/kachina/vendor/rcedit-rs/rcedit-sys/src/rescle.cc'
+    Add-Case 'vendor 层能抓到 rescle.cc 用回 locale::empty()' `
+        -Mutate {
+            $script:RescleBackup = [System.IO.File]::ReadAllText($rescleFile)
+            Add-Content -Path $rescleFile -Encoding utf8 `
+                -Value "`nstatic void _devcheck_selftest() { std::locale l(std::locale::empty()); (void)l; }"
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup {
+            if ($script:RescleBackup) {
+                [System.IO.File]::WriteAllText($rescleFile, $script:RescleBackup)
+                $script:RescleBackup = $null
+            }
+        }
 
     # --- 1) ps1：临时放一个语法错误的 .ps1 进仓库 ---
     Add-Case 'ps1 层能抓到 PowerShell 语法错误' `
@@ -621,13 +707,13 @@ if ($SelfTest) {
     exit 0
 }
 
-$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'front', 'host', 'ui')
+$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'ui')
 $requested = @($Layer -split '[,\s]+' | Where-Object { $_ })
 if (-not $requested.Count) { $requested = @('all') }
 foreach ($r in $requested) {
     if ($validLayers -notcontains $r) { throw "未知的层 '$r'，可选: $($validLayers -join ', ')" }
 }
-$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'front', 'host') } else { $requested }
+$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host') } else { $requested }
 # gen 是 rust/logic/front 的前置
 if (($wanted -contains 'rust' -or $wanted -contains 'logic' -or $wanted -contains 'front') -and ($wanted -notcontains 'gen')) {
     $wanted = @('gen') + $wanted
@@ -645,6 +731,7 @@ foreach ($l in $wanted) {
         'gen'   { Invoke-Layer 'gen   生成检查用源码'         { New-GenSources } }
         'rust'  { Invoke-Layer 'rust  kachina 类型检查 msvc'  { Test-RustTypecheck } }
         'logic' { Invoke-Layer 'logic kachina 行为断言'       { Test-RustLogic } }
+        'native' { Invoke-Layer 'native vendored C++ (MSVC)'  { Test-NativeDeps } }
         'front' { Invoke-Layer 'front TS 类型 / SFC / 格式'   { Test-Frontend } }
         'host'  { Invoke-Layer 'host  .NET Host 构建'         { Test-Host } }
         'ui'    { Invoke-Layer 'ui    Web UI 构建'            { Test-Ui } }
@@ -653,7 +740,7 @@ foreach ($l in $wanted) {
 
 Write-Host ''
 Write-Host '════ 汇总 ════' -ForegroundColor White
-$script:Results | Format-Table -AutoSize | Out-String -Width 160 | Write-Host
+$script:Results | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
 
 $failed = @($script:Results | Where-Object { $_.Status -eq 'FAIL' })
 if ($failed.Count) {

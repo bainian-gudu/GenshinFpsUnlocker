@@ -4398,7 +4398,6 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 [[package]]
 name = "rcedit"
 version = "0.1.0"
-source = "git+https://github.com/Devolutions/rcedit-rs.git#1bfa3ee6da2092b9b0c93148ce1455c5d45c538c"
 dependencies = [
  "rcedit-sys",
  "thiserror 1.0.69",
@@ -4408,7 +4407,6 @@ dependencies = [
 [[package]]
 name = "rcedit-sys"
 version = "0.1.0"
-source = "git+https://github.com/Devolutions/rcedit-rs.git#1bfa3ee6da2092b9b0c93148ce1455c5d45c538c"
 dependencies = [
  "cc",
 ]

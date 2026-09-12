@@ -11,7 +11,7 @@
 # 仓库根目录
 pwsh tools/devcheck/devcheck.ps1                 # 跑 all（ps1 gen rust logic front host）
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
-pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 5 个错误，确认每层都会报错
+pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 8 个错误，确认每层都会报错
 pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑 rustfmt
 ```
 
@@ -29,6 +29,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `ps1` | 仓库里全部 `.ps1` 的语法（PowerShell Parser） | pwsh 7 | <0.1s |
 | `gen` | 从 `installer/kachina` 源码生成检查用的 Rust / TS 文件 | pwsh 7 | ~0.3s |
 | `rust` | **整份** `installer/uninstall.rs` + `utils/error.rs` 的类型检查：塞进一个只有 11 个依赖的 crate，`cargo check --target x86_64-pc-windows-msvc`。不需要 tauri、不需要 Windows 机器 | cargo + `rustup target add x86_64-pc-windows-msvc` | 首次 ~30s，之后 ~0.2s |
+| `native` | vendored `rcedit-sys` 的 C++（`rescle.cc` / `librcedit.cpp`）真用 MSVC 编一遍。没有 `cl.exe` 的机器（Linux / 未进 VS 开发环境的 Windows）自动 SKIP | cargo + MSVC（`cl.exe` 在 PATH） | 首次 ~30s，之后 ~2s |
 | `logic` | 同一批函数的**行为断言**（53 条）：注册表安全阀、快捷方式安全阀、用户数据目录安全阀、`path_eq` 归一化、以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement` | cargo | 首次 ~15s，之后 ~0.4s |
 | `front` | `utils/agreement.ts` + `types.ts` 的 `tsc --strict`；`installer/kachina/src` 下**全部** `.vue` 的 `@vue/compiler-sfc` 编译；`agreement.ts` 的 prettier 风格 | node + npm | 首次 ~10s，之后 ~2s |
 | `host` | `src/Host` 的 `dotnet build -c Release -p:EnableWindowsTargeting=true` | .NET 9 SDK | ~2–8s |
@@ -39,7 +40,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `vendor` 层：kachina 只从本仓库拉
 
 `installer/kachina/` 是上游 kachina-installer 的**源码快照**，构建必须完全基于它。
-这一层把这条约束变成可执行的断言（六项，任何一项不满足就失败）：
+这一层把这条约束变成可执行的断言（七项，任何一项不满足就失败）：
 
 1. 仓库根不存在 `.gitmodules`（kachina 不是 submodule）
 2. 快照完整：`package.json` / `pnpm-lock.yaml` / `src-tauri/Cargo.toml` /
@@ -55,6 +56,15 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
    （否则 CI 可能拉到漂移的分支），且没有一个指向上游仓库
 6. kachina 的 npm 依赖全部是 registry 版本，没有 `git:` / `http:` / `github:` /
    `file:` / `link:` 形式
+7. `rcedit-rs` 的 vendored 副本完整（10 个文件 + 两份 LICENSE），`rescle.cc` 里
+   没有 `std::locale::empty(`（MSVC 14.51 / VS 2026 已移除该非标准扩展，
+   `windows-latest` 上必然 `error C2039`），kachina 的 `rcedit` 依赖是 `path` 形式，
+   `Cargo.lock` 里不再出现 `git+https://github.com/Devolutions/rcedit-rs`
+   —— 详见 `installer/kachina/vendor/rcedit-rs/LOCAL_PATCHES.md`
+
+第 5、7 项扫 `Cargo.toml` / `rescle.cc` 时都会**先剥掉注释**：这两个文件里的注释
+本身就会写出「原为 `git = "...rcedit-rs.git"`」「原为 `std::locale::empty()`」这类
+说明文字，不剥掉就会自己误报自己。
 
 > CI 仍然会联网取 crates.io / npm registry / rustup 工具链 / marketplace action ——
 > 那是任何构建都免不了的；这一层保证的是**kachina 本身**只来自本仓库。
@@ -62,13 +72,18 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `-SelfTest`：证明这套检查不是空壳
 
 检查工具最大的风险是「跑通了但其实什么都没查」。`-SelfTest` 会先正常生成一次，
-然后往**生成物**里注入 5 个错误（仓库源码一个字都不改），逐个确认对应层会失败：
+然后注入 8 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，3 个会临时创建/追加
+仓库内的文件（`.gitmodules`、一个假工作流、`rescle.cc` 末尾一行），每个用例跑完
+立即还原，收尾再兜底删一次：
 
 | 注入 | 期望 |
 | --- | --- |
+| 临时创建 `.gitmodules` | `vendor` 层报错（kachina 不能是 submodule） |
+| 临时创建 `.github/workflows/zz-devcheck-selftest.yml`（内含 `Invoke-WebRequest` 下载 builder） | `vendor` 层报错（工作流不许从外部拉） |
+| `rescle.cc` 末尾追加一行真代码 `std::locale(std::locale::empty())` | `vendor` 层报错（MSVC 14.51 编不过） |
 | `tools/devcheck/_selftest/broken.ps1`（`if` 少了右括号） | `ps1` 层报错 |
 | `gen/uninstall.rs` 末尾追加 `let _x: u32 = "不是数字";` | `rust` 层报错 |
-| `gen/extracted.rs` 里把 `segments.len() >= 2` 改成 `>= 0` | `logic` 层断言失败 |
+| `gen/extracted.rs` 里把 `segments.len() >= 2` 改成 `>= 1`（不是 `>= 0`，见下） | `logic` 层断言失败 |
 | `gen/src/utils/agreement.ts` 末尾追加 `const x: number = 'not a number';` | `front` 的 tsc 报错 |
 | `front/_selftest/Broken.vue`（`<div>` 未闭合） | `front` 的 SFC 编译报错 |
 
@@ -87,7 +102,8 @@ tools/devcheck/
 │   └── src/lib.rs          把生成文件挂到上游的模块路径上 + 3 个最小桩
 ├── rust/logic/             行为断言 crate（mock windows-registry，跨平台）
 │   └── src/main.rs         53 条断言 + mock
-└── front/                  package.json / tsconfig.json / sfccheck.mjs
+├── front/                  package.json / tsconfig.json / sfccheck.mjs
+└── rust/native/target/     native 层的 CARGO_TARGET_DIR（运行时生成，已 gitignore）
 ```
 
 - **`typecheck`**：`gen/uninstall.rs` 是上游文件的**逐字节复制**，唯一改动是把
@@ -105,7 +121,9 @@ tools/devcheck/
 ## 覆盖范围（诚实地说）
 
 **能抓到**：kachina 被改成从上游拉取（submodule / 下载二进制 / git clone）、
-快照文件缺失、git 依赖没锁 commit、Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
+快照文件缺失、git 依赖没锁 commit、vendored `rcedit-rs` 被改回 `locale::empty()`、
+vendored C++ 在当前 MSVC 下编不过（`native` 层，仅 Windows）、
+Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 `windows-registry` 的 API 误用）、`uninstall.rs` 里安全阀逻辑被改坏、
 协议内联（`resolve_agreement`）行为变化、TS 类型错误、`.vue` 模板/`<script setup>`
 语法错误、C# 编译错误与警告、`.ps1` 语法错误、我们维护文件的格式漂移。
@@ -118,7 +136,8 @@ tools/devcheck/
 - kachina 其余 Rust 模块（`installer/lnk.rs`、`dfs.rs`、`local.rs` …）
 - CI 用的 `x86_64-win7-windows-msvc` 自定义 target + `-Z build-std`（这里用标准
   `x86_64-pc-windows-msvc`，能覆盖绝大多数编译错误，但不是同一个 target）
-- `src/Stub` 的 C++、任何**运行期**行为（注册表真的删没删、UAC、符号链接属性位）
+- `src/Stub` 的 C++（`native` 层只编 vendored `rcedit-sys` 的 C++）、
+  任何**运行期**行为（注册表真的删没删、UAC、符号链接属性位）
 - `.vue` 里的**类型**错误（SFC 编译只查语法；完整类型检查要 `vue-tsc` + kachina 全部依赖）
 
 ## 跨平台的坑（都在 CI 上真实踩过，别再踩一遍）
@@ -158,7 +177,7 @@ tools/devcheck/
 | 出现位置 | 字样 | 为什么正常 |
 | --- | --- | --- |
 | `logic` 层末尾 | `Warning: failed to read agreementFile ".../NO_SUCH_FILE.txt"` | 反例用例：协议文件缺失时 `resolve_agreement` 必须告警且不写出 `content`（前端链接保持不可点）。紧邻上一行有「（预期告警 ↓ …）」标注 |
-| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 7 个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/7：…」横幅 |
+| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 8 个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/8：…」横幅 |
 | `rust` / `logic` 层 | `Agreement embedded: ".../USER_AGREEMENT.txt"` | 正常路径的信息输出，说明协议真的被读进来并内联了 |
 
 已经消掉的噪音（别再把它们加回来）：

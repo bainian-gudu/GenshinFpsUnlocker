@@ -40,6 +40,7 @@ docs/
 !installer/kachina/README.md
 !installer/kachina/UPSTREAM.md
 !installer/kachina/LOCAL_PATCHES.md
+!installer/kachina/vendor/rcedit-rs/LOCAL_PATCHES.md
 
 # ---------------------------------------------------------------------------
 # 安装器打包（installer/）

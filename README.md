@@ -65,9 +65,9 @@ Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.jso
 `tools/devcheck` 把**我们真正改过的那部分**放进最小依赖的检查环境，热跑 6–12 秒：
 
 ```powershell
-pwsh tools/devcheck/devcheck.ps1                # all：vendored 源 / ps1 语法 / Rust 类型检查 / 行为断言 / TS+.vue / Host 构建
+pwsh tools/devcheck/devcheck.ps1                # all：vendored 源 / ps1 语法 / Rust 类型检查 / 行为断言 / vendored C++(仅 Windows) / TS+.vue / Host 构建
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
-pwsh tools/devcheck/devcheck.ps1 -SelfTest      # 自检：注入 5 个错误，确认每层真的会报错
+pwsh tools/devcheck/devcheck.ps1 -SelfTest      # 自检：注入 8 个错误，确认每层真的会报错
 ```
 
 Rust 那两层是关键：
@@ -179,7 +179,10 @@ PowerShell 语法、Rust 类型、安全阀被放宽、TS 类型、`.vue` 模板
 | **Build**（`.github/workflows/build.yml`） | **仅手动**（Actions → Build → Run workflow） | kachina-builder + 应用本体 + 打包安装器 | 十几分钟起 |
 
 Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**，CI 与打包脚本都不从上游
-仓库拉源码或下载二进制 —— 这条约束由 devcheck 的 `vendor` 层自动断言（不是 submodule、
+仓库拉源码或下载二进制 —— kachina 唯一带 C++ 的依赖 `rcedit-rs` 也已 vendored 进
+`installer/kachina/vendor/rcedit-rs/`（上游用了 MSVC 14.51 已移除的 `std::locale::empty()`，
+在现在的 `windows-latest` 上编不过，详见该目录的 `LOCAL_PATCHES.md`）。
+这条「只用仓库内源码」的约束由 devcheck 的 `vendor` 层自动断言（不是 submodule、
 快照完整、工作流与脚本里没有任何外部拉取动作、git 依赖锁到 commit），每次 push 都会验。
 
 Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kachina-builder.exe`**：

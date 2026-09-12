@@ -81,7 +81,12 @@ ignore = "0.4.23"
 num_cpus = "1.16.0"
 indicatif = { version = "0.17.9", features = ["tokio"] }
 console = "0.15.10"
-rcedit = { version = "0.1.0", git = "https://github.com/Devolutions/rcedit-rs.git" }
+# 本地改动（原为 git = "https://github.com/Devolutions/rcedit-rs.git"）：改用仓库内的
+# vendored 副本。原因：上游 rcedit-sys 的 rescle.cc 用了 MSVC 非标准扩展
+# std::locale::empty()，MSVC 14.51（VS 2026，也就是现在的 windows-latest）已移除，
+# 编译直接报 error C2039；上游最新提交（2025-10-29）没有修。
+# 详见 installer/kachina/vendor/rcedit-rs/LOCAL_PATCHES.md
+rcedit = { version = "0.1.0", path = "../vendor/rcedit-rs" }
 windows-registry = "0.5"
 sentry = { version = "0.37.0", features = [
     "contexts",

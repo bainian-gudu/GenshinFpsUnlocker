@@ -12,6 +12,7 @@
 | 1b | 卸载时清理安装期由宿主自建/改名的快捷方式 | 同上 4 个文件 |
 | 2 | 用户协议可配置、多格式、点击弹窗看全文 | `src-tauri/src/builder/pack.rs`、`src/App.vue`、`src/types.ts`、`src/utils/agreement.ts`（新增） |
 | 3 | 安全加固：收敛卸载器的删除范围与提权面 | `src-tauri/src/installer/uninstall.rs`、`src/utils/agreement.ts`、`src/App.vue`（另有宿主侧 `src/Host/UninstallLauncher.cs`、`src/Host/RuntimePrerequisite.cs`，不属于本目录） |
+| 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增，vendored 依赖 + 1 行 C++ 修复） |
 
 ---
 
@@ -272,3 +273,43 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 > `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
 > `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`）在
 > harness 里用桩替代。整套逻辑**没有**在 Windows 上实机验证过。
+
+---
+
+## 4. 依赖：`rcedit` 从 git 依赖改为仓库内 vendored 副本
+
+上游 kachina 的 `src-tauri/Cargo.toml` 里写的是：
+
+```toml
+rcedit = { version = "0.1.0", git = "https://github.com/Devolutions/rcedit-rs.git" }
+```
+
+这个依赖带 C++（`rcedit-sys` 的 `rescle.cc` / `librcedit.cpp`，由 `build.rs` 经 `cc` 调 MSVC 编），
+其中 `rescle.cc:87` 用了 MSVC 的非标准扩展 `std::locale::empty()`：VS 2022 17.14 起弃用，
+**MSVC 14.51 起移除**（microsoft/STL#5834，现在 `<xlocale>` 里那句声明只在 `#ifdef _CRTBLD`
+下存在，没有开关能打开）。`windows-latest` runner 已经是 VS 2026 / MSVC 14.51.36231，
+于是 `build-kachina` 必然失败：
+
+```
+rescle.cc(87): error C2039: 'empty': is not a member of 'std::locale'
+error: failed to run custom build command for `rcedit-sys v0.1.0 (https://github.com/Devolutions/rcedit-rs.git#1bfa3ee6)`
+```
+
+上游最新提交（2025-10-29）没修，等不来；本项目又要求 CI 只从仓库内构建，
+所以把 `rcedit-rs@1bfa3ee6` vendor 到 `vendor/rcedit-rs/` 并改掉那一行。
+
+### 本目录内的改动
+
+- `src-tauri/Cargo.toml`：`rcedit` 依赖改为 `path = "../vendor/rcedit-rs"`（原 git 行以注释保留）。
+- `src-tauri/Cargo.lock`：`rcedit` / `rcedit-sys` 两个包去掉 `source = "git+..."` 行
+  （path 依赖不写 source），版本与依赖列表不变；已用 `cargo metadata --locked` 验证一致。
+- `vendor/rcedit-rs/`：新增，含上游两份 LICENSE、10 个源文件与 `LOCAL_PATCHES.md`
+  （详细记录改了哪两处、为什么、怎么升级）。
+
+### 自动断言
+
+- `pwsh tools/devcheck/devcheck.ps1 -Layer vendor`：副本 10 个文件齐全、`rescle.cc` 里没有
+  `locale::empty(`、`rcedit` 依赖是 path 形式、`Cargo.lock` 里不再出现该 git 源。
+- `pwsh tools/devcheck/devcheck.ps1 -Layer native`：在有 `cl.exe` 的机器上（CI 的 windows job）
+  真编一遍 `rcedit-sys`，让这类「工具链 vs vendored C++」的破坏在**自动**工作流里就暴露，
+  不必等手动触发 Build 跑 6 分钟。

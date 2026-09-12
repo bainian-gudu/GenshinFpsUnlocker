@@ -14,7 +14,10 @@ installer/
 ├── pack.ps1                打包总入口：dist\ → Install.exe / 便携 zip / 便携 7z
 ├── tools/                  构建产物 kachina-builder.exe（.gitignore，不进版本库）
 └── kachina/                上游 kachina-installer 源码快照 + 本地修改（tag 0.5.1，
-                            见 kachina/UPSTREAM.md 与 kachina/LOCAL_PATCHES.md）
+    │                       见 kachina/UPSTREAM.md 与 kachina/LOCAL_PATCHES.md）
+    └── vendor/rcedit-rs/   vendored 的 cargo 依赖（上游 rcedit-rs@1bfa3ee + 1 行 C++
+                            修复：MSVC 14.51 移除了 std::locale::empty()，
+                            见该目录的 LOCAL_PATCHES.md）
 ```
 
 ## 一条命令打包
@@ -185,6 +188,11 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 
 两个工作流：**Devcheck**（`devcheck.yml`，push/PR 自动执行，跑 `tools/devcheck` 的
 全部检查层 + 自检，几分钟）与 **Build**（`build.yml`，仅手动触发，出安装包）。
+
+Devcheck 的 windows job 里有一层 `native`：用 runner 上的 MSVC 真编一遍
+`kachina/vendor/rcedit-rs/rcedit-sys` 的 C++。这样「工具链升级把 vendored C++ 编坏」
+这类问题（MSVC 14.51 移除 `std::locale::empty()` 就是这么炸的）在**自动**工作流里
+就会暴露，不用等手动触发 Build 跑 6 分钟。
 
 `build.yml` 三个 job：
 
