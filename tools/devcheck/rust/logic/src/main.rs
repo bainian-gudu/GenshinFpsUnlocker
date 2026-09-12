@@ -227,7 +227,7 @@ fn shortcut_cases() {
         ("../x/原神帧率解锁.lnk".to_string(), false),
         // 路径穿越
         (p(&tmp.join("Desktop").join("..").join("..").join("evil.lnk")), false),
-        // 系统目录（桩：包含 /windows/）
+        // 系统目录（桩：以 /windows/ 开头）
         ("/windows/system32/evil.lnk".to_string(), false),
         // 符号链接 / junction（桩：路径里含 REPARSE）
         (
@@ -348,6 +348,12 @@ fn delete_target_cases() {
     // （没有盘符），会被「必须绝对路径」这条先拦掉，断言就测不到它想测的规则。
     let public = std::env::temp_dir().join("kcheck-public");
     std::env::set_var("PUBLIC", &public);
+    // 受保护的 Shell 容器按「配置目录 + 相对组件」推出来，所以这里把三个变量
+    // 都指到同一个假配置目录上（下面 [9]/[10] 还会再改 USERPROFILE，互不影响）
+    let shell_profile = std::env::temp_dir().join("kcheck-shellprofile");
+    std::env::set_var("USERPROFILE", &shell_profile);
+    std::env::set_var("APPDATA", shell_profile.join("AppData").join("Roaming"));
+    std::env::set_var("LOCALAPPDATA", &lad);
     let cases: Vec<(String, bool)> = vec![
         // 正常：产品自己的数据目录
         (p(&lad.join("GenshinFpsUnlocker")), true),
@@ -358,13 +364,39 @@ fn delete_target_cases() {
         // 层级太浅 / 根
         ("/tmp".to_string(), false),
         ("/".to_string(), false),
+        // 用户配置目录下面一层的 Shell 容器：产品目录一定在它们**下面**，
+        // 配置里少写一段就会把桌面 / 文档 / 开始菜单整个端掉，必须拦
+        (p(&shell_profile.join("Desktop")), false),
+        (p(&shell_profile.join("Documents")), false),
+        (p(&shell_profile.join("Downloads")), false),
+        (p(&shell_profile.join("AppData")), false),
+        (p(&shell_profile.join("AppData").join("Local")), false),
+        (p(&shell_profile.join("AppData").join("Roaming")), false),
+        (
+            p(
+                &shell_profile
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("Start Menu")
+                    .join("Programs"),
+            ),
+            false,
+        ),
+        // 但容器下面一层的产品目录仍然放行（含 .lnk 文件）
+        (p(&shell_profile.join("Documents").join("GenshinFpsUnlocker")), true),
+        (
+            p(&shell_profile.join("Desktop").join("GenshinFpsUnlocker.lnk")),
+            true,
+        ),
         // 形状不合法
         ("AppData/Local/X".to_string(), false),
         (
             p(&std::env::temp_dir().join("a").join("..").join("b")),
             false,
         ),
-        // 系统目录（桩：含 /windows/）
+        // 系统目录（桩：以 /windows/ 开头）
         ("/windows/system32/drivers".to_string(), false),
         // 符号链接（桩：含 REPARSE）
         (p(&lad.join("REPARSE").join("x")), false),
@@ -457,6 +489,26 @@ fn profile_tail_cases() {
         // 白名单外的容器：不碰
         (profile.join("Downloads/GenshinFpsUnlocker"), false),
         (profile.join("Videos/a/b"), false),
+        // —— 误删除防线：尾巴本身是 Shell 容器时一律拒绝 ——
+        // 重放是「把尾巴拼到每个用户目录上」，所以尾巴退化成容器就等于把所有人的
+        // 开始菜单 / 文档 / 桌面端掉。现实中触发得到：前端拼的开始菜单文件夹是
+        // `Programs\{appName}`，appName 为空就成了 `Programs` 本身。
+        (
+            profile.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs"),
+            false,
+        ),
+        (profile.join("AppData/Roaming/Microsoft/Windows/Start Menu"), false),
+        (profile.join("AppData/Roaming/Microsoft/Windows"), false),
+        (profile.join("AppData/Roaming/Microsoft"), false),
+        (profile.join("AppData/Roaming"), false),
+        (profile.join("AppData/Local"), false),
+        (profile.join("AppData/Local/Microsoft/Windows"), false),
+        (profile.join("Documents/GenshinFpsUnlocker/logs"), true),
+        // 叶子名大小写不敏感
+        (profile.join("AppData/Local/PROGRAMS"), false),
+        (profile.join("AppData/Local/Microsoft"), false),
+        // AppData 下只有两级 = 直接挂在 Local/Roaming 那一层，只能是容器
+        (profile.join("AppData/Whatever"), false),
         // 路径穿越
         (profile.join("AppData/../secret"), false),
         // 压根不在配置目录下（公共开始菜单、安装目录等）：与「哪个用户」无关
@@ -551,6 +603,69 @@ async fn per_user_sweep_cases() {
             p(root),
         );
     }
+
+    // —— 误删除防线（端到端）：尾巴退化成 Shell 容器时，一个字节都不能删 ——
+    // 每个用户目录下都建一份「开始菜单 Programs + 里面的别人家快捷方式」，
+    // 只要重放逻辑失手，keep.lnk 就会消失，断言立刻抓到。
+    let shell_tails = [
+        "AppData/Roaming/Microsoft/Windows/Start Menu/Programs",
+        "AppData/Roaming/Microsoft/Windows/Start Menu",
+        "AppData/Roaming/Microsoft",
+        "AppData/Local",
+        "Documents",
+        "Desktop",
+    ];
+    for (_, root) in &roots {
+        for tail in &shell_tails {
+            std::fs::create_dir_all(root.join(tail)).unwrap();
+            std::fs::write(root.join(tail).join("keep.lnk"), b"x").unwrap();
+        }
+    }
+    let shell_inputs: Vec<String> = shell_tails.iter().map(|t| p(&alice.join(t))).collect();
+    let shell_targets = collect_all_users_cleanup_targets(&shell_inputs);
+    check(
+        "Shell 容器尾巴一个候选都不产生",
+        shell_targets.is_empty(),
+        format!("{shell_targets:?}"),
+    );
+    clean_per_user_leftovers(&shell_inputs).await;
+    check(
+        "所有用户的 Programs / Documents / Desktop 原样保留",
+        roots.iter().all(|(_, r)| {
+            shell_tails
+                .iter()
+                .all(|t| r.join(t).join("keep.lnk").exists())
+        }),
+        "",
+    );
+
+    // 正向对照：产品自己的开始菜单文件夹仍然要跨用户清掉（别把功能一起防没了）
+    let product_sm = "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/GenshinFpsUnlocker";
+    for (_, root) in &roots {
+        std::fs::create_dir_all(root.join(product_sm)).unwrap();
+        std::fs::write(root.join(product_sm).join("卸载.lnk"), b"x").unwrap();
+    }
+    let sm_inputs = vec![p(&alice.join(product_sm))];
+    check(
+        "产品开始菜单文件夹进了候选",
+        collect_all_users_cleanup_targets(&sm_inputs)
+            .iter()
+            .any(|t| path_eq(t, &other.join(product_sm))),
+        "",
+    );
+    clean_per_user_leftovers(&sm_inputs).await;
+    check(
+        "其它账户开始菜单里的产品文件夹已删",
+        !other.join(product_sm).exists(),
+        p(&other.join(product_sm)),
+    );
+    check(
+        "Programs 目录本身与别人的快捷方式仍在",
+        other
+            .join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs/keep.lnk")
+            .exists(),
+        "",
+    );
     let _ = std::fs::remove_dir_all(&base);
 }
 
@@ -605,6 +720,84 @@ async fn temp_artifact_cases() {
     }
 }
 
+/// 「勾选了才删用户数据」这条契约由三处代码配合成立，任何一处被改掉都会变成
+/// 「用户没同意也删」或者「用户同意了却没删」。这里直接对**真实仓库文件**做静态
+/// 断言，把三处钉住（和 [5] 协议内联那组同一个套路）：
+/// 1. 前端只在勾选时把 `userDataPath` 传下去，没勾传空数组；
+/// 2. 配置里每条 `userDataPath` 都是「`%VAR%`/产品子目录」形状，不是容器本身；
+/// 3. Rust 侧 `%VAR%` 展开发生在删除安全阀**之前**，且跨用户清理吃的就是同一份
+///    `to_be_delete`（于是勾选语义自动跟随，不需要第二套开关）。
+fn uninstall_consent_wiring_case() {
+    println!("[12] 卸载勾选语义（真实仓库文件）");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(4)
+        .expect("repo root")
+        .to_path_buf();
+
+    // —— 1) 前端 ——
+    let app = std::fs::read_to_string(repo.join("installer/kachina/src/App.vue")).expect("read App.vue");
+    let gated = app
+        .split("user_data_path:")
+        .nth(1)
+        .and_then(|rest| rest.split("extra_uninstall_path:").next())
+        .unwrap_or("");
+    check("App.vue 里有 user_data_path 这一段", !gated.is_empty(), "");
+    check(
+        "未勾选「同时删除用户数据」时传空数组（= 一个数据目录都不删）",
+        gated.contains("deleteUserData.value") && gated.contains(": []"),
+        gated.trim().to_string(),
+    );
+
+    // —— 2) 配置 ——
+    let cfg: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join("installer/kachina.config.json")).expect("read config"),
+    )
+    .expect("parse config");
+    let reg_name = cfg["regName"].as_str().unwrap_or("");
+    let entries = cfg["userDataPath"].as_array().cloned().unwrap_or_default();
+    check("userDataPath 非空", !entries.is_empty(), "");
+    let bad = entries
+        .iter()
+        .filter_map(|v| v.as_str())
+        .filter(|s| {
+            let t = s.trim_end_matches(['/', '\\']);
+            // 必须以环境变量开头（这样才会按用户展开）、至少两级、且末级是产品名
+            !t.starts_with('%') || t.split(['/', '\\']).count() < 2 || !t.ends_with(reg_name)
+        })
+        .collect::<Vec<_>>();
+    check(
+        "每条 userDataPath 都是「%VAR%/…/{regName}」形状，不是容器本身",
+        bad.is_empty() && !reg_name.is_empty(),
+        format!("bad={bad:?} regName={reg_name:?}"),
+    );
+
+    // —— 3) Rust 侧顺序 ——
+    let rs = std::fs::read_to_string(
+        repo.join("installer/kachina/src-tauri/src/installer/uninstall.rs"),
+    )
+    .expect("read uninstall.rs");
+    let expand_at = rs.find("let to_be_delete = expand_path_list(");
+    let guard_at = rs.find("if !is_safe_delete_target(path)");
+    check("run_uninstall 里先展开 %VAR%", expand_at.is_some(), format!("{expand_at:?}"));
+    check("再走删除安全阀", guard_at.is_some(), format!("{guard_at:?}"));
+    check(
+        "展开在安全阀之前（顺序反了就等于没修「勾了也不删」）",
+        matches!((expand_at, guard_at), (Some(a), Some(b)) if a < b),
+        format!("{expand_at:?} vs {guard_at:?}"),
+    );
+    check(
+        "跨用户清理吃的是同一份 to_be_delete（勾选语义自动跟随）",
+        rs.contains("clean_per_user_leftovers(&to_be_delete)"),
+        "",
+    );
+    check(
+        "跨用户重放带 Shell 容器黑名单（防止把所有人的开始菜单端掉）",
+        rs.contains("PER_USER_DENY_LEAVES"),
+        "",
+    );
+}
+
 #[tokio::main]
 async fn main() {
     reg_target_cases();
@@ -618,6 +811,7 @@ async fn main() {
     profile_tail_cases();
     per_user_sweep_cases().await;
     temp_artifact_cases().await;
+    uninstall_consent_wiring_case();
     let (pass, fail) = (PASS.load(Ordering::Relaxed), FAIL.load(Ordering::Relaxed));
     println!("\n==== PASS {pass} / FAIL {fail} ====");
     if fail > 0 {

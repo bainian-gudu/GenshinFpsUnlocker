@@ -24,6 +24,7 @@ $script:LogicItems = @(
     @{ Kind = 'fn';     Name = 'expand_env_vars' }
     @{ Kind = 'fn';     Name = 'expand_path_list' }
     @{ Kind = 'const';  Name = 'PER_USER_CLEANUP_ROOTS' }
+    @{ Kind = 'const';  Name = 'PER_USER_DENY_LEAVES' }
     @{ Kind = 'fn';     Name = 'profile_relative_tail' }
     @{ Kind = 'fn';     Name = 'loaded_profile_roots' }
     @{ Kind = 'fn';     Name = 'collect_all_users_cleanup_targets' }
@@ -98,8 +99,12 @@ fn has_reparse_point(path: &Path) -> bool {
 }
 
 fn is_under_system_root(path: &Path) -> bool {
+    // 与真实实现同样是**前缀**判定：真实版拿 %SystemRoot% 比前缀，桩用固定前缀。
+    // 早先用 contains("/windows/")，会把开始菜单那种
+    // `<用户>\AppData\Roaming\Microsoft\Windows\Start Menu\...` 也算成系统目录，
+    // 于是「产品开始菜单文件夹要跨用户清掉」这条在 Linux 上根本测不到。
     let t = path.to_string_lossy().to_ascii_lowercase();
-    t.starts_with("c:\\windows") || t.contains("/windows/")
+    t.starts_with("c:\\windows") || t.starts_with("/windows/")
 }
 '@)
 

@@ -325,7 +325,8 @@ fn path_eq(a: &Path, b: &Path) -> bool {
     norm(a) == norm(b)
 }
 
-/// 是否恰好等于某个受保护的根目录（系统目录、Program Files、用户配置目录等）。
+/// 是否恰好等于某个受保护的根目录（系统目录、Program Files、用户配置目录，
+/// 以及用户配置目录下面的 Shell 容器）。
 ///
 /// 允许删这些目录**下面**的产品子目录，但不允许删它们自己。
 fn is_protected_root(path: &Path) -> bool {
@@ -355,6 +356,52 @@ fn is_protected_root(path: &Path) -> bool {
             if !v.is_empty() && path_eq(path, Path::new(v)) {
                 return true;
             }
+        }
+    }
+
+    // 用户配置目录**下面一层**的 Shell 容器同样受保护：`%USERPROFILE%\Desktop`、
+    // `%APPDATA%\Microsoft\Windows\Start Menu\Programs` 这些是「一整片东西」，
+    // 配置里少写一段就会把用户的桌面 / 开始菜单整个端掉。产品自己的目录一定在
+    // 它们下面至少一层（`…\Documents\GenshinFpsUnlocker`、`…\Programs\GenshinFpsUnlocker`、
+    // `…\Desktop\GenshinFpsUnlocker.lnk`），所以这条不影响正常清理。
+    // 组件用切片而不是拼好的字符串：`Path::join("AppData\\Local")` 在非 Windows 上
+    // 会变成一个带反斜杠的**单一**组件，devcheck 的 logic 层就跑不了了。
+    const SHELL_DIRS: &[(&str, &[&str])] = &[
+        ("USERPROFILE", &["Desktop"]),
+        ("USERPROFILE", &["Documents"]),
+        ("USERPROFILE", &["Downloads"]),
+        ("USERPROFILE", &["Music"]),
+        ("USERPROFILE", &["Pictures"]),
+        ("USERPROFILE", &["Videos"]),
+        ("USERPROFILE", &["AppData"]),
+        ("USERPROFILE", &["AppData", "Local"]),
+        ("USERPROFILE", &["AppData", "LocalLow"]),
+        ("USERPROFILE", &["AppData", "Roaming"]),
+        ("APPDATA", &["Microsoft"]),
+        ("APPDATA", &["Microsoft", "Windows"]),
+        ("APPDATA", &["Microsoft", "Windows", "Start Menu"]),
+        ("APPDATA", &["Microsoft", "Windows", "Start Menu", "Programs"]),
+        (
+            "APPDATA",
+            &["Microsoft", "Windows", "Start Menu", "Programs", "Startup"],
+        ),
+        ("LOCALAPPDATA", &["Microsoft"]),
+        ("LOCALAPPDATA", &["Microsoft", "Windows"]),
+        ("LOCALAPPDATA", &["Programs"]),
+        ("PUBLIC", &["Desktop"]),
+    ];
+    for (var, rel) in SHELL_DIRS {
+        let Ok(v) = std::env::var(var) else { continue };
+        let v = v.trim();
+        if v.is_empty() {
+            continue;
+        }
+        let mut full = PathBuf::from(v);
+        for component in *rel {
+            full.push(component);
+        }
+        if path_eq(path, &full) {
+            return true;
         }
     }
     false
@@ -452,6 +499,52 @@ fn expand_path_list(paths: &[String]) -> Vec<String> {
 /// 「每个用户都有一份」而到处删。
 const PER_USER_CLEANUP_ROOTS: &[&str] = &["AppData", "Documents", "Desktop"];
 
+/// 跨用户重放时禁止命中的「Shell 容器」名（大写比较）。
+///
+/// 重放的做法是把「相对用户目录的尾巴」拼到每一个用户目录上，所以尾巴本身一旦是
+/// 容器而不是产品目录，后果就是**所有用户**的开始菜单 / 文档 / 桌面被整个端掉。
+/// 现实中触发得到：`extra_uninstall_path` 里的开始菜单文件夹是前端拼的
+/// `Programs\{appName}`，`appName` 万一是空串，尾巴就退化成
+/// `AppData\Roaming\Microsoft\Windows\Start Menu\Programs`。
+/// 产品自己的目录名（`GenshinFpsUnlocker`）、中文快捷方式名（`原神帧率解锁.lnk`）
+/// 都不在这张表里，所以功能不受影响 —— 与注册表那边的 `REG_TREE_DENY_LEAVES`
+/// 同一个思路：命中即拒绝 + 记日志，绝不让卸载失败。
+const PER_USER_DENY_LEAVES: &[&str] = &[
+    "APPDATA",
+    "LOCAL",
+    "LOCALLOW",
+    "ROAMING",
+    "MICROSOFT",
+    "WINDOWS",
+    "START MENU",
+    "PROGRAMS",
+    "STARTUP",
+    "SYSTEM",
+    "SYSTEM32",
+    "TEMP",
+    "TMP",
+    "CACHE",
+    "CLASSES",
+    "SOFTWARE",
+    "USERS",
+    "PUBLIC",
+    "PROFILE",
+    "DESKTOP",
+    "DOCUMENTS",
+    "DOWNLOADS",
+    "MUSIC",
+    "PICTURES",
+    "VIDEOS",
+    "TEMPLATES",
+    "FAVORITES",
+    "CONTACTS",
+    "LINKS",
+    "SAVED GAMES",
+    "SEARCHES",
+    "3D OBJECTS",
+    "ONEDRIVE",
+];
+
 /// 取路径相对当前用户配置目录（`%USERPROFILE%`）的尾部，并校验它确实落在
 /// 允许清理的每用户容器里；不满足返回 `None`（说明这条路径与「哪个用户」无关，
 /// 例如公共开始菜单、安装目录本身）。
@@ -490,6 +583,20 @@ fn profile_relative_tail(path: &Path) -> Option<PathBuf> {
             .to_ascii_lowercase()
             .ends_with(".lnk")
     {
+        return None;
+    }
+    // 叶子名不能是 Shell 容器（见 PER_USER_DENY_LEAVES 的注释）
+    let leaf = tail.components().next_back()?.as_os_str().to_str()?;
+    if PER_USER_DENY_LEAVES
+        .iter()
+        .any(|d| d.eq_ignore_ascii_case(leaf))
+    {
+        return None;
+    }
+    // AppData 下至少三级：两级就意味着直接挂在 `AppData\Local` / `AppData\Roaming`
+    // 这一层，那一层只可能是容器本身。Documents / Desktop 下两级是正常形状
+    // （`Documents\GenshinFpsUnlocker`、`Desktop\xx.lnk`），不受这条限制。
+    if first.eq_ignore_ascii_case("AppData") && tail.components().count() < 3 {
         return None;
     }
     Some(tail.to_path_buf())

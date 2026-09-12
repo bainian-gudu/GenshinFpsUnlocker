@@ -163,6 +163,12 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 | 配置里的 `%VAR%` **从不展开**（前端只认 `${INSTALL_PATH}` / `${APP_NAME}`） | 字面量 `%LOCALAPPDATA%/...` 不是绝对路径，被删除安全阀当成「不安全路径」静默跳过——**勾了也不会删** | 卸载器在安全检查之前先展开 `%VAR%`（手写实现，未知变量原样保留，不猜） |
 | 只清理**当前进程**的用户目录，而卸载器通常以管理员身份运行 | 当初装软件的普通用户那份数据、以及该用户桌面 / 开始菜单里的快捷方式全部残留 | 把路径剥成「相对用户目录的尾巴」，重放到 `ProfileList` 里所有已加载的用户目录上 |
 
+**没勾选就一个数据目录都不会碰**：前端未勾选时 `user_data_path` 传的是空数组，
+而跨用户清理吃的正是同一份 `to_be_delete`，所以「勾选才删数据」不需要第二套开关。
+此时仍会删的只有快捷方式与开始菜单里的产品文件夹（含其它用户桌面上指向已删除 exe
+的死图标）—— 那不属于用户数据。`%TEMP%` 里清的是 Kachina 自己的安装期文件
+（日志、运行时安装包、引导器、卸载器临时副本），同样不是用户数据。
+
 跨用户重放对「数据目录」和「快捷方式 / 开始菜单文件夹」分别跟随各自的语义：
 数据目录只在勾选后才会跨用户删（前端没勾就传空数组），而快捷方式与开始菜单文件夹
 不受勾选影响 —— 其它用户桌面上指向已删除 exe 的死图标总归要清掉。
@@ -220,8 +226,8 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 | `extraUninstallRegistry` 删值 | 子键至少两级，不碰任何根键的直属项 |
 | `extraUninstallRegistry` 删整棵子键 | 至少三级，且末级不能是共享容器（`Run`/`RunOnce`/`Uninstall`/`Policies`/`Explorer`/`Classes`/`Windows`/`Services`…）；`value` 写成空字符串视为配置错误，整条跳过 |
 | `extraUninstallLnkNames` 快捷方式 | 绝对路径、无 `..`、自身与所有父级都不是符号链接 / junction、不在 `%SystemRoot%` 内；目录只放行 `Programs\<产品名>`，文件只放行 `Desktop\*.lnk` 或 `Programs\<产品名>\*.lnk` |
-| `userDataPath` / `extraUninstallPath` | 同样的形状校验 + 至少两级 + 不能是受保护根目录本身（盘符根、`%SystemRoot%`、`%ProgramFiles%`、`%ProgramData%`、`%USERPROFILE%`、`%APPDATA%`、`%LOCALAPPDATA%`、`%PUBLIC%`、`%TEMP%`） |
-| 同上路径重放到**其他用户**目录 | 尾巴第一段必须是 `AppData` / `Documents` / `Desktop`、至少两级、无 `..`；`Desktop` 下只放行 `.lnk`；重放结果再过一遍上面的 `is_safe_delete_target` 且必须真实存在 |
+| `userDataPath` / `extraUninstallPath` | 同样的形状校验 + 至少两级 + 不能是受保护根目录本身（盘符根、`%SystemRoot%`、`%ProgramFiles%`、`%ProgramData%`、`%USERPROFILE%`、`%APPDATA%`、`%LOCALAPPDATA%`、`%PUBLIC%`、`%TEMP%`），也不能是配置目录下面一层的 **Shell 容器**（`Desktop`、`Documents`、`Downloads`、`AppData[\Local\|\Roaming]`、`…\Start Menu\Programs[\Startup]`、`%PUBLIC%\Desktop` 等）——产品目录一定在容器下面至少一层，所以正常清理不受影响 |
+| 同上路径重放到**其他用户**目录 | 尾巴第一段必须是 `AppData` / `Documents` / `Desktop`、至少两级（`AppData` 下至少三级）、无 `..`；`Desktop` 下只放行 `.lnk`；尾巴的**叶子名不能是 Shell 容器**（`PER_USER_DENY_LEAVES`：`Programs`、`Start Menu`、`Microsoft`、`Local`、`Documents`、`Desktop`、`Cache`、`OneDrive` 等 30 余个）；重放结果再过一遍上面的 `is_safe_delete_target`，且必须是真实存在的目录或 `.lnk` |
 | `%TEMP%` 下的安装期临时文件 | 只认四个固定文件名形状（`KachinaInstaller.log`、`Kachina.RuntimePackage.*.exe`、`kachina.MicrosoftEdgeWebview2Setup.exe`、`kachina.uninst.*.exe`）；只删文件不删目录、不递归、跳过正在运行的卸载器自身 |
 
 被拒绝的路径只记 `warn` 日志，卸载继续。本项目现有配置全部落在放行范围内。

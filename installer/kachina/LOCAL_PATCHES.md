@@ -385,6 +385,31 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
     跨用户删除，不需要额外开关。`extra_uninstall_path` 不受勾选影响（里面是开始菜单
     的 `{appName}\` 文件夹与桌面 `.lnk`），因此**其它用户桌面上指向已删除 exe 的
     死图标、开始菜单里的死文件夹，即使用户选择保留数据也会被清掉** —— 这正是想要的。
+    这条契约由三处配合成立（前端只在勾选时传 `userDataPath`、配置里每条都是产品
+    子目录、Rust 侧展开在安全阀之前且跨用户清理吃同一份列表），devcheck 的 logic 层
+    第 [12] 组直接对真实仓库文件做静态断言把它钉住，改坏任何一处都会红。
+- **误删除防线**（跨用户重放把爆炸半径放大了 N 倍，所以额外加两道）：
+  - `const PER_USER_DENY_LEAVES`（30 余个名字，大写比较）：尾巴的**叶子名**不能是
+    Shell 容器 —— `Programs` / `Start Menu` / `Microsoft` / `Windows` / `Local` /
+    `Roaming` / `Documents` / `Desktop` / `Cache` / `Temp` / `OneDrive` / `Startup` …
+    现实中的触发路径：`extra_uninstall_path` 里的开始菜单文件夹是前端拼的
+    `Programs\{appName}`，`appName` 万一是空串，尾巴就退化成 `…\Start Menu\Programs`，
+    重放到所有用户 = 把每个人的「程序」菜单整个端掉。产品自己的目录名
+    （`GenshinFpsUnlocker`）与中文快捷方式名（`原神帧率解锁.lnk`）都不在表里；
+  - `AppData` 下的尾巴至少**三级**（`AppData\Local\GenshinFpsUnlocker`）：两级就
+    意味着直接挂在 `AppData\Local` / `AppData\Roaming` 那一层，只可能是容器。
+    `Documents` / `Desktop` 下两级是正常形状，不受这条限制；
+  - 另外把 `is_protected_root` 也补全了：除了 `%USERPROFILE%` / `%APPDATA%` 这些
+    根，**它们下面一层的 Shell 容器**（`Desktop`、`Documents`、`Downloads`、
+    `Music`/`Pictures`/`Videos`、`AppData[\Local|\LocalLow|\Roaming]`、
+    `%APPDATA%\Microsoft[\Windows[\Start Menu[\Programs[\Startup]]]]`、
+    `%LOCALAPPDATA%\Microsoft`、`%LOCALAPPDATA%\Programs`、`%PUBLIC%\Desktop`）
+    也一律不许删。这条管的是**上游那条按配置删除的通道**（配置里少写一段就可能
+    命中），与跨用户重放无关；组件用切片 `&["AppData", "Local"]` 而不是拼好的
+    字符串，否则 `Path::join("AppData\\Local")` 在非 Windows 上会变成单一组件，
+    devcheck 的 logic 层跑不了。
+  > 这两道只加在「容器」这一层，不影响正常清理：产品的数据目录、开始菜单文件夹、
+  > 桌面 `.lnk` 全都在容器**下面至少一层**。
 - `%TEMP%` 清理（洞 3）：`fn is_installer_temp_artifact(name: &str) -> bool`
   + `async fn clean_installer_temp_files(skip: Option<&str>)`。白名单是四个**固定形状**
   的文件名（全部小写比较），不按「含 kachina 就删」这种模糊规则：
@@ -475,14 +500,20 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 > `expand_env_vars` / `expand_path_list` / `profile_relative_tail` / `loaded_profile_roots` /
 > `collect_all_users_cleanup_targets` / `is_installer_temp_artifact`）
 > 已在 Linux 上用 mock 版 `windows-registry` + 真实 `serde_json` / `tokio` 逐条跑过
-> **93 个断言**（含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 /
+> **127 个断言**（含提权卸载遍历 `HKEY_USERS`、`value` 为空、共享容器键、符号链接 /
 > 系统目录 / 路径穿越 / 受保护根目录、协议 BOM/CRLF 与文件缺失、用户目录尾巴的
-> 形状与 `Desktop` 白名单、多用户重放、`%TEMP%` 条目的命中与放行边界），其中
+> 形状与 `Desktop` 白名单、多用户重放、`%TEMP%` 条目的命中与放行边界、Shell 容器
+> 黑名单与「容器本身不许删 / 容器下面一层的产品目录放行」、以及第 [12] 组对真实
+> 仓库文件的勾选语义静态断言），其中
 > `resolve_agreement` 是拿仓库里真实的 `installer/kachina.config.json` +
 > `USER_AGREEMENT.txt` 跑的；Windows 专有 API（重解析点属性、`%SystemRoot%`、
 > ProfileList）在 harness 里用桩替代；
 > `clean_installer_temp_files` / `clean_per_user_leftovers` 是纯 IO 包装，只断言其
 > 判定函数（`is_installer_temp_artifact` / `profile_relative_tail`）。
+> 桩里的 `is_under_system_root` 从 `contains("/windows/")` 改成了
+> `starts_with("/windows/")`（与真实实现的**前缀**语义一致）：否则开始菜单那种
+> `<用户>\AppData\Roaming\Microsoft\Windows\Start Menu\…` 会被当成系统目录，
+> 「产品开始菜单文件夹要跨用户清掉」这条正向对照在 Linux 上根本测不到。
 > 前端侧的 `killRunningAppForUninstall` 只有 `tsc --strict` + SFC 编译 + prettier 把关。
 >
 > 写断言时的一个坑（CI 的 windows job 抓到过）：夹具路径必须用
