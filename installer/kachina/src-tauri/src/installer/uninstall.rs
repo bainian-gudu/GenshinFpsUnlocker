@@ -186,13 +186,20 @@ fn is_safe_registry_target(key_path: &str, value: Option<&str>) -> bool {
 /// 预定义根键本身就是 `&'static Key`，直接传即可，不要再取引用。
 fn apply_registry_cleanup(root: &windows_registry::Key, key_path: &str, value: Option<&str>) {
     match value {
-        Some(value) if !value.is_empty() => {
-            if let Ok(key) = root.open(key_path) {
-                let _ = key.remove_value(value);
+        Some(value) if !value.is_empty() => match root.options().read().write().open(key_path) {
+            Ok(key) => {
+                if let Err(error) = key.remove_value(value) {
+                    tracing::warn!("删除注册表值失败: {key_path}\\{value}: {error:?}");
+                }
             }
-        }
+            Err(error) => {
+                tracing::warn!("打开注册表键失败: {key_path}: {error:?}");
+            }
+        },
         _ => {
-            let _ = root.remove_tree(key_path);
+            if let Err(error) = root.remove_tree(key_path) {
+                tracing::warn!("删除注册表子键失败: {key_path}: {error:?}");
+            }
         }
     }
 }
