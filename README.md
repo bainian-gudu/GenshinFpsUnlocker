@@ -147,36 +147,21 @@ TS 类型、`.vue` 模板），确认每一层都会报错 —— 避免「检�
 - 开始菜单「原神帧率解锁」文件夹里的「卸载 原神帧率解锁」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
 - Windows「设置 → 应用 → 安装的应用」/ 控制面板「应用和功能」（Kachina 写的 ARP 卸载项）
 
-卸载向导中勾选「同时删除用户数据（配置、日志与界面缓存）」会按
-`kachina.config.json` 的 `userDataPath` 清掉 `%LocalAppData%\GenshinFpsUnlocker\`
-（配置、日志、WebView2 的 `EBWebView` 界面缓存），并同时尝试 `%AppData%\` 与
-`文档\` 下的同名目录——宿主的 `AppPaths.DataDirectory` 就是按
-「LocalAppData → Roaming → 文档」取第一个可写的目录，数据不一定落在第一处。
-清理覆盖**本机所有登录过的用户**：卸载器一般以管理员身份运行，只清管理员自己的
-`%LocalAppData%` 会漏掉当初装软件的那个账户。`%TEMP%` 里安装 / 卸载过程产生的
-文件（`KachinaInstaller.log`、运行时安装包、WebView2 引导器、卸载器临时副本）
-也按固定文件名白名单删掉，不认识的条目不碰。卸载开始前若检测到主程序还在运行
-（常驻托盘时很常见），会先询问并结束进程——否则它自己的 exe、日志与界面缓存
-都被占用，删不掉就是残留。
-**不勾选则一个数据目录都不会碰**：前端未勾选时传给卸载器的 `userDataPath` 是空数组，
-跨用户清理吃的又是同一份列表，所以「勾选才删数据」这条不需要第二套开关；此时只会删
-快捷方式与开始菜单里的产品文件夹（其它用户桌面上指向已删除 exe 的死图标也一并清掉，
-那不属于用户数据）。重装后可沿用原设置。被 OneDrive 重定向过的
-`文档` / `AppData` 只能命中当前用户那一份，这是已知边界。
-开机自启项（`HKCU\...\Run` 下的 `GenshinFpsUnlocker` 值）由主程序按配置写入，
-卸载器会按配置项 `extraUninstallRegistry` 一并删除（提权卸载时会遍历
-`HKEY_USERS` 保证删到登录用户那一份），**不需要先手动关闭自启动**。
-卸载器同时会删除快捷方式与 ARP 卸载登记项：除了它自己建的
-`GenshinFpsUnlocker.lnk` 与开始菜单文件夹，还会按 `extraUninstallLnkNames`
-补删宿主改名后的中文快捷方式 `原神帧率解锁.lnk`（公共桌面 / 用户桌面 /
-两侧开始菜单都试，OneDrive 重定向的桌面也能命中；删不掉只记日志，不影响卸载）。
+卸载时会一并处理：
 
-卸载器以管理员身份运行，因此所有「按配置删除」的通道都加了安全阀：注册表只删
-`extraUninstallRegistry` 明确指到的值/子键（共享容器如 `Run`、`Uninstall`、`Policies`
-不允许整棵删，`value` 留空视为配置错误直接跳过）；快捷方式与数据目录必须是绝对路径、
-不含 `..`、不是符号链接 / junction、不在 `%SystemRoot%` 内，且不能是盘符根或
-`Program Files` / `%LocalAppData%` 这类受保护目录本身。命中的路径只记日志并跳过，
-不会让卸载失败。详见 `installer/README.md` 与 `installer/kachina/LOCAL_PATCHES.md`。
+- **勾选「同时删除用户数据」** → 删 `%LocalAppData%\GenshinFpsUnlocker\`（配置、日志、
+  `EBWebView` 界面缓存）与 `%AppData%\`、`文档\` 下的同名目录，覆盖本机**所有登录过的
+  用户**，外加 `%TEMP%` 里安装期的残留（按固定文件名白名单）。**不勾选则一个数据目录都不碰**，
+  只删快捷方式与开始菜单里的产品文件夹；重装后可沿用原设置。
+- 主程序还在运行时（常驻托盘很常见）会先询问并结束进程，否则文件被占用删不掉。
+- 开机自启项（`HKCU\...\Run`）与快捷方式（含改名后的 `原神帧率解锁.lnk`）按配置一并删除，
+  **不需要先手动关自启动**。
+- 所有「按配置删除」的通道都有安全阀（共享注册表容器不整棵删、路径必须绝对且不在系统目录内、
+  不碰盘符根与 `Program Files` 这类受保护目录），命中的只记日志并跳过，不会让卸载失败。
+
+已知边界：被 OneDrive 重定向过的 `文档` / `AppData` 只能命中当前用户那一份。
+逐条实现与断言见 [`installer/kachina/LOCAL_PATCHES.md`](installer/kachina/LOCAL_PATCHES.md)
+第 3、6 节与 [`installer/README.md`](installer/README.md)。
 
 在线更新：已安装副本可使用 `GenshinFpsUnlocker.update.exe`，从配置的 GitHub Release 源拉取（需已发布对应 `Install` 包）。
 
