@@ -8,7 +8,8 @@
 
       vendor kachina 只用仓库内源码：不是 submodule、快照完整、工作流与打包脚本里
              没有任何从上游（YuehaiTeam/kachina-installer）拉源码或下二进制的动作、
-             git 依赖在 Cargo.lock 里锁到 commit、npm 依赖全部来自 registry
+             git 依赖在 Cargo.lock 里锁到 commit、npm 依赖全部来自 registry、
+             遥测（Sentry 错误上报 + cocogoat 使用统计）没有被加回来
       ps1    所有 .ps1 的语法解析（PowerShell Parser，秒级，无依赖）
       gen    从 installer/kachina 源码生成检查用的 Rust/TS 源（秒级，无依赖）
       rust   kachina 卸载器逻辑的**类型检查**：整份 uninstall.rs + utils/error.rs 塞进
@@ -47,8 +48,10 @@ param(
     # 不自动安装任何东西（rustup target / npm install）
     [switch]$SkipInstall,
 
-    # 自检：故意往「生成物」里注入 5 个错误，确认每一层真的会报错。
-    # 只改 tools/devcheck 下的生成文件与 _selftest 临时目录，不碰仓库源码。
+    # 自检：故意注入 11 个错误，确认每一层真的会报错。
+    # 5 个只改 tools/devcheck 下的生成文件与 _selftest 临时目录；6 个会临时创建/追加
+    # 仓库内的文件（.gitmodules、假工作流、rescle.cc、utils/mod.rs、Cargo.toml、
+    # 一个临时 .ts），每个用例跑完立即还原。
     [switch]$SelfTest
 )
 

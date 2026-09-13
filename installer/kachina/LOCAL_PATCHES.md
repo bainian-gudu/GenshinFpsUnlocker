@@ -2,10 +2,11 @@
 
 上游快照：tag `0.5.1` / commit `ae461aa9ddd5a8f5e445459e14f5d611921f9938`（见 `UPSTREAM.md`）。
 
-本目录**不是纯净快照**：为了本项目的需求，在 8 个上游文件 + 2 处新增
-（`src/utils/agreement.ts`、`vendor/rcedit-rs/`）上做了最小化改动。升级上游版本时
-必须按本清单重新套用（都是「加字段 / 加分支 / 加样式覆盖」，不改动上游既有逻辑，
-冲突概率低）。
+本目录**不是纯净快照**：为了本项目的需求，在上游文件上做了最小化改动，另有 3 处新增
+（`src/utils/agreement.ts`、`vendor/rcedit-rs/`）与 1 处删除（`src-tauri/src/utils/sentry.rs`）。
+升级上游版本时必须按本清单重新套用。第 1～6 节都是「加字段 / 加分支 / 加样式覆盖」，
+不改动上游既有逻辑，冲突概率低；**第 7 节（遥测移除）是删除型改动**，上游几乎一定会
+带着 Sentry 回来，重套时要连两个 lock 一起重新生成。
 
 | # | 需求 | 涉及文件 |
 | --- | --- | --- |
@@ -16,6 +17,7 @@
 | 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增，vendored 依赖 + 1 行 C++ 修复） |
 | 5 | 弹窗里的按钮不再遮住正文（协议全文能完整看到） | `src/Dialog.vue`、`src/App.vue` |
 | 6 | 卸载后不再残留文件（`%VAR%` 展开、所有登录用户、`%TEMP%`、先结束运行中的主程序） | `src-tauri/src/installer/uninstall.rs`、`src/App.vue` |
+| 7 | **移除全部遥测**：Sentry 错误上报 + `77.cocogoat.cn` 使用统计（连依赖一起删） | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/src/utils/sentry.rs`（删除）、`src-tauri/src/utils/mod.rs`、`src-tauri/src/utils/error.rs`、`src-tauri/src/main.rs`、`src-tauri/src/ipc/manager.rs`、`src-tauri/src/ipc/operation.rs`、`src-tauri/src/installer/config.rs`、`src/api/ipc.ts`、`src/App.vue`、`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml` |
 
 ---
 
@@ -474,6 +476,75 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 ---
 
+## 7. 遥测：Sentry 错误上报与使用统计已物理移除
+
+上游安装器有两条外发通道。本项目是个人自用构建，不做任何统计，所以两条通道**连依赖
+一起拔掉**（不是运行时关开关，也不是把 DSN 置空）：编译产物里不再残留 DSN 字符串，
+`Cargo.lock` / `pnpm-lock.yaml` 里也不再有对应条目。
+
+| 通道 | 上游行为 | 本项目 |
+| --- | --- | --- |
+| Rust / Sentry | `src-tauri/src/utils/sentry.rs` 里写死 DSN `http://…@steambird.cocogoat.cn/insight/kachina-installer/0`；`main.rs` 调 `sentry_init` 并挂 `sentry_tracing` layer；`ipc/manager.rs` 把 span 转成 breadcrumb、`ipc/operation.rs` 开 transaction、`installer/config.rs` 写 `configure_scope`、`utils/error.rs` 在序列化错误时 `capture_anyhow` 上报；设备标识由 `whoami` + `hostname` + `os_info` 拼出来 | 全部删除 |
+| 前端 / 使用统计 | `src/api/ipc.ts` 的 `sendInsight()` 往 `https://77.cocogoat.cn/ev` POST 事件（固定 website id、当前 URL、事件名、`screen.width×height`、`navigator.language`），响应体存进 `localStorage.evCache` 当下一次的 `Authorization`；`src/App.vue` 在安装 / 完成 / 卸载 / 启动 / 两处出错共 6 处调用 | 函数、6 处调用、`getInsightBase` / `buildEventString` / `getSourceId` 三个辅助函数全部删除 |
+| 构建期 | `package.json` 的 `@sentry/cli`（`pnpm-workspace.yaml` 还为它开了 `onlyBuiltDependencies`，装包时会跑 postinstall 下载 sentry-cli 二进制） | 依赖与白名单一起删除；本仓库没有任何脚本引用它 |
+
+### 具体改动
+
+- `src-tauri/Cargo.toml`：删 `sentry`（带 6 个 feature 的那一整块）、`sentry-tracing`、
+  `whoami`（只有 `get_device_id()` 在用）。`Cargo.lock` 用 `cargo metadata` 重新生成，
+  净减 15 个 crate（`sentry*` ×5、`whoami`、`hostname`、`os_info`、`debugid`、`uname`、
+  `ureq`、`httpdate`、`wasite`、两个 `objc2-*`），**没有任何版本被顺带升级**。
+- `src-tauri/src/utils/sentry.rs`：**整份删除**。
+- `src-tauri/src/utils/mod.rs`：去掉 `pub mod sentry;` 与 `get_device_id()`；把
+  `InfoFilter` **搬到这里**（见下）。
+- `src-tauri/src/main.rs`：去掉 `sentry_init` / `sentry_set_info` / `sentry_layer` 与
+  `_guard`，tracing registry 不再 `.with(sentry_layer)`；4 处 `sentry::add_breadcrumb`
+  改成等价的 `tracing::info!`（日志本来就落本地文件，信息量不减）。
+- `src-tauri/src/ipc/operation.rs`：去掉 transaction 上下文与 `transaction.finish()`，
+  `run_opr` 少一个 `context: Vec<(String, String)>` 参数。
+- `src-tauri/src/ipc/manager.rs`：去掉 `IpcInner.context` 字段、span→context 的转换、
+  envelope/breadcrumb 那条 IPC 分支、`sentry_rx` 与 `AUTO_TRANSPORT` 的 select 分支；
+  两处 `run_opr` 调用跟着改。
+- `src-tauri/src/installer/config.rs`：`configure_scope` 换成一句本地 `tracing::info!`。
+- `src-tauri/src/utils/error.rs`：删掉序列化里的 `super::sentry::capture_anyhow(...)`。
+- `src/api/ipc.ts`：删 `sendInsight()`。
+- `src/App.vue`：删 6 处调用 + 3 个辅助函数 + import；`installPrepare()` 的
+  `useOnlineSource` 参数只被埋点用，一并删掉（两个调用点跟着改）。
+- `package.json` / `pnpm-workspace.yaml`：删 `@sentry/cli`；`pnpm-lock.yaml` 用
+  `pnpm install --lockfile-only` 重新生成，净减 17 个包（`@sentry/cli` + 8 个平台
+  二进制 + `node-fetch` / `https-proxy-agent` / `agent-base` / `proxy-from-env` /
+  `progress` / `whatwg-url` / `tr46` / `webidl-conversions`），**0 个版本变化**。
+
+### 特意保留的东西
+
+- **`InfoFilter`**：上游把它放在 `utils/sentry.rs` 里（和 Sentry 的 breadcrumb 过滤
+  配套），但 `main.rs` 的**控制台 layer 与文件 layer 也在用它**做级别过滤。删文件前
+  先把这个 struct + impl 搬到 `utils/mod.rs`，否则日志会退化成全量输出。
+- **`src/utils/networkInsights.ts`**：名字像遥测，其实只是安装过程中的**本地**耗时数组
+  （url / ttfb / size），渲染在安装界面里给用户看，不外发。保留。
+- **`chksum_md5` / `twox-hash`**：与遥测无关（校验下载文件）。保留。
+- **功能性网络请求**：GitHub Releases 下载与更新检查、`builds.dotnet.microsoft.com`
+  （.NET Desktop Runtime）、`aka.ms/vs/17/release/vc_redist.*`（VC++ 运行库）、
+  `go.microsoft.com/fwlink/p/`（WebView2 引导器）都原样保留 —— 这些是安装器要干的活。
+  `mirrorchyan.com`（Mirror酱）只在配置了 CDK 时才会请求，本项目 `kachina.config.json`
+  没配，代码路径不会走到。
+
+### 自动断言
+
+`tools/devcheck` 的 `vendor` 层第 8 组共 4 类断言挡住回归：`utils/sentry.rs` 不许再出现；
+`Cargo.toml` / `package.json` / `pnpm-workspace.yaml` 与两个 lock 里不许再有
+`sentry*` / `whoami` / `@sentry/*`；77 个 Rust+前端源文件剥掉行注释后不许出现
+`sentry::` / `sentry_tracing` / `capture_anyhow` / `add_breadcrumb` / `start_transaction` /
+`configure_scope` / `sendInsight` / `getInsightBase` / `evCache`；112 个文本文件里不许
+再出现上报域名 `cocogoat`。`-SelfTest` 有 3 个对应注入（真代码行 `sentry::init`、
+`Cargo.toml` 里的 `sentry = {…}`、一个带 DSN 域名的临时 `.ts`），确认这些断言不是空壳。
+
+> Rust 侧的删除**没有**在本地整份编译过：kachina 本体不在 devcheck 的 `rust` 层范围内
+> （那层只把 `uninstall.rs` + `utils/error.rs` 塞进最小 crate 做类型检查，本次也过了）。
+> `main.rs` / `ipc/*` / `config.rs` 的改动要靠手动触发 `Build` 工作流验证。
+
+---
+
 ## 升级上游时的套用顺序
 
 1. 按 `UPSTREAM.md` 覆盖整个目录；
@@ -484,6 +555,13 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
    → `App.vue`（协议弹窗 4 处 + 快捷方式清理 2 处 + 链接点击拦截 + `acceptEula`
    初始化 + 第 5 节的两处样式 + 第 6 节的 `killRunningAppForUninstall` 与勾选框文案）
    → `Dialog.vue`（第 5 节的 flex 骨架）；
+3b. **重做第 7 节的遥测移除**（上游几乎一定会带着 Sentry 回来）：删
+   `src-tauri/src/utils/sentry.rs`、按第 7 节清单改 `Cargo.toml` / `main.rs` /
+   `ipc/manager.rs` / `ipc/operation.rs` / `installer/config.rs` / `utils/error.rs` /
+   `api/ipc.ts` / `App.vue` / `package.json` / `pnpm-workspace.yaml`，**注意把
+   `InfoFilter` 搬到 `utils/mod.rs`**，然后重新生成两个 lock（`cargo metadata` +
+   `pnpm install --lockfile-only`）。跑 `pwsh tools/devcheck/devcheck.ps1 -Layer vendor`
+   确认第 8 组断言全绿；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次

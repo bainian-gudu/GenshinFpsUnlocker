@@ -268,6 +268,35 @@ Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kach
 
 将 `Install` 包发布到 Release 且 tag 为 `v{version}` 后，配置中的 GitHub 在线源即可用于更新器。
 
+## 隐私与遥测
+
+**本软件不含任何遥测**：不收集使用统计、不上报崩溃与错误、不生成设备标识。
+
+安装器基于上游 [YuehaiTeam/kachina-installer](https://github.com/YuehaiTeam/kachina-installer)，
+上游自带两条外发通道。本项目已把它们**连依赖一起物理移除**——不是运行时关开关，
+也不是把地址置空，而是编译产物里连上报地址字符串都不残留：
+
+| 上游通道 | 原来的行为 | 本项目 |
+| --- | --- | --- |
+| Sentry 错误上报 | Rust 侧把 anyhow 错误连同环境信息（用户名 / 主机名 / 系统版本）上报到 `steambird.cocogoat.cn` | `sentry` / `sentry-tracing` / `whoami` 依赖与全部调用点删除，`utils/sentry.rs` 整份删除；错误只进本地日志文件 |
+| 使用统计 | 前端 `sendInsight()` 往 `77.cocogoat.cn/ev` POST 安装 / 完成 / 升级 / 卸载 / 启动 / 出错事件（含屏幕分辨率、系统语言、安装源 id） | 函数与 6 处调用全部删除 |
+| 构建期 | `@sentry/cli`（装包时 postinstall 下载 sentry-cli 二进制，用于上传 sourcemap） | 依赖与 `pnpm-workspace.yaml` 白名单一并删除 |
+
+仍然会发生的网络请求（都是功能本身，且由您触发）：
+
+- **安装 / 更新**：从 GitHub Releases 下载安装包（地址见
+  `installer/kachina.config.json` 的 `source`）。
+- **缺失的运行库**：`builds.dotnet.microsoft.com`（.NET Desktop Runtime 9）、
+  `aka.ms/vs/17/release/vc_redist.x64.exe`（VC++ 运行库）、
+  `go.microsoft.com/fwlink/p/`（WebView2 引导器）。
+- **主程序运行期不联网**：帧率解锁与画面注入全部在本地完成；检测到缺运行库时只弹
+  提示，经确认后用系统浏览器打开微软官方下载页（`src/Host/RuntimePrerequisite.cs`）。
+- 本地日志与配置写在 `%LocalAppData%\GenshinFpsUnlocker\`，不上传。
+
+删除清单、保留项（`InfoFilter`、本地耗时统计 `networkInsights.ts`）与 lock 重新生成的
+细节见 [`installer/kachina/LOCAL_PATCHES.md`](installer/kachina/LOCAL_PATCHES.md) 第 7 节；
+`tools/devcheck` 的 `vendor` 层第 8 组断言会在遥测被加回来时直接失败（含 3 个自检注入）。
+
 ## 用户协议与安全说明
 
 安装或使用本软件前，请阅读：

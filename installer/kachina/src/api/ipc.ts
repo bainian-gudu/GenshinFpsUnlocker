@@ -367,31 +367,6 @@ export function error(...args: unknown[]): string {
   return logstr as string;
 }
 
-export async function sendInsight(url: string, event?: string, data?: unknown) {
-  const res = await fetch('https://77.cocogoat.cn/ev', {
-    headers: {
-      'content-type': 'application/json',
-      ...(localStorage.evCache ? { Authorization: localStorage.evCache } : {}),
-    },
-    body: JSON.stringify({
-      type: 'event',
-      payload: {
-        website: '16d32274-7313-4db6-80d3-340ce9db7689',
-        url: encodeURI(url),
-        name: event,
-        data,
-        screen: `${window.screen.width}x${window.screen.height}`,
-        language: navigator.language,
-      },
-    }),
-    method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
-  });
-  const text = await res.text();
-  return (localStorage.evCache = text || '');
-}
-
 export async function ipcIsFolderEmpty(
   path: string,
   file = '',

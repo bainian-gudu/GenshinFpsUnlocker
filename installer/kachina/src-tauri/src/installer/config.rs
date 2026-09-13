@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Context;
 use serde::Serialize;
 use serde_json::Value;
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 use tauri::State;
 
 #[derive(Serialize, Debug, Clone)]
@@ -94,34 +94,19 @@ pub async fn get_config_pre(
             .as_ref()
             .and_then(|c| c["source"].as_str())
             .unwrap_or("Unknown");
-        sentry::configure_scope(|scope| {
-            scope.set_context(
-                "config",
-                sentry::protocol::Context::Other(BTreeMap::from([
-                    ("Name".to_string(), embed_name.into()),
-                    ("Source".to_string(), embed_source.into()),
-                    (
-                        "HasMetadata".to_string(),
-                        enbedded_metadata.is_some().into(),
-                    ),
-                    ("HasFiles".to_string(), embedded_files.is_some().into()),
-                    ("HasIndex".to_string(), embedded_index.is_some().into()),
-                    (
-                        "IsUninstall".to_string(),
-                        format!("{}", args.uninstall).into(),
-                    ),
-                    (
-                        "OverrideSource".to_string(),
-                        format!("{:?}", args.source).into(),
-                    ),
-                    (
-                        "NonInteractive".to_string(),
-                        format!("{}", args.non_interactive).into(),
-                    ),
-                    ("Silent".to_string(), format!("{}", args.silent).into()),
-                ])),
-            );
-        });
+        // 上游在这里把这些信息塞进上报事件的 scope（连同设备标识与 IP 一起发到
+        // 第三方服务器）。本项目已移除遥测：同样的信息只写进本地日志
+        // （%TEMP%\KachinaInstaller.log），不外发。
+        tracing::info!(
+            "Embedded config: name={embed_name} source={embed_source} metadata={} files={} index={} uninstall={} override_source={:?} non_interactive={} silent={}",
+            enbedded_metadata.is_some(),
+            embedded_files.is_some(),
+            embedded_index.is_some(),
+            args.uninstall,
+            args.source,
+            args.non_interactive,
+            args.silent,
+        );
     }
     Ok(InstallerConfig {
         install_path: "".to_string(),

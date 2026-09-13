@@ -42,7 +42,6 @@ pub enum IpcOperation {
 pub async fn run_opr(
     op: IpcOperation,
     notify: impl Fn(serde_json::Value) + std::marker::Send + 'static + Clone,
-    context: Vec<(String, String)>,
 ) -> TAResult<serde_json::Value> {
     let op_name = match &op {
         IpcOperation::Ping => "Ping",
@@ -62,12 +61,6 @@ pub async fn run_opr(
         IpcOperation::RunMirrorcInstall { .. } => "RunMirrorcInstall",
     };
     tracing::info!("IPC operation: {}", op_name);
-    let ctx_str = context
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect::<Vec<_>>();
-    let tx_ctx = sentry::TransactionContext::continue_from_headers(op_name, op_name, ctx_str);
-    let transaction = sentry::start_transaction(tx_ctx);
     let ret = match op {
         IpcOperation::Ping => Ok(serde_json::value::Value::Null),
         IpcOperation::InstallFile(args) => {
@@ -128,6 +121,5 @@ pub async fn run_opr(
                 .await?
         )),
     };
-    transaction.finish();
     ret
 }

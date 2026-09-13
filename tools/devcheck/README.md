@@ -25,7 +25,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 
 | 层 | 检查什么 | 需要的工具 | 热跑耗时 |
 | --- | --- | --- | --- |
-| `vendor` | **kachina 只用仓库内源码**：不是 submodule、快照完整、工作流与打包脚本里没有任何从上游拉源码/下二进制的动作、CI 确实走源码构建、git 依赖锁到 commit、npm 依赖全来自 registry | pwsh 7 | <0.1s |
+| `vendor` | **kachina 只用仓库内源码**：不是 submodule、快照完整、工作流与打包脚本里没有任何从上游拉源码/下二进制的动作、CI 确实走源码构建、git 依赖锁到 commit、npm 依赖全来自 registry、**遥测（Sentry / cocogoat 统计）没被加回来** | pwsh 7 | ~0.8s |
 | `ps1` | 仓库里全部 `.ps1` 的语法（PowerShell Parser） | pwsh 7 | <0.1s |
 | `gen` | 从 `installer/kachina` 源码生成检查用的 Rust / TS 文件 | pwsh 7 | ~0.3s |
 | `rust` | **整份** `installer/uninstall.rs` + `utils/error.rs` 的类型检查：塞进一个只有 11 个依赖的 crate，`cargo check --target x86_64-pc-windows-msvc`。不需要 tauri、不需要 Windows 机器 | cargo + `rustup target add x86_64-pc-windows-msvc` | 首次 ~30s，之后 ~0.2s |
@@ -40,7 +40,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `vendor` 层：kachina 只从本仓库拉
 
 `installer/kachina/` 是上游 kachina-installer 的**源码快照**，构建必须完全基于它。
-这一层把这条约束变成可执行的断言（七项，任何一项不满足就失败）：
+这一层把这条约束变成可执行的断言（八项，任何一项不满足就失败）：
 
 1. 仓库根不存在 `.gitmodules`（kachina 不是 submodule）
 2. 快照完整：`package.json` / `pnpm-lock.yaml` / `src-tauri/Cargo.toml` /
@@ -61,10 +61,24 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
    `windows-latest` 上必然 `error C2039`），kachina 的 `rcedit` 依赖是 `path` 形式，
    `Cargo.lock` 里不再出现 `git+https://github.com/Devolutions/rcedit-rs`
    —— 详见 `installer/kachina/vendor/rcedit-rs/LOCAL_PATCHES.md`
+8. **遥测已物理移除，不许回归**（上游把安装器错误上报到 Sentry，前端还往
+   `77.cocogoat.cn` POST 使用事件；本项目两条通道都拔了，见
+   `installer/kachina/LOCAL_PATCHES.md` 第 7 节）。四组断言：
+   - `src-tauri/src/utils/sentry.rs` 不许再出现；
+   - `Cargo.toml` 不许再声明 `sentry` / `sentry-tracing` / `whoami`，`Cargo.lock` 里
+     不许再锁 `sentry*` / `whoami` / `hostname` / `os_info` / `debugid`（依赖删了但
+     lock 没重新生成时这条会响）；`package.json` 不许有 `@sentry/*`，
+     `pnpm-lock.yaml` / `pnpm-workspace.yaml` 里不许有 `@sentry/` 条目；
+   - 77 个 Rust + 前端源文件**剥掉行注释**后不许出现 `sentry::` / `sentry_tracing` /
+     `capture_anyhow` / `add_breadcrumb` / `start_transaction` / `configure_scope` /
+     `sendInsight` / `getInsightBase` / `evCache`；
+   - 兜底：112 个文本文件（`.rs/.ts/.vue/.js/.json/.toml/.yaml/.html/.css/.lock/...`，
+     不含 `.md`）里不许出现上报域名 `cocogoat`（Sentry DSN 与统计端点都带它）。
 
-第 5、7 项扫 `Cargo.toml` / `rescle.cc` 时都会**先剥掉注释**：这两个文件里的注释
-本身就会写出「原为 `git = "...rcedit-rs.git"`」「原为 `std::locale::empty()`」这类
-说明文字，不剥掉就会自己误报自己。
+第 5、7、8 项扫 `Cargo.toml` / `rescle.cc` / 源码时都会**先剥掉注释**：这些文件里的注释
+本身就会写出「原为 `git = "...rcedit-rs.git"`」「原为 `std::locale::empty()`」
+「上游挂在 `utils/sentry.rs` 里」这类说明文字，不剥掉就会自己误报自己。第 8 项的域名
+兜底还额外**跳过 `.md`** —— `LOCAL_PATCHES.md` 与本文件需要能把被删掉的 DSN 写清楚。
 
 > CI 仍然会联网取 crates.io / npm registry / rustup 工具链 / marketplace action ——
 > 那是任何构建都免不了的；这一层保证的是**kachina 本身**只来自本仓库。
@@ -72,15 +86,19 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `-SelfTest`：证明这套检查不是空壳
 
 检查工具最大的风险是「跑通了但其实什么都没查」。`-SelfTest` 会先正常生成一次，
-然后注入 8 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，3 个会临时创建/追加
-仓库内的文件（`.gitmodules`、一个假工作流、`rescle.cc` 末尾一行），每个用例跑完
-立即还原，收尾再兜底删一次：
+然后注入 11 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，6 个会临时创建/追加
+仓库内的文件（`.gitmodules`、一个假工作流、`rescle.cc` 末尾一行、`utils/mod.rs` 末尾一行
+`sentry::init`、`Cargo.toml` 末尾一行 `sentry = {…}`、一个带 DSN 域名的临时 `.ts`），
+每个用例跑完立即还原，收尾再兜底删一次：
 
 | 注入 | 期望 |
 | --- | --- |
 | 临时创建 `.gitmodules` | `vendor` 层报错（kachina 不能是 submodule） |
 | 临时创建 `.github/workflows/zz-devcheck-selftest.yml`（内含 `Invoke-WebRequest` 下载 builder） | `vendor` 层报错（工作流不许从外部拉） |
 | `rescle.cc` 末尾追加一行真代码 `std::locale(std::locale::empty())` | `vendor` 层报错（MSVC 14.51 编不过） |
+| `src-tauri/src/utils/mod.rs` 末尾追加 `fn _devcheck_selftest_telemetry() { sentry::init(…) }` | `vendor` 层报错（遥测不许回来） |
+| `src-tauri/Cargo.toml` 末尾追加 `sentry = { version = "0.37", … }` | `vendor` 层报错（遥测依赖不许回来） |
+| 新建 `src/devcheck-selftest-telemetry.ts`，内含 `steambird.cocogoat.cn` 的 DSN | `vendor` 层报错（上报域名不许回来） |
 | `tools/devcheck/_selftest/broken.ps1`（`if` 少了右括号） | `ps1` 层报错 |
 | `gen/uninstall.rs` 末尾追加 `let _x: u32 = "不是数字";` | `rust` 层报错 |
 | `gen/extracted.rs` 里把 `segments.len() >= 2` 改成 `>= 1`（不是 `>= 0`，见下） | `logic` 层断言失败 |
@@ -102,7 +120,7 @@ tools/devcheck/
 ├── lib/Generate.ps1        生成两个 crate 的 src/gen 与 front/gen（含要抽取的 item 清单）
 ├── rust/typecheck/         整文件类型检查 crate（真实依赖，Windows target）
 │   ├── Cargo.toml          依赖版本与 kachina src-tauri/Cargo.toml 对齐
-│   └── src/lib.rs          把生成文件挂到上游的模块路径上 + 3 个最小桩
+│   └── src/lib.rs          把生成文件挂到上游的模块路径上 + 2 个最小桩
 ├── rust/logic/             行为断言 crate（mock windows-registry，跨平台）
 │   └── src/main.rs         53 条断言 + mock
 ├── front/                  package.json / tsconfig.json / sfccheck.mjs
@@ -110,10 +128,13 @@ tools/devcheck/
 ```
 
 - **`typecheck`**：`gen/uninstall.rs` 是上游文件的**逐字节复制**，唯一改动是把
-  `#[tauri::command]` 那一行换成注释（本 crate 不依赖 tauri）。`lib.rs` 只提供三个桩：
+  `#[tauri::command]` 那一行换成注释（本 crate 不依赖 tauri）。`lib.rs` 只提供两个桩：
   `dfs::InsightItem`（字段与上游一致）、`local::get_base_with_config`（返回一个
-  `AsyncRead`）、`sentry::capture_anyhow`（no-op，签名与上游一致）。
-  **桩与上游签名不一致时会直接编译失败**，所以上游改了这些接口 devcheck 会立刻报警。
+  `AsyncRead`）。**桩与上游签名不一致时会直接编译失败**，所以上游改了这些接口
+  devcheck 会立刻报警。
+  （这里原来还有第三个桩 `sentry::capture_anyhow`：上游 `error.rs` 序列化错误时会顺手
+  上报 Sentry，`super::sentry` 指向 crate 根。本项目已把遥测连依赖一起删掉，
+  `error.rs` 里那句调用也没了，桩随之删除，`uuid` 依赖也一并去掉。）
 - **`logic`**：只 mock 两样东西 —— `windows_registry`（记录调用，用来断言
   「删了什么 / 没删什么」）和 `has_reparse_point` / `is_under_system_root`
   （Windows 专有 API，换成按路径名触发的桩：路径含 `REPARSE` 视为符号链接，
@@ -125,6 +146,7 @@ tools/devcheck/
 
 **能抓到**：kachina 被改成从上游拉取（submodule / 下载二进制 / git clone）、
 快照文件缺失、git 依赖没锁 commit、vendored `rcedit-rs` 被改回 `locale::empty()`、
+**遥测被加回来**（Sentry 依赖 / 调用、`@sentry/cli`、上报域名，含 lock 没跟着重新生成）、
 vendored C++ 在当前 MSVC 下编不过（`native` 层，仅 Windows）、
 Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 `windows-registry` 的 API 误用）、`uninstall.rs` 里安全阀逻辑被改坏、
@@ -175,7 +197,8 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
   `pub use` 到目标命名空间。挂在内联 `pub mod` 里面时 rustc 会去找
   `src/<mod>/../gen/x.rs`，中间目录不存在就 ENOENT；而且挂在 crate 根意味着
   生成文件里的 `super::` 指向 crate 根，不是它「逻辑上」的上游模块路径
-  （所以 `error.rs` 里 `super::sentry` 的桩要放在 crate 根）。
+  （上游 `error.rs` 里那句 `super::sentry::capture_anyhow` 的桩当年就得放在 crate 根；
+  遥测移除后这个例子没了，但挂载点的规律不变）。
 
 ## 日志里哪些 `Warning` / `error` 是正常的
 
@@ -208,7 +231,9 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
   `$script:LogicItems` 清单，并在 `rust/logic/src/main.rs` 里补断言。
 - kachina 升级依赖版本（`Cargo.toml`）→ 同步 `rust/typecheck/Cargo.toml`，
   否则类型检查结论不可信。
-- 上游改了 `dfs::InsightItem` / `local::get_base_with_config` /
-  `utils::sentry::capture_anyhow` 的签名 → `rust` 层会编译失败，按报错改
-  `rust/typecheck/src/lib.rs` 里的桩即可。
+- 上游改了 `dfs::InsightItem` / `local::get_base_with_config` 的签名 → `rust` 层会
+  编译失败，按报错改 `rust/typecheck/src/lib.rs` 里的桩即可。
+- kachina 的 `Cargo.toml` / `package.json` 改了依赖 → **必须重新生成对应的 lock**
+  （`cargo metadata` / `pnpm install --lockfile-only`），否则 CI 的 `--locked` /
+  `--frozen-lockfile` 会直接失败；`vendor` 层第 8 项也会盯着 lock 里的遥测条目。
 - 生成物（`*/src/gen/`、`front/gen/`、`_selftest/`）不入库，见 `.gitignore`。

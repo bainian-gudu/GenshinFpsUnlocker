@@ -17,7 +17,6 @@
     "test:all": "npm run test:prepare && npm run test:offline-install && npm run test:online-install && npm run test:offline-update && npm run test:online-update"
   },
   "dependencies": {
-    "@sentry/cli": "^2.46.0",
     "@tauri-apps/api": "^2.5.0",
     "async": "^3.2.6",
     "compare-versions": "^6.1.1",

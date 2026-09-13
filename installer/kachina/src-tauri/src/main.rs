@@ -14,12 +14,10 @@ pub mod utils;
 use clap::Parser;
 use cli::arg::{Command, InstallArgs};
 use installer::uninstall::delete_self_on_exit;
-use sentry_tracing::EventFilter;
 use std::{sync::atomic::AtomicBool, time::Duration};
 use tauri::{window::Color, WindowEvent};
 use tauri_utils::{config::WindowEffectsConfig, WindowEffect};
 use tracing_subscriber::prelude::*;
-use utils::sentry::sentry_init;
 
 fn windows_text_scale_factor() -> f64 {
     use windows::UI::ViewManagement::UISettings;
@@ -106,24 +104,18 @@ fn main() {
     if wv2ver.is_err() {
         command = Command::InstallWebview2;
     }
-    let _guard = sentry_init(matches!(command, Command::HeadlessUac(_)));
-    utils::sentry::sentry_set_info();
-    let sentry_layer = sentry_tracing::layer().event_filter(|md| match *md.level() {
-        tracing::Level::TRACE => EventFilter::Ignore,
-        tracing::Level::DEBUG => EventFilter::Ignore,
-        _ => EventFilter::Breadcrumb,
-    });
-    let info_filter = utils::sentry::InfoFilter {};
+    // 本项目已移除上游的遥测（见 ../../LOCAL_PATCHES.md 第 7 节）：不初始化
+    // 上报 client、不挂 sentry-tracing layer。日志只进本地控制台与
+    // %TEMP%\KachinaInstaller.log，一个字节都不外发。
+    let info_filter = utils::InfoFilter {};
 
     // Create log file in temp directory, ignore failures
     let temp_dir = std::env::temp_dir();
     let log_file = temp_dir.join("KachinaInstaller.log");
 
-    let console_layer = tracing_subscriber::fmt::layer().with_filter(utils::sentry::InfoFilter {});
+    let console_layer = tracing_subscriber::fmt::layer().with_filter(utils::InfoFilter {});
 
-    let registry = tracing_subscriber::registry()
-        .with(sentry_layer)
-        .with(console_layer);
+    let registry = tracing_subscriber::registry().with(console_layer);
 
     if let Ok(file) = std::fs::OpenOptions::new()
         .create(true)
@@ -145,12 +137,7 @@ fn main() {
     // command is not  Command::Install, can be anything
     match command {
         Command::HeadlessUac(args) => {
-            sentry::add_breadcrumb(sentry::Breadcrumb {
-                category: Some("app".into()),
-                message: Some("KachinaInstaller started as UAC Thread".into()),
-                level: sentry::Level::Info,
-                ..Default::default()
-            });
+            tracing::info!("KachinaInstaller started as UAC Thread");
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -158,12 +145,7 @@ fn main() {
                 .block_on(ipc::manager::uac_ipc_main(args));
         }
         Command::InstallWebview2 => {
-            sentry::add_breadcrumb(sentry::Breadcrumb {
-                category: Some("app".into()),
-                message: Some("KachinaInstaller started as Webview2 Installer".into()),
-                level: sentry::Level::Info,
-                ..Default::default()
-            });
+            tracing::info!("KachinaInstaller started as Webview2 Installer");
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -171,12 +153,7 @@ fn main() {
                 .block_on(module::wv2::install_webview2());
         }
         Command::Install(install) => {
-            sentry::add_breadcrumb(sentry::Breadcrumb {
-                category: Some("app".into()),
-                message: Some("KachinaInstaller started".into()),
-                level: sentry::Level::Info,
-                ..Default::default()
-            });
+            tracing::info!("KachinaInstaller started");
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -184,12 +161,7 @@ fn main() {
                 .block_on(tauri_main(install));
         }
         Command::Other(_str) => {
-            sentry::add_breadcrumb(sentry::Breadcrumb {
-                category: Some("app".into()),
-                message: Some("KachinaInstaller started".into()),
-                level: sentry::Level::Info,
-                ..Default::default()
-            });
+            tracing::info!("KachinaInstaller started");
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()

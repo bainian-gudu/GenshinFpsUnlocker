@@ -39,7 +39,6 @@ impl Serialize for TACommandError {
             insight: self.insight.clone(),
         };
 
-        super::sentry::capture_anyhow(&self.error);
         response.serialize(serializer)
     }
 }

@@ -42,22 +42,13 @@ pub mod dfs {
 #[path = "gen/utils_error.rs"]
 pub mod gen_utils_error;
 
-/// 对应上游 `crate::utils::sentry`。
-///
-/// 生成物 `gen/utils_error.rs` 是挂在 crate 根上的（`mod gen_utils_error`），
-/// 它里面那句 `super::sentry::capture_anyhow(&self.error)` 的 `super` 就是 crate 根，
-/// 所以桩必须放在这里（放到 `utils` 里反而解析不到）。
-/// 签名与上游一致、行为 no-op：类型检查不需要真的上报错误，也不该在 devcheck 里联网。
-pub mod sentry {
-    pub fn capture_anyhow(_e: &anyhow::Error) -> uuid::Uuid {
-        uuid::Uuid::nil()
-    }
-}
+// 上游这里有个 `pub mod sentry { capture_anyhow }` 桩：`utils/error.rs` 序列化时会顺手
+// 把错误上报到 Sentry，`super::sentry` 指向 crate 根。本项目已把 Sentry 连依赖一起拔掉
+// （installer/kachina/LOCAL_PATCHES.md 第 7 节），error.rs 里那句调用也没了，所以桩不需要。
 
 /// 让 `use crate::utils::error::{return_ta_result, TAResult}` 能解析到真实文件。
 pub mod utils {
     pub use crate::gen_utils_error as error;
-    pub use crate::sentry;
 }
 
 /// 对应上游 `src/local.rs`：真实实现要 mmap 自身并解析内嵌索引，

@@ -134,6 +134,78 @@ function Test-VendoredSource {
     }
     $notes.Add('rcedit-rs 已 vendored(含 MSVC 14.51 修复)')
 
+    # 8) 遥测已物理移除，不许回归。
+    #    上游安装器有两条外发通道：Rust 侧把 panic / anyhow 错误连环境信息一起上报到
+    #    Sentry（DSN 主机 steambird.cocogoat.cn），前端 sendInsight() 往 77.cocogoat.cn
+    #    POST 安装/升级/卸载/启动事件（带屏幕分辨率、语言、来源 id）。本项目是个人自用
+    #    构建，两条通道连依赖一起拔掉了（installer/kachina/LOCAL_PATCHES.md 第 7 节）。
+    #    扫描口径与上面几处一致：只扫可执行内容（行注释剥掉），.md 完全不扫 ——
+    #    LOCAL_PATCHES.md 与 devcheck/README.md 需要能把这件事写清楚。
+    $ka = Join-Path $RepoRoot 'installer/kachina'
+
+    # 8a) Sentry 的 Rust 入口文件不许回来
+    if (Test-Path -LiteralPath (Join-Path $ka 'src-tauri/src/utils/sentry.rs')) {
+        throw '上游的 src-tauri/src/utils/sentry.rs 又出现了 —— 本项目已物理移除 Sentry 上报'
+    }
+
+    # 8b) 依赖清单三处：Cargo.toml / package.json / pnpm-workspace.yaml + 两个 lock
+    if ($cargoTomlCode -match '(?m)^\s*(sentry|sentry-tracing|sentry-anyhow|whoami)\s*=') {
+        throw 'kachina 的 Cargo.toml 又声明了 Sentry / whoami 依赖（遥测已移除）'
+    }
+    if ($cargoLock -match '(?m)^name = "(sentry[^"]*|whoami|hostname|os_info|debugid)"') {
+        throw 'Cargo.lock 里还锁着 Sentry 相关 crate —— 改完依赖要重新生成 Cargo.lock（cargo metadata）'
+    }
+    foreach ($section in @('dependencies', 'devDependencies')) {
+        $node = $pkg.$section
+        if (-not $node) { continue }
+        foreach ($prop in $node.PSObject.Properties) {
+            if ($prop.Name -eq 'sentry' -or $prop.Name.StartsWith('@sentry/')) {
+                throw "kachina 的 package.json 又声明了遥测依赖 $($prop.Name)"
+            }
+        }
+    }
+    foreach ($lf in @('pnpm-lock.yaml', 'pnpm-workspace.yaml')) {
+        $txt = [System.IO.File]::ReadAllText((Join-Path $ka $lf))
+        if ($txt -match '@sentry/') {
+            throw "$lf 里还有 @sentry/ 条目 —— package.json 改完要重新生成 lock（pnpm install --lockfile-only）"
+        }
+    }
+
+    # 8c) 源码里不许有活的遥测调用（Rust + 前端一起扫，行注释剥掉）
+    $codeFiles = @(Get-ChildItem -LiteralPath (Join-Path $ka 'src-tauri/src') -Recurse -Filter '*.rs' -File)
+    $codeFiles += @(Get-ChildItem -LiteralPath (Join-Path $ka 'src') -Recurse -File |
+        Where-Object { @('.ts', '.vue', '.js') -contains $_.Extension })
+    $telemetryTokens = @(
+        'sentry::', 'sentry_tracing', 'capture_anyhow', 'add_breadcrumb',
+        'start_transaction', 'configure_scope', 'sendInsight', 'getInsightBase',
+        'evCache'
+    )
+    foreach ($f in $codeFiles) {
+        $stripped = (([System.IO.File]::ReadAllLines($f.FullName)) |
+            ForEach-Object { ($_ -replace '//.*$', '') }) -join "`n"
+        foreach ($t in $telemetryTokens) {
+            if ($stripped.Contains($t)) {
+                $rel = $f.FullName.Substring($RepoRoot.Length + 1)
+                throw "$rel 里出现了遥测调用 [$t] —— 本项目不外发任何统计/错误上报"
+            }
+        }
+    }
+
+    # 8d) 兜底：整棵 vendored 树的文本文件里不许再出现上报域名（DSN 与事件端点都带它）
+    $textExt = @('.rs', '.ts', '.vue', '.js', '.json', '.toml', '.yaml', '.yml',
+                 '.html', '.css', '.lock', '.txt', '.ps1', '.mjs', '.cjs')
+    $sweep = @(Get-ChildItem -LiteralPath $ka -Recurse -File |
+        Where-Object {
+            $_.FullName -notmatch '[\\/](node_modules|target|dist|\.git)[\\/]' -and
+            @($textExt) -contains $_.Extension -and $_.Length -lt 4MB
+        })
+    $hit = @($sweep | Select-String -Pattern 'cocogoat' -SimpleMatch -List)
+    if ($hit.Count) {
+        $where = ($hit | ForEach-Object { "$($_.Path.Substring($RepoRoot.Length + 1)):$($_.LineNumber)" }) -join '、'
+        throw "$where 出现上报域名 cocogoat —— Sentry DSN 与统计端点都已移除"
+    }
+    $notes.Add("遥测已物理移除($($codeFiles.Count) 个源文件 + $($sweep.Count) 个文本文件无 Sentry/cocogoat)")
+
     return ($notes -join '；')
 }
 

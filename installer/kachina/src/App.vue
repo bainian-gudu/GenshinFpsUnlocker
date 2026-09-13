@@ -787,7 +787,6 @@ import {
   ipPrepare,
   log,
   MirrorcUpdate,
-  sendInsight,
   warn,
 } from './api/ipc';
 import IconSheild from './IconSheild.vue';
@@ -991,67 +990,17 @@ function onAgreementClick(event: MouseEvent) {
   invoke('launch', { path: href }).catch((e) => warn('打开协议链接失败:', e));
 }
 
-const getInsightBase = () => {
-  const qs = new URLSearchParams();
-  if (INSTALLER_CONFIG.args.non_interactive) {
-    qs.set('non_interactive', '1');
-  }
-  if (INSTALLER_CONFIG.args.silent) {
-    qs.set('silent', '1');
-  }
-  if (INSTALLER_CONFIG.args.uninstall) {
-    qs.set('uninstall', '1');
-  }
-  if (INSTALLER_CONFIG.args.online) {
-    qs.set('online', '1');
-  }
-  if ((INSTALLER_CONFIG.embedded_index?.length || 0) > 0) {
-    qs.set('pack', '1');
-  }
-  return `/${PROJECT_CONFIG.appName}?${qs.toString()}`;
-};
-
 async function getSource(scan: boolean): Promise<InstallerConfig> {
   return await invoke<InstallerConfig>('get_installer_config', {
     scanExe: scan,
   });
 }
 
-function getSourceId(): string {
-  if (Array.isArray(PROJECT_CONFIG.source)) {
-    const sourceItem = PROJECT_CONFIG.source.find(
-      (s) => s.uri === selectedSource.value,
-    );
-    return sourceItem?.id || 'unknown';
-  } else {
-    return 'default';
-  }
-}
-
-function buildEventString(
-  version: string,
-  useOnlineSource: boolean = false,
-): string {
-  const action = isUpdate.value ? 'update' : 'install';
-  const isPackedMode = (INSTALLER_CONFIG.embedded_index?.length || 0) > 0;
-
-  if (isPackedMode) {
-    if (useOnlineSource) {
-      return `${action}/packed+${getSourceId()}/${version}`;
-    } else {
-      return `${action}/packed/${version}`;
-    }
-  } else {
-    return `${action}/${getSourceId()}/${version}`;
-  }
-}
-
-async function installPrepare(
-  version: string,
-  useOnlineSource: boolean = false,
-): Promise<boolean> {
+async function installPrepare(version: string): Promise<boolean> {
   await ipPrepare(needElevate.value);
-  sendInsight(getInsightBase(), buildEventString(version, useOnlineSource));
+  // 上游在这里打点上报（sendInsight + buildEventString），本项目已移除遥测：
+  // 版本信息只写本地日志，方便排查装的是哪个版本。
+  log('installPrepare version', version);
   const target_exe_path = `${source.value}${sep()}${PROJECT_CONFIG.exeName}`;
   const runningExes =
     (await ipcFindProcessByName(PROJECT_CONFIG.exeName).catch(log)) || [];
@@ -1207,9 +1156,7 @@ async function runInstall(): Promise<void> {
       latest_meta.hashed.push(installerMeta);
     }
   }
-  const useOnlineSource = latest_meta !== INSTALLER_CONFIG.enbedded_metadata;
-  if (await installPrepare(latest_meta?.tag_name, useOnlineSource))
-    return runInstall();
+  if (await installPrepare(latest_meta?.tag_name)) return runInstall();
   let hashKey = '';
   if (latest_meta.hashed.every((e) => e.md5)) {
     hashKey = 'md5';
@@ -1696,12 +1643,7 @@ async function runMirrorcInstall() {
     step.value = 4;
     return;
   }
-  if (
-    await installPrepare(
-      `${mirrorc_status.data?.version_name || 'unknown'}`,
-      true,
-    )
-  )
+  if (await installPrepare(`${mirrorc_status.data?.version_name || 'unknown'}`))
     return runMirrorcInstall();
   if (!mirrorc_status.data?.url) {
     await dialog_error(
@@ -1839,7 +1781,6 @@ async function getExtraUninstallShortcutPaths(): Promise<string[]> {
 async function finishInstall(
   latest_meta?: InvokeGetDfsMetadataRes,
 ): Promise<void> {
-  sendInsight(getInsightBase(), 'finish');
   const { program, desktop, uninstall } = await getLnkPath();
   const exePath = `${source.value}${sep()}${PROJECT_CONFIG.exeName}`;
   if (createLnk.value && !isUpdate.value) {
@@ -1918,7 +1859,9 @@ async function install(): Promise<void> {
       e instanceof Error
         ? e.stack || e.toString() // 日志中保留完整的 stack
         : errstr;
-    sendInsight(getInsightBase(), 'error', { error: logErrStr });
+    // 上游把 logErrStr 连同环境信息一起上报（sendInsight）；本项目已移除遥测，
+    // 完整 stack 只写本地日志，弹窗仍然只给用户看更友好的 message。
+    log('安装失败:', logErrStr);
     await dialog_error(errstr);
 
     // Clean up DFS2 sessions on error (only for DFS mode)
@@ -2093,7 +2036,6 @@ onMounted(async () => {
         }
       }
     }
-    sendInsight(getInsightBase());
     if (INSTALLER_CONFIG.install_path_exists) isUpdate.value = true;
     await win.setTitle(PROJECT_CONFIG.windowTitle);
     INSTALLER_CONFIG.is_uninstall =
@@ -2346,7 +2288,6 @@ async function killRunningAppForUninstall(): Promise<boolean> {
 
 async function uninstall() {
   step.value = 5;
-  sendInsight(getInsightBase(), 'uninstall');
   if (!(await killRunningAppForUninstall())) {
     step.value = 1;
     return;
@@ -2401,7 +2342,6 @@ async function uninstall() {
           ? e
           : JSON.stringify(e);
     await dialog_error(errstr);
-    await sendInsight(getInsightBase(), 'error', { error: errstr });
     step.value = 1;
   }
 }

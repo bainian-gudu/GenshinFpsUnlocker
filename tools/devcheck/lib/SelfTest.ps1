@@ -61,6 +61,50 @@ jobs:
             }
         }
 
+    # --- 0d) vendor：Sentry 上报被加回来就必须报错（本项目已物理移除遥测）---
+    #     注入一行**真代码**：注释形式不算（检查会剥掉 // 注释），跟 0c 同一个道理。
+    $utilsMod = Join-Path $RepoRoot 'installer/kachina/src-tauri/src/utils/mod.rs'
+    Add-Case 'vendor 层能抓到 Sentry 上报被加回来' `
+        -Mutate {
+            $script:UtilsModBackup = [System.IO.File]::ReadAllText($utilsMod)
+            Add-Content -Path $utilsMod -Encoding utf8 `
+                -Value "`nfn _devcheck_selftest_telemetry() { let _g = sentry::init(sentry::ClientOptions::default()); }"
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup {
+            if ($script:UtilsModBackup) {
+                [System.IO.File]::WriteAllText($utilsMod, $script:UtilsModBackup)
+                $script:UtilsModBackup = $null
+            }
+        }
+
+    # --- 0e) vendor：遥测依赖被加回 Cargo.toml 就必须报错（连 lock 一起回归的信号）---
+    $kaCargoToml = Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.toml'
+    Add-Case 'vendor 层能抓到 Sentry 依赖被加回 Cargo.toml' `
+        -Mutate {
+            $script:CargoTomlBackup = [System.IO.File]::ReadAllText($kaCargoToml)
+            Add-Content -Path $kaCargoToml -Encoding utf8 `
+                -Value "`nsentry = { version = `"0.37`", features = [`"backtrace`"] }"
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup {
+            if ($script:CargoTomlBackup) {
+                [System.IO.File]::WriteAllText($kaCargoToml, $script:CargoTomlBackup)
+                $script:CargoTomlBackup = $null
+            }
+        }
+
+    # --- 0f) vendor：上报域名回到 vendored 树里就必须报错（DSN / 统计端点兜底）---
+    #     新建一个临时文件而不是改现有文件：这条断言扫的是「全树文本文件里有没有域名」。
+    $dsnFile = Join-Path $RepoRoot 'installer/kachina/src/devcheck-selftest-telemetry.ts'
+    Add-Case 'vendor 层能抓到上报域名回到 vendored 树' `
+        -Mutate {
+            Set-Content -Path $dsnFile -Encoding utf8 `
+                -Value "export const dsn = 'http://000000000000000000000000000000ff@steambird.cocogoat.cn/insight/x/0';"
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup { if (Test-Path -LiteralPath $dsnFile) { Remove-Item -LiteralPath $dsnFile -Force } }
+
     # --- 1) ps1：临时放一个语法错误的 .ps1 进仓库 ---
     Add-Case 'ps1 层能抓到 PowerShell 语法错误' `
         -Mutate {
