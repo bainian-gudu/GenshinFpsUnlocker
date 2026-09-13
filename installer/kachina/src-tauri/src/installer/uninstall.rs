@@ -39,6 +39,15 @@ pub fn delete_dir_if_empty(path: &Path) -> Result<(), std::io::Error> {
 pub async fn rm_list(key: Vec<PathBuf>) -> Vec<String> {
     let mut set = tokio::task::JoinSet::new();
     for path in key {
+        // 安全阀：这份清单是前端把 `latest_meta.deletes`（可能来自**网络元数据**）拼上
+        // 安装目录得到的，而执行删除的是提权进程。上游直接 remove_file，一条
+        // `..\..\..\Windows\System32\x.dll` 就能以管理员权限删任意文件。
+        // 与 userDataPath / extraUninstallPath 共用同一套判定：必须绝对、不含 `..`、
+        // 路径与父级都不是符号链接、不在 %SystemRoot% 内、不是受保护的根目录。
+        if !is_safe_delete_target(&path) {
+            tracing::warn!("跳过不安全的删除目标（rm_list）: {}", path.display());
+            continue;
+        }
         set.spawn(tokio::task::spawn_blocking(move || {
             let path = Path::new(&path);
             if path.exists() {
@@ -214,7 +223,7 @@ fn apply_registry_cleanup_for_all_users(key_path: &str, value: Option<&str>) {
 ///
 /// 顺着链接删可能删到链接指向的任意位置，因此这类路径一律不动。
 /// 读不到属性时按「危险」处理。
-fn has_reparse_point(path: &Path) -> bool {
+pub fn has_reparse_point(path: &Path) -> bool {
     use std::os::windows::fs::MetadataExt;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
     let mut current = Some(path);
@@ -484,6 +493,16 @@ fn is_protected_root(path: &Path) -> bool {
 /// - 任何受保护根目录本身（见 `is_protected_root`）
 fn is_safe_delete_target(path: &Path) -> bool {
     if !path.is_absolute() {
+        return false;
+    }
+    // `..` 既按 components 判、也按文本判：`Path::components()` 的分隔符语义随宿主平台
+    // 变化（Linux 上 `..\..\x` 是一个普通文件名），而这套判定要在两个平台上都成立
+    // —— devcheck 的 logic 层在 Linux 上跑，CI 两边都跑。
+    if path
+        .to_string_lossy()
+        .split(['/', '\\'])
+        .any(|seg| seg == "..")
+    {
         return false;
     }
     if path

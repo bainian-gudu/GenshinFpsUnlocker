@@ -6,6 +6,7 @@ pub mod hash;
 pub mod icon;
 pub mod metadata;
 pub mod progressed_read;
+pub mod secure_temp;
 pub mod uac;
 pub mod url;
 pub mod wincred;

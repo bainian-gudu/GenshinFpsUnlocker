@@ -41,10 +41,10 @@ $script:LogicPackItems = @(
     @{ Kind = 'fn'; Name = 'resolve_agreement' }
 )
 
-# runtimes.rs 里只抽「验签结论判定」这一个纯函数：整个文件依赖 reqwest / tokio::process /
-# crate::fs，塞不进最小 crate，但这条判定是安全阀本身，必须能被断言覆盖。
+# secure_temp.rs 里只抽「验签结论判定」这一个纯函数：同文件的其余部分依赖
+# tokio::process / tokio::fs，塞不进最小 crate，但这条判定是安全阀本身，必须能被断言覆盖。
 $script:LogicRuntimeItems = @(
-    @{ Kind = 'fn'; Name = 'is_trusted_runtime_signature' }
+    @{ Kind = 'fn'; Name = 'is_trusted_microsoft_signature' }
 )
 
 function Get-DevCheckRepoRoot {
@@ -92,13 +92,13 @@ function New-LogicGen {
 
     $uninstall = Read-RustSource -Path (Join-Path $kachina 'installer/uninstall.rs')
     $pack = Read-RustSource -Path (Join-Path $kachina 'builder/pack.rs')
-    $runtimes = Read-RustSource -Path (Join-Path $kachina 'installer/runtimes.rs')
+    $secureTemp = Read-RustSource -Path (Join-Path $kachina 'utils/secure_temp.rs')
 
     $parts = [System.Collections.Generic.List[string]]::new()
     $parts.Add(@'
 // 生成物，勿手改：由 tools/devcheck/devcheck.ps1 按名字从
 // installer/kachina/src-tauri/src/{installer/uninstall.rs, builder/pack.rs,
-// installer/runtimes.rs} 抽取。
+// utils/secure_temp.rs} 抽取。
 // 抽取规则见 tools/devcheck/lib/RustSource.ps1；找不到清单里的 item 会直接报错。
 // 本文件被 src/main.rs 用 include! 展开到 crate 根，Path/PathBuf 由 main.rs 引入。
 
@@ -128,8 +128,8 @@ fn is_under_system_root(path: &Path) -> bool {
                     -Kind $item.Kind -Name $item.Name -SourceName 'builder/pack.rs'))
     }
     foreach ($item in $script:LogicRuntimeItems) {
-        $parts.Add((Get-RustItem -Text $runtimes.Text -Masked $runtimes.Masked `
-                    -Kind $item.Kind -Name $item.Name -SourceName 'installer/runtimes.rs'))
+        $parts.Add((Get-RustItem -Text $secureTemp.Text -Masked $secureTemp.Masked `
+                    -Kind $item.Kind -Name $item.Name -SourceName 'utils/secure_temp.rs'))
     }
 
     $out = Join-Path $genDir 'extracted.rs'

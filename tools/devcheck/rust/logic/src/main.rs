@@ -1,8 +1,9 @@
 //! kachina 卸载/打包逻辑的行为断言（devcheck 第 2 层）。
 //!
 //! 被测代码是 `src/gen/extracted.rs` —— 由 `tools/devcheck/devcheck.ps1` 按名字从
-//! `installer/kachina/src-tauri/src/installer/uninstall.rs` 与 `builder/pack.rs`
-//! 原样抽取（清单见 `tools/devcheck/lib/Generate.ps1`）。这里只 mock 两样东西：
+//! `installer/kachina/src-tauri/src/` 下的 `installer/uninstall.rs`、`builder/pack.rs`、
+//! `utils/secure_temp.rs` 原样抽取（清单见 `tools/devcheck/lib/Generate.ps1`）。
+//! 这里只 mock 两样东西：
 //!
 //! - `windows_registry`：记录调用，验证「删了什么、没删什么」
 //! - `has_reparse_point` / `is_under_system_root`：Windows 专有 API，换成按路径名触发的桩
@@ -798,6 +799,43 @@ fn uninstall_consent_wiring_case() {
     );
 }
 
+fn rm_list_cases() {
+    println!("[15] 旧版本残留清单 rm_list 的攻击形状（网络元数据 → 提权删除）");
+    // 前端把 latest_meta.deletes（在线安装时来自网络）的每一项拼成
+    // `${source}${sep()}${entry}` 交给提权进程逐个 remove_file。
+    // 反斜杠形状的 `..` 在 Linux 上 Path::components() 看不出来（整个是一个文件名），
+    // 靠的是 is_safe_delete_target 里那条按 / 与 \ 切段的文本判定 —— 两个平台都要拦。
+    let install_dir = std::env::temp_dir().join("kcheck-install-dir");
+    let base = p(&install_dir);
+
+    let cases: Vec<(String, bool)> = vec![
+        // 正常：安装目录里的旧文件 / 子目录里的旧文件
+        (p(&install_dir.join("GenshinFpsUnlocker.exe")), true),
+        (p(&install_dir.join("plugins").join("old.dll")), true),
+        // 越界：反斜杠 `..` 逃到系统目录（Windows 上真实形状）
+        (format!("{base}\\..\\..\\Windows\\System32\\x.dll"), false),
+        (format!("{base}\\..\\..\\..\\Windows\\System32\\drivers\\x.sys"), false),
+        // 越界：正斜杠 `..`（两个平台 components 都认得）
+        (format!("{base}/../../windows/system32/x.dll"), false),
+        (
+            p(&install_dir.join("..").join("..").join("Windows").join("x.dll")),
+            false,
+        ),
+        // 相对路径：清单里混进一个不是绝对路径的条目
+        ("plugins\\old.dll".to_string(), false),
+        ("GenshinFpsUnlocker.exe".to_string(), false),
+        // 符号链接（桩：路径里含 REPARSE）
+        (p(&install_dir.join("REPARSE").join("old.dll")), false),
+        // 绝对路径塞进清单其实**无害**：拼接后变成 `<安装目录>\C:\Windows\...`，
+        // 只是个不存在的怪路径，删不掉任何东西。真正的洞是 `..`，上面已经拦住。
+        (format!("{base}\\C:\\Windows\\System32\\x.dll"), true),
+    ];
+    for (path, want) in cases {
+        let got = is_safe_delete_target(Path::new(&path));
+        check(&format!("{path} => {want}"), got == want, format!("got {got}"));
+    }
+}
+
 fn relative_member_cases() {
     println!("[13] 安装目录内文件清单的安全阀 is_safe_relative_member / path_starts_with");
     // files 来自注册表 InstallerMeta（非提权安装时写在 HKCU，同账户中等完整性进程可改），
@@ -902,21 +940,21 @@ fn relative_member_cases() {
 }
 
 fn runtime_signature_cases() {
-    println!("[14] 运行时安装包验签判定 is_trusted_runtime_signature");
+    println!("[14] 微软安装包验签判定 is_trusted_microsoft_signature");
     let ms = "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
     check(
         "微软签名 + Valid 放行",
-        is_trusted_runtime_signature("Valid", ms),
+        is_trusted_microsoft_signature("Valid", ms),
         "被拦了",
     );
     check(
         "Status 大小写不敏感",
-        is_trusted_runtime_signature("valid", ms),
+        is_trusted_microsoft_signature("valid", ms),
         "被拦了",
     );
     check(
         "Subject 段落顺序不同也认得",
-        is_trusted_runtime_signature("Valid", "O=Microsoft Corporation, CN=Microsoft Corporation"),
+        is_trusted_microsoft_signature("Valid", "O=Microsoft Corporation, CN=Microsoft Corporation"),
         "被拦了",
     );
     for (status, why) in [
@@ -927,23 +965,23 @@ fn runtime_signature_cases() {
     ] {
         check(
             &format!("拦掉{why}（{status}）"),
-            !is_trusted_runtime_signature(status, ms),
+            !is_trusted_microsoft_signature(status, ms),
             "放行了",
         );
     }
     check(
         "拦掉别人签的（Status=Valid 也不放行）",
-        !is_trusted_runtime_signature("Valid", "CN=Evil Corp, O=Evil Corp, L=X, C=CN"),
+        !is_trusted_microsoft_signature("Valid", "CN=Evil Corp, O=Evil Corp, L=X, C=CN"),
         "放行了",
     );
     check(
         "拦掉冒名写法（子串匹配会放过的那种）",
-        !is_trusted_runtime_signature("Valid", "CN=Not Microsoft Corporation Ltd"),
+        !is_trusted_microsoft_signature("Valid", "CN=Not Microsoft Corporation Ltd"),
         "放行了",
     );
     check(
         "拦掉空签名者",
-        !is_trusted_runtime_signature("Valid", ""),
+        !is_trusted_microsoft_signature("Valid", ""),
         "放行了",
     );
 }
@@ -964,6 +1002,7 @@ async fn main() {
     uninstall_consent_wiring_case();
     relative_member_cases();
     runtime_signature_cases();
+    rm_list_cases();
     let (pass, fail) = (PASS.load(Ordering::Relaxed), FAIL.load(Ordering::Relaxed));
     println!("\n==== PASS {pass} / FAIL {fail} ====");
     if fail > 0 {

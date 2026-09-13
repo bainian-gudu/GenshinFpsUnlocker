@@ -16,7 +16,10 @@ use windows::{
     },
 };
 
-use crate::{utils::url::HttpContextExt, REQUEST_CLIENT};
+use crate::{
+    utils::{secure_temp, url::HttpContextExt},
+    REQUEST_CLIENT,
+};
 
 pub struct SendableHwnd(pub *mut Option<HWND>);
 unsafe impl Send for SendableHwnd {}
@@ -145,19 +148,29 @@ pub async fn install_webview2() {
         std::process::exit(0);
     }
     let wv2_installer_blob = wv2_installer_blob.unwrap();
-    let temp_dir = std::env::temp_dir();
-    let installer_path = temp_dir
-        .as_path()
-        .join("kachina.MicrosoftEdgeWebview2Setup.exe");
-    let res = tokio::fs::write(&installer_path, wv2_installer_blob).await;
+    // 落地目录 / 随机文件名 / 独占创建 / 执行前验签：全部见 utils/secure_temp.rs。
+    // 上游这里是 %TEMP% 里的固定文件名 + tokio::fs::write（CREATE_ALWAYS，跟随符号
+    // 链接），而且下完不验签就 spawn —— 同一个会话的普通权限进程既能把下载内容引进
+    // 系统文件，也能在安装启动前把文件换掉。
+    let installer_path = secure_temp::package_path("kachina.MicrosoftEdgeWebview2Setup");
+    let res = async {
+        use tokio::io::AsyncWriteExt;
+        let mut file = secure_temp::create_exclusive_file(&installer_path).await?;
+        file.write_all(&wv2_installer_blob).await?;
+        file.flush().await?;
+        drop(file);
+        secure_temp::verify_microsoft_signed(&installer_path).await
+    }
+    .await;
     if let Err(e) = res {
+        let _ = tokio::fs::remove_file(&installer_path).await;
         let hwnd = dialog_hwnd.take();
         unsafe {
             SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
         }
         rfd::MessageDialog::new()
             .set_title("出错了")
-            .set_description(format!("WebView2 运行时安装程序写入失败: {e}"))
+            .set_description(format!("WebView2 运行时安装程序写入或校验失败: {e}"))
             .set_level(rfd::MessageLevel::Error)
             .show();
         std::process::exit(0);

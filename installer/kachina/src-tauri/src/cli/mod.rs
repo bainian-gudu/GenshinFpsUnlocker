@@ -36,13 +36,25 @@ pub async fn install_webview2() {
         .await
         .with_http_context("install_webview2", wv2_url)
         .expect("Failed to read WebView2 installer data");
-    let temp_dir = std::env::temp_dir();
-    let installer_path = temp_dir
-        .as_path()
-        .join("kachina.MicrosoftEdgeWebview2Setup.exe");
-    tokio::fs::write(&installer_path, wv2_installer_blob)
+    // 与 module/wv2.rs 同一条链路、同一个反模式，一起换成 utils/secure_temp.rs：
+    // 管理员专属目录 + 随机文件名 + 独占创建（不跟随符号链接）+ 执行前验微软签名。
+    let installer_path =
+        crate::utils::secure_temp::package_path("kachina.MicrosoftEdgeWebview2Setup");
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut file = crate::utils::secure_temp::create_exclusive_file(&installer_path)
+            .await
+            .expect("failed to create webview2 installer file");
+        file.write_all(&wv2_installer_blob)
+            .await
+            .expect("failed to write installer to temp dir");
+        file.flush()
+            .await
+            .expect("failed to flush installer file");
+    }
+    crate::utils::secure_temp::verify_microsoft_signed(&installer_path)
         .await
-        .expect("failed to write installer to temp dir");
+        .expect("WebView2 引导器验签失败（不是微软签名的文件，已删除）");
     // run the installer
     let status = tokio::process::Command::new(installer_path.clone())
         .arg("/install")

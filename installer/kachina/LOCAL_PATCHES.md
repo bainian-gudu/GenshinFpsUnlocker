@@ -206,40 +206,43 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 注册表项，都会被管理员权限放大。本项目在**不改变上游既有语义**的前提下加了几道
 安全阀：命中即「拒绝 + 记日志」，绝不让卸载因此失败。
 
-### `src-tauri/src/installer/uninstall.rs`
+### 卸载器：只删属于本软件的东西（`src-tauri/src/installer/uninstall.rs`）
 
-| 通道 | 上游行为 | 加固后 |
-| --- | --- | --- |
-| `extraUninstallRegistry` 删值 | 直接 `remove_value` | `is_safe_registry_target`：子键至少两级，不碰任何根键的直属项 |
-| 同上，删整棵子键 | 直接 `remove_tree` | 至少三级，且末级不在 `REG_TREE_DENY_LEAVES`（`Run` / `RunOnce` / `Uninstall` / `Policies` / `Explorer` / `Winlogon` / `Environment` / `Classes` / `Software` / `Microsoft` / `Windows` / `CurrentVersion` / `System` / `Services` / `Session Manager` / `IFEO` 等共享容器） |
-| `value` 写成空字符串 | 等价于「删整棵子键」 | 视为配置错误，整条跳过并告警（真要删子键必须显式省略 `value`） |
-| 提权卸载时清 HKCU | 只清管理员自己的 hive | 额外遍历 `HKEY_USERS` 下已加载的 SID（跳过 `.DEFAULT` / `S-1-5-18` / `*_Classes`）逐个清，避免漏掉发起卸载的登录用户 |
-| `rm_best_effort`（快捷方式） | 前端/配置给什么删什么，目录走 `remove_dir_all` | `is_safe_shortcut_target`：绝对路径、不含 `..`、路径与**所有父级**都不是符号链接 / junction、不落在 `%SystemRoot%` 内；目录只放行 `开始菜单\Programs\<产品名>`，文件只放行 `.lnk` 且位于某个 `Desktop\` 下或 `Programs\<产品名>\` 内。`allowed_names` = `regName` + 安装目录名 |
-| `userDataPath` / `extraUninstallPath` | 直接 `remove_file` / `remove_dir_all` | `is_safe_delete_target`：上述形状校验 + 至少两级目录 + 不等于任何受保护根目录本身（盘符根、`%SystemRoot%`、`%ProgramFiles%`、`%ProgramFiles(x86)%`、`%ProgramData%`、`%USERPROFILE%`、`%APPDATA%`、`%LOCALAPPDATA%`、`%PUBLIC%`、`%TEMP%` / `%TMP%`）。允许删这些目录**下面**的产品子目录，不允许删它们自己 |
+卸载器一般以管理员身份运行，所以「删什么」这件事必须有边界。加固后的行为，
+按用户能看到的结果说：
 
-被拒绝的路径统一 `tracing::warn!("跳过不安全的…")` 后继续，卸载流程不中断。
-本项目的真实配置（`extraUninstallRegistry` 删 `HKCU\...\Run` 下的
-`GenshinFpsUnlocker` 值、`userDataPath` = `%LOCALAPPDATA%/GenshinFpsUnlocker`、
-`extraUninstallLnkNames` 4 个名字）全部落在放行范围内，功能不受影响。
+| 场景 | 加固后的行为 |
+| --- | --- |
+| 清理额外注册表项（开机自启动等） | 只删本软件自己写的那一个值。系统和其他软件共用的容器（开机启动项、卸载信息、策略、文件关联等）**只删值、不整棵删** |
+| 清理快捷方式 | 只删本产品名字的 `.lnk`，而且只在桌面与开始菜单的产品文件夹里找。桌面、开始菜单这些容器本身不会被删 |
+| 删除用户数据 / 额外目录 | 只删配置里写明的产品数据目录。路径必须是绝对路径、不能带 `..`、不能是符号链接，也不能是盘符根、Windows 目录、`Program Files`、用户配置目录这类受保护位置**本身**（它们下面的产品子目录才可以删） |
+| 删除安装目录内的文件清单 | 同上：清单里的每一项都必须真的落在安装目录内，绝对路径、越界的 `..`、根相对路径一律跳过（第 8 节） |
+| 删除「旧版本残留文件」清单 | 同上，而且这条清单可能来自网络元数据，越界一样跳过（第 9 节） |
+| 提权卸载时清 HKCU | 每一个登录过的用户账户都会清到，不只是执行卸载的那个管理员账户 |
 
-### `src/utils/agreement.ts` + `src/App.vue`（协议正文的注入面）
+命中安全阀一律「跳过 + 写日志」，**不会因为安全阀让卸载失败**；被跳过的路径会记在
+`%TEMP%\KachinaInstaller.log` 里。本项目真实配置（`HKCU\...\Run` 下的
+`GenshinFpsUnlocker` 值、`%LOCALAPPDATA%/GenshinFpsUnlocker`、4 个快捷方式名字）
+全部落在放行范围内，功能不受影响。
 
-协议正文来自打包配置，最终 `v-html` 进一个**能调用提权 IPC 的 WebView**，
-所以按「白名单排版 + 禁掉一切可执行 / 可提交 / 可外链内容」收紧：
+> 实现集中在 `uninstall.rs` 的四个判定函数里：`is_safe_registry_target` /
+> `is_safe_shortcut_target` / `is_safe_delete_target` / `is_safe_relative_member`，
+> 具体拒绝名单以代码为准（devcheck 的 `logic` 层对它们跑行为断言）。
 
-- DOMPurify：`FORBID_TAGS` 增加 `style / form / input / button / select / textarea /
-  iframe / object / embed / link / meta / base / svg / math`；`FORBID_ATTR` 增加
-  `style / srcdoc / formaction / data / background`；`ALLOWED_URI_REGEXP` 收窄为
-  `^(?:https?:|mailto:|#)`（上游默认还放行 `tel:` / `callto:` / `cid:` / `xmpp:` 等）。
-- 正文里的 `<a>` 点击一律 `preventDefault`：安装器窗口被导航走 = 安装 / 卸载流程直接断掉。
-  `http(s)` 外链交给 `invoke('launch')` 用系统浏览器打开（与上游「获取 CDK」同一个命令），
-  页内锚点与万一漏网的 `javascript:` 之类什么都不做。
-- 内联了协议正文时把 `acceptEula` 初始化为 `false`：必须勾「我已阅读并同意」才能点安装。
-  未内联协议时保持上游默认（视为已同意），不额外增加交互；`silent` / `non_interactive`
-  安装走 `onMounted` 末尾的 `install()`，不受勾选影响；卸载界面用的是另一个按钮，
-  同样不受影响。
-- 协议正文容器补 `user-select: text`（`.content` 全局是 `user-select: none`），
-  法律文本要能选中复制。
+
+### 用户协议正文：不允许夹带任何可执行内容（`src/utils/agreement.ts` + `src/App.vue`）
+
+协议正文来自打包配置，最终会渲染进一个**能调用提权 IPC 的窗口**里，所以按
+「只允许排版、不允许任何可执行 / 可提交 / 可外链内容」收紧：
+
+- 白名单排版：脚本、表单与输入控件、`iframe` / 插件、内联样式、`svg` / 数学标记
+  一律剥掉；链接只允许 `http(s)` 与 `mailto`（上游默认还放行 `tel:` / `cid:` 等）。
+- 正文里的链接点击不会把安装器窗口导航走（那等于安装 / 卸载流程直接断掉）：
+  外部链接交给系统浏览器打开，页内锚点照常，其余什么都不做。
+- 内联了协议正文时，「我已阅读并同意」必须手动勾选才能点安装；静默 / 非交互安装
+  与卸载界面不受影响（保持上游语义）。
+- 协议正文可以选中复制（界面其余部分是不可选中的）。
+
 
 ### 宿主侧（`src/Host/`，不属于本目录，列在这里便于对照）
 
@@ -545,78 +548,101 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 ---
 
-## 8. 第二轮安全加固：提权边界、卸载收尾、运行时下载、凭据残留
+## 8. 第二轮安全加固：卸载收尾、路径比较、提权管道、ARP 卸载入口
 
-第 3 节是第一轮（收敛「删什么」）。这一轮复查了安装 / 卸载全链路的**提权边界**与
-**收尾完整性**，改了 6 处，全部在 kachina 内部，不动上游的既有语义。
+| # | 位置 | 加固后的行为 |
+| --- | --- | --- |
+| 1 | 卸载器：安装目录内的文件清单 | 清单里每一项都必须真的落在安装目录内；绝对路径、越界的 `..`、根相对路径、UNC 一律跳过。这是当时唯一一个没有安全阀的删除通道 |
+| 2 | 卸载器：收尾顺序 | 用户数据删不掉时不再中途退出 —— 注册表清理和「应用和功能」里的卸载项**一定会清掉**，不会留下卸不掉的僵尸条目；错误留到最后一起报 |
+| 3 | 卸载器：路径比较 | 大小写或斜杠方向不同的同一个路径现在认得出来（`C:\Program Files` 与 `c:\program files`），「卸载器不在安装目录里就别把它移动走」这类保护不再误判 |
+| 4 | 提权管道 | 提权进程死掉后不会再被当成活的。原来会让界面无限转圈（既不报错也不结束，只能重启安装器），现在会复位，下次调用重新拉起 |
+| 5 | 运行时下载（.NET / VC++） | 见第 9 节 —— 那条链路和 WebView2 的两处一起统一处理了 |
+| 6 | ARP 卸载入口 + 凭据残留 | 「应用和功能」里的卸载命令加了引号（路径含空格时原来会被按空格截断成 `C:\Program`），并补上静默卸载入口；卸载时顺带清掉存在 Windows 凭据管理器里的 Mirror酱 CDK |
 
-| # | 位置 | 上游行为 | 加固后 |
-| --- | --- | --- | --- |
-| 1 | `uninstall.rs`：`files`（安装目录内文件清单） | 直接 `source.join(f)` + `remove_file`，清单内容不经任何校验 | 新增 `is_safe_relative_member`：拒绝绝对路径、根相对（`\x`、`/x`）、盘符相对（`C:x`）、UNC、含 `..` / `.` 段、空串、NUL，并要求 join 结果确实落在安装目录内；命中即 warn + 跳过 |
-| 2 | `uninstall.rs`：卸载收尾顺序 | 用户数据删除一旦失败就 `?` 返回，**ARP 卸载信息与 `extraUninstallRegistry` 留在注册表里** → 「应用和功能」里出现卸不掉的僵尸条目 | 失败收集进 `fatal`，注册表清理与 ARP 移除照跑，最后才返回错误 |
-| 3 | `uninstall.rs`：路径比较 | `source.starts_with(candidate)` 与 `path_eq` 都是**大小写敏感**的裸字符串比较，而注册表里的 `InstallLocation` / `uninstaller` 与 `%ProgramFiles%` 展开结果的大小写常常不一致（`C:\Program Files` vs `c:\program files`）→「卸载器不在安装目录里就别把它移动走」这类保护会误判 | 抽出 `normalize_path_for_compare`（分隔符统一 + 小写），新增 `path_starts_with`（按分隔符边界比，`C:\Foo` 不算在 `C:\F` 里），自身移动 / 外部卸载器 / `files` 三处判定统一走它 |
-| 4 | `ipc/manager.rs`：提权管道 | `send` 失败、`PipeErr`、以及兜底分支都**不清 `process` 字段** → 下次点击时 `is_pipe_alive()` 仍为真，请求发给一个已经死掉的管道，前端 `await` 永不返回（UI 卡死，只能重启安装器） | 三条失败路径统一 `*mgr.process.write().await = None` 再返回错误。`SendableHandle` 没有 `Drop`，置空只泄漏一个句柄，不会误杀活进程 |
-| 5 | `installer/runtimes.rs`：.NET / VC++ 运行时 | ① 落地路径 `%TEMP%\Kachina.RuntimePackage.{tag}.exe` —— **固定名字**，且在提权进程里用 `File::create`（CREATE_ALWAYS，跟随符号链接）写；② 下完直接 `spawn`，**完全不验签** | ① 目录换成 `%SystemRoot%\Temp`（只有管理员 / SYSTEM 可写，取不到才退回 `%TEMP%`）+ 文件名带 UUID + `create_new` 独占创建（路径已被占即失败）+ 下载失败清理半成品；② 执行前验 Authenticode，只有 `Status=Valid` 且签名者逐段精确等于 `Microsoft Corporation`（CN 或 O）才放行，否则删文件报错 |
-| 6 | `installer/registry.rs` + `src/App.vue` | ① ARP 只写 `UninstallString`，且**没加引号**（路径含空格时「程序和功能」会按第一个空格截断成 `C:\Program`），也没有静默卸载入口；② 卸载时不清凭据管理器里的 MirrorChyan CDK | ① `UninstallString` 加引号 + 补 `QuietUninstallString`（`"<卸载器>" -U -S -I`，见下方「踩到的坑」）；宿主 `UninstallLauncher` 自己按路径找 `uninst.exe`、不读 ARP，加引号不影响它；② `uninstall()` 第 6 步前 best-effort 调 `wincred_delete` 删 `KachinaInstaller_MirrorChyanCDK_<appName>`，失败只 warn |
+### 静默卸载只能用短选项（踩过的坑）
 
-第 5 条的两点补充：
-
-- **为什么用 PowerShell 而不是 `WinVerifyTrust` FFI**：后者是几十行 unsafe
-  （`WINTRUST_DATA` / `WTHelperGetProvSignerFromChain` / `CertGetNameStringW`），在本仓库
-  只能类型检查、没法实机跑，写错一个字段就是 UB；`Get-AuthenticodeSignature` 在 Win10+
-  一定存在。代价是多起一个 powershell 进程（几百毫秒，落在「装运行时」这个本来就是
-  分钟级的步骤里可忽略）。判定本身抽成了纯函数 `is_trusted_runtime_signature`，
-  devcheck 的 `logic` 层对它跑断言。
-- **攻击面**：上游那条路径下，同会话的普通权限进程可以先在 `%TEMP%` 放一个指向
-  `C:\Windows\System32\*` 的符号链接，让提权进程把下载内容写进系统文件；或者在
-  「下载完 → 启动安装」之间把文件换成自己的 exe；镜像源被劫持时更是直接提权 RCE。
-  离线包（`offset` / `size`，运行时被 packer 内嵌进安装器）走的是同一条验签路径。
-
-### 踩到的坑：`QuietUninstallString` 只能用短选项
-
-第一版写的是 `--uninstall --silent --non-interactive`，看着很自然，但
-`src/cli/arg.rs` 里这几个 flag 全都是 `#[clap(short = 'U')]` / `short = 'S'` /
-`short = 'I'` —— **没有声明 `long`，clap 就不会生成长名**。传长名的结果是 clap 直接
-以退出码 2 报「unexpected argument」，卸载一步都不会跑（而 ARP 的静默卸载入口看起来
-「存在」，winget / 脚本调用时静默失败，比没有这个值更难查）。
-
-顺带确认了这条链路的真实行为：卸载模式是靠**卸载器自身文件名**判定的
-（`config.rs`：`is_uninstall = exe_path.file_name() == uninstall_name`），`-U` 只是
-`is_uninstall = is_uninstall || args.uninstall` 的兜底；真正让卸载「不弹窗、跑完自己关窗」
-的是 `-S` / `-I`（`App.vue` onMounted：`silent || non_interactive` → 直接调
-`uninstall()`，结束时 `args.silent` 关窗）。用户数据在静默模式下默认保留
-（`deleteUserData` 初值 false），符合静默卸载的预期。
-
-### 本轮**没有**动的三处（有意保留）
-
-- `ipc/pipe.rs` 的 ACL 仍然给 `BU`（普通用户）读写：去掉会让「非提权 UI ↔ 提权安装
-  进程」的正常流程断掉。能安全收窄的只有 `AC` / `RC` 两条，收益有限。
-- `RmList` / `KillProcess` 的入参不校验：调用方是同一台机器上已经能连上管道的进程，
-  而这两个操作（列进程 / 结束进程）本身不需要提权。
-- 运行时版本仍跟 `latest.version`、不锁版本号：锁版本会让 .NET 的补丁更新失效，而
-  验签已经覆盖了「拿到的是不是微软的东西」这个真正的风险点。
-
-### 验证到哪一步
-
-- devcheck `rust` 层：`uninstall.rs` 整份在 `x86_64-pc-windows-msvc` 上类型检查通过、
-  0 warning（含本轮 3 个新助手与错误聚合改动）。
-- devcheck `logic` 层：新增第 [13] [14] 组共 35 条断言（127 → **162**），覆盖
-  `is_safe_relative_member` 的正 / 反例（两种平台的绝对路径形状、`..` 逃逸、根相对、
-  UNC、盘符相对、空串、NUL）、`path_starts_with` 的大小写与分隔符边界、
-  `is_trusted_runtime_signature` 的放行与 6 类拒绝。
-  - 写 [13] 时抓到一个真问题：`Path::components()` 的分隔符语义**随宿主平台变化**，
-    Linux 上 `..\..\x` 是一个普通文件名、看不出 `ParentDir`。所以
-    `is_safe_relative_member` 除了 components 判定，还加了一条按 `/` 与 `\` 切段的
-    文本判定，两个平台行为一致（CI 的 windows / ubuntu 两个 job 都跑同一套断言）。
-- `runtimes.rs` 的 6 个新助手 + 改动后的调用流程，另搭最小 crate 在 msvc 上单独类型
-  检查通过、0 warning。`manager.rs` / `registry.rs` / `App.vue` 三处要靠手动触发
-  `Build` 工作流验证（kachina 本体不在 devcheck 的 `rust` / `front` 层范围内）。
-- **唯一需要实机确认的点**：验签那条没在 Windows 上跑过。如果微软运行时安装包的证书
-  Subject 布局与 `CN=Microsoft Corporation, O=Microsoft Corporation, …` 不同，会被误拦
-  —— 错误信息里带上了实际的 status 与 subject，且宿主 `RuntimePrerequisite` 会回落到
-  「引导用户手动下载」，不会把安装流程卡死。
+`QuietUninstallString` 第一版写的是 `--uninstall --silent --non-interactive`，但
+`src/cli/arg.rs` 里这几个开关**只声明了短名**，clap 不会凭空生成长名：传长名的结果是
+clap 直接以退出码 2 报「unexpected argument」，卸载一步都不跑，而 ARP 里那个值看起来
+是「存在」的，比没写更难查。正确的是 `-U -S -I`。
+devcheck 的 `vendor` 层为此加了一组静态断言（卸载命令必须整体加引号；用到的每个选项
+都要在 `cli/arg.rs` 里真的声明过），并配了一条自检注入用例。
 
 ---
+
+## 9. 第三轮安全加固：把「下载后执行」和「提权管道」两条链路一次收干净
+
+第 8 节只修了 .NET / VC++ 运行时的下载。复查发现同一个反模式还有两处（WebView2），
+另外「网络元数据驱动的删除」和日志文件也是同一类问题，这轮一起处理，公共实现抽到
+`src-tauri/src/utils/secure_temp.rs`。
+
+### 9.1 下载后执行的三个文件（.NET 运行时 / VC++ 运行库 / WebView2 引导器）
+
+上游三处是同一个写法：`%TEMP%` 里的**固定文件名** + 「已存在就覆盖」的写入
+（会**跟随符号链接**）+ 下完不验签直接运行。用户视角的后果：同一台机器上的普通权限
+程序，既能让安装器把下载内容写进系统文件，也能在安装器运行它之前把文件换成自己的
+程序 —— 而安装器通常是提权的。
+
+加固后（三处共用 `utils/secure_temp.rs`）：
+
+- 落地目录改成 `C:\Windows\Temp`（只有管理员和 SYSTEM 能写），拿不到才退回用户自己的 `%TEMP%`；
+- 文件名带随机 UUID，不可预测；目标已存在就**失败**，绝不覆盖、也不跟随符号链接；
+- 下载中断会清掉半个文件；
+- **运行前验微软签名**：签名无效、或签名者不是 Microsoft Corporation，一律删掉文件并报错。
+  运行时装不上时宿主会引导用户自己去官网下载，不会把安装流程卡死；
+- 验签用 PowerShell 的 `Get-AuthenticodeSignature`（Win10+ 自带），**没有**引入 unsafe FFI：
+  `WinVerifyTrust` 那套调用在本仓库无法实机验证，写错一个字段就是运行时崩溃。
+
+### 9.2 「旧版本残留文件」清单（`rm_list`）
+
+安装时前端会拿一份「旧版本残留文件」清单（在线安装时**来自网络元数据**）拼上安装目录，
+交给提权进程逐个删除。上游对这份清单不做任何校验，一条 `..\..\..\Windows\System32\xxx`
+就能以管理员权限删掉系统文件。现在它与用户数据目录共用同一套判定（必须绝对、不含
+`..`、不是符号链接、不在 Windows 目录内、不是受保护根目录），越界一律跳过并记日志。
+
+### 9.3 日志文件
+
+`%TEMP%\KachinaInstaller.log` 是固定名字，而提权子进程也走同一段初始化 —— 普通权限
+程序预先放一个符号链接，就能让管理员权限的进程往任意文件里追加内容。现在打开前先检查
+路径（含所有父级）是不是符号链接 / junction，是就只写控制台日志、不写文件。
+
+### 9.4 提权管道的访问权限
+
+管道由安装界面（普通权限）创建、提权子进程连上来，中间 UAC 弹窗那段时间管道在等人连
+（用户犹豫多久就有多久）。上游的访问控制允许**任何本地用户**连接，还包括沙箱 /
+AppContainer 进程、远程会话，并把完整性级别压到 Low。于是别的程序可以抢在提权子进程
+之前连上、冒充它：收下安装器发来的操作与文件流、回一份伪造的结果（界面会以为装 / 卸
+成功），真正的提权进程随后连不上而失败。
+
+现在收紧成「只有创建它的那个用户 + SYSTEM + 管理员」，完整性级别提到 Medium：沙箱进程、
+低完整性进程、其他本地用户都进不来。正常流程两端是同一个用户，不受影响。
+
+> **更正第 8 节之前的一个判断**：早先记成「普通用户可以借提权进程的手删文件（EoP）」，
+> 那是错的 —— 操作只能由管道服务端（安装界面自己）写入，提权子进程是客户端，别人注入
+> 不了操作。真实影响是会话劫持 / 结果伪造 / 安装失败，已按此定级。
+
+### 9.5 有意保留的三处
+
+- `RmList` / `KillProcess` 之外的其余 IPC 操作（写注册表、建快捷方式、装运行时等）
+  同样只接受安装界面发来的参数：管道收紧后，能发操作的只有本用户自己的安装界面。
+- 运行时版本仍跟 `latest.version`、不锁版本号：锁版本会让 .NET 的补丁更新失效，而验签
+  已经覆盖了「拿到的是不是微软的东西」这个真正的风险点。
+- `select_dir` 的目录可写性探测始终返回 `Unwritable`（上游缺陷）：`prefer-admin` 下
+  不影响流程，只是界面上的提示不准，属于功能问题不是安全问题。
+
+### 9.6 验证到哪一步
+
+- devcheck 全绿；`logic` 层的行为断言覆盖到第 9.2 的判定（两个平台的 `..` 形状都测）。
+- `utils/secure_temp.rs` 与两处 WebView2 调用点：另搭最小 crate 在
+  `x86_64-pc-windows-msvc` 上类型检查通过、0 warning。
+- **两处需要实机确认**（本地只能编译、跑不了安装）：
+  1. 管道 ACL —— 若提权流程连不上管道（界面报 `ELEVATE_ERR` / `Elevate Fail`），
+     把 `utils/acl.rs` 里的 SDDL 改回上游那串即可回退；
+  2. 验签的证书 Subject 布局 —— 不匹配时会 fail-closed（删文件 + 报错 + 引导手动下载），
+     错误信息里带着实际的 status 与 subject，照着调 `is_trusted_microsoft_signature` 即可。
+
+---
+
 
 ## 升级上游时的套用顺序
 
@@ -643,6 +669,11 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
    （`UninstallString` 加引号 + `QuietUninstallString`）→ `src/App.vue`
    （`wincred_delete`）。跑 `pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic`
    确认 [13] [14] 两组断言全绿；
+3d. **重做第 9 节**：新增 `src-tauri/src/utils/secure_temp.rs`（整份）并在
+   `utils/mod.rs` 里挂上 → `installer/runtimes.rs`、`module/wv2.rs`、`cli/mod.rs`
+   三处改成调用它 → `installer/uninstall.rs` 的 `rm_list` 加安全阀、
+   `has_reparse_point` 提为 `pub` → `main.rs` 的日志文件加重解析点检查 →
+   `utils/acl.rs` 换 SDDL。跑 `pwsh tools/devcheck/devcheck.ps1 -Layer vendor,rust,logic`；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次

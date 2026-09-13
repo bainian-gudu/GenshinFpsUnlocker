@@ -117,11 +117,23 @@ fn main() {
 
     let registry = tracing_subscriber::registry().with(console_layer);
 
-    if let Ok(file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_file)
-    {
+    // %TEMP% 对同会话的普通权限进程可写，而这个文件名是**固定**的：先在那儿放一个指向
+    // `C:\Windows\...` 的符号链接，提权子进程（headless-uac 也走这段初始化）就会把日志
+    // 追加进系统文件。路径本身或任一父级是重解析点时，只留控制台日志、不写文件。
+    let log_target = if installer::uninstall::has_reparse_point(&log_file) {
+        eprintln!(
+            "日志路径上是符号链接/junction，跳过文件日志: {}",
+            log_file.display()
+        );
+        None
+    } else {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+            .ok()
+    };
+    if let Some(file) = log_target {
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(file)
             .with_ansi(false)
