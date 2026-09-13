@@ -80,13 +80,6 @@
 只修改前端时可在 `src/Ui` 执行 `npm ci` 后运行 `npm run build`；只修改安装器前端时，
 在 `installer/kachina` 执行 `pnpm install --frozen-lockfile` 后运行 `pnpm exec rsbuild build`。
 
-### WSL 开发环境
-
-依赖可以安装在 WSL 用户目录，不会写入 Windows 环境。推荐准备 Rust nightly（含
-`rust-src` 和 `x86_64-pc-windows-msvc` target）、Node.js 20+、pnpm 10、.NET SDK 9、
-PowerShell 7 和 Clang/LLVM。最终的 Windows 安装器构建仍需要可用的 Windows MSVC / VS
-Build Tools；网络较慢时可为 `rustup`、npm/pnpm 和 NuGet 配置镜像后再安装依赖。
-
 完整的安装器依赖、目录和打包流程见 [`installer/README.md`](installer/README.md)。
 
 产物：

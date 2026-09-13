@@ -37,16 +37,13 @@ installer/
 ```
 
 首次构建需要 Rust nightly、`rust-src`、Node.js 20+、pnpm 10、PowerShell 7 和 Windows
-MSVC/VS Build Tools。依赖可以先安装在 WSL 用户目录；Windows 目标的 Tauri/C++ 编译阶段
-仍需 Windows MSVC 工具链。安装器前端依赖安装命令如下：
+MSVC/VS Build Tools。Windows 目标的 Tauri/C++ 编译阶段需要 Windows MSVC 工具链。
+安装器前端依赖安装命令如下：
 
 ```bash
 cd installer/kachina
 pnpm install --frozen-lockfile
 ```
-
-网络较慢时，为 rustup、npm/pnpm 和 NuGet 配置可用镜像后再执行安装。构建脚本、配置文件和
-产物均保留在仓库或 WSL 文件系统内。
 
 首次执行会从源码构建 `kachina-builder.exe`（需要 Rust nightly + Node/pnpm + MSVC，
 详见 `kachina/UPSTREAM.md`）。之后 `installer\tools\kachina-builder.exe` 存在**且不比

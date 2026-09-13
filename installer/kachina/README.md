@@ -29,8 +29,7 @@ pnpm exec rsbuild build
 ```
 
 构建需要 Rust nightly（含 `rust-src` 和 Windows MSVC target）、Node.js 20+、pnpm 10、
-PowerShell 7 以及 Windows MSVC/VS Build Tools。依赖可安装在 WSL 用户目录；Windows 目标
-编译仍由 Windows MSVC 工具链完成。
+PowerShell 7 以及 Windows MSVC/VS Build Tools。Windows 目标编译由 Windows MSVC 工具链完成。
 
 下面保留 Kachina 的通用配置和Command，便于维护源码快照。
 
