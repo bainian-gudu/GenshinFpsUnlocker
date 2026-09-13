@@ -3,27 +3,27 @@
 
 typedef hpatch_TStreamOutput hdiff_TStreamOutput;
 typedef hpatch_TStreamInput hdiff_TStreamInput;
-// compress plugin
+// 压缩插件
 typedef struct hdiff_TCompress {
-    // return type tag; strlen(result)<=hpatch_kMaxPluginTypeLength; (Note:result lifetime)
-    const char *(*compressType)(void); // ascii cstring,cannot contain '&'
-    // return the max compressed size, if input dataSize data;
+    // 返回 类型 tag; strlen(结果)<=hpatch_kMaxPluginTypeLength; (注意:结果 lifetime)
+    const char *(*compressType)(void); // ascii cstring,不能 contain '&'
+    // 返回 the max compressed 大小, 如果 输入 dataSize 数据;
     hpatch_StreamPos_t (*maxCompressedSize)(hpatch_StreamPos_t dataSize);
-    // return support threadNumber
+    // 返回支持的线程数
     int (*setParallelThreadNumber)(struct hdiff_TCompress *compressPlugin, int threadNum);
-    // compress data to out_code; return compressed size, if error or not need compress then return 0;
-    // if out_code->write() return hdiff_stream_kCancelCompress(error) then return 0;
-    // if memory I/O can use hdiff_compress_mem()
+    // 压缩 数据 到 out_code; 返回 compressed 大小, 如果 错误 或 不 需要 压缩 然后 返回 0;
+    // 如果 out_code->写入() 返回 hdiff_stream_kCancelCompress(错误) 然后 返回 0;
+    // 如果 内存 I/O 可以 使用 hdiff_compress_mem()
     hpatch_StreamPos_t (*compress)(const struct hdiff_TCompress *compressPlugin,
                                    const hpatch_TStreamOutput *out_code,
                                    const hpatch_TStreamInput *in_data);
-    const char *(*compressTypeForDisplay)(void); // like compressType but just for display,can NULL
+    const char *(*compressTypeForDisplay)(void); // like compressType but just 用于 显示,可以 NULL
 } hdiff_TCompress;
 
-// create a diff data between oldData and newData, the diffData saved as single compressed stream
-//   kMinSingleMatchScore: default 6, bin: 0--4  text: 4--9
-//   patchStepMemSize>=hpatch_kStreamCacheSize, default 256k, recommended 64k,2m etc...
-//   isUseBigCacheMatch: big cache max used O(oldSize) memory, match speed faster, but build big cache slow
+// 创建 a 差异 数据 between 旧数据 和 新数据, the diffData saved 作为 单个 compressed 流
+//   kMinSingleMatchScore: 默认 6, bin: 0--4  text: 4--9
+//   patchStepMemSize>=hpatch_kStreamCacheSize, 默认 256k, recommended 64k,2m etc...
+//   isUseBigCacheMatch: big 缓存 max 已使用 O(oldSize) 内存, 匹配 speed faster, but build big 缓存 slow
 void create_single_compressed_diff(const unsigned char *newData, const unsigned char *newData_end,
                                    const unsigned char *oldData, const unsigned char *oldData_end,
                                    const hpatch_TStreamOutput *out_diff, const hdiff_TCompress *compressPlugin,

@@ -32,18 +32,18 @@
 #include <stdexcept> //std::runtime_error
 #include "../../libParallel/parallel_import.h"
 #if (_IS_USED_MULTITHREAD)
-#include <thread>   //if used vc++, need >= vc2012
+#include <thread>   //使用 VC++ 时需要 VC2012 或更高版本
 #endif
 //排序方法选择.
 #ifndef _SA_SORTBY
 #define _SA_SORTBY
-//#  define _SA_SORTBY_STD_SORT
-//#  define _SA_SORTBY_SAIS
+//#  定义 _SA_SORTBY_STD_SORT
+//#  定义 _SA_SORTBY_SAIS
 #   define _SA_SORTBY_DIVSUFSORT
 #endif//_SA_SORTBY
 
 //匹配查找方法选择,是否用std::lower_bound,否则用自定义的实现.
-//#define _SA_MATCHBY_STD_LOWER_BOUND
+//#定义 _SA_MATCHBY_STD_LOWER_BOUND
 
 #if (defined _SA_SORTBY_STD_SORT) || (defined _SA_MATCHBY_STD_LOWER_BOUND)
     #include <algorithm> //sort,lower_bound
@@ -74,7 +74,7 @@ namespace {
         TInt L0=(TInt)(str0End-str0);
         TInt L1=(TInt)(str1End-str1);
     #ifdef _SA_SORTBY_STD_SORT
-        const int kMaxCmpLength_sort=1024*4; //警告:这是一个特殊的处理手段,用以避免_suffixString_create在使用std::sort时
+        const int kMaxCmpLength_sort=1024*4; //警告:这是一个特殊的处理手段,用以避免_suffixString_create在使用std::排序时
                                         //  某些情况退化到O(n*n)复杂度(运行时间无法接受),设置最大比较长度从而控制算法在
                                         //  O(kMaxCmpLength_sort*n)复杂度以内,这时排序的结果并不是标准的后缀数组;
         if (L0>kMaxCmpLength_sort) L0=kMaxCmpLength_sort;
@@ -149,7 +149,7 @@ namespace {
 #ifdef _SA_MATCHBY_STD_LOWER_BOUND
 #else
     template <class T> inline static T* __select_mid(T*& p,size_t n) { return p+(n>>1); }
-            //'&' for hack cpu cache speed for xcode, somebody know way?
+            //'&' 用于 hack cpu 缓存 speed 用于 xcode, somebody know way?
 #endif
     template <class T>
     inline static const T* _lower_bound(const T* rbegin,const T* rend,
@@ -177,7 +177,7 @@ namespace {
                     ++ss;
                     ++eq_len;
                     const int kMaxCmpLength_forLimitRangeDiff=1024*8; 
-                    if (eq_len<kMaxCmpLength_forLimitRangeDiff) //only for optimize limitRange match speed
+                    if (eq_len<kMaxCmpLength_forLimitRangeDiff) //仅 用于 optimize limitRange 匹配 speed
                         continue;
                     else
                         return mid;
@@ -236,7 +236,7 @@ namespace {
         str[1]=0;
         const T* pos=SA_begin;
         for (size_t cc=0;cc<256*256;++cc){
-            //cc is [c0,c1]
+            //cc 是 [c0,c1]
             str[0]=(TChar)(cc>>8);
             str[1]=(TChar)(cc&255);
             pos=_lower_bound(pos,SA_end,str,str+2,src_begin,src_end);
@@ -245,7 +245,7 @@ namespace {
         range[256*256]=(T)(SA_end-SA_begin);
     }
 
-}//end namespace
+}//命名空间结束
 
 
 TSuffixString::TSuffixString(bool isUsedFastMatch)
@@ -288,15 +288,15 @@ void TSuffixString::resetSuffixString(const TChar* src_begin,const TChar* src_en
 }
 
 TInt TSuffixString::lower_bound(const TChar* str,const TChar* str_end)const{
-    //not use any cached range table
-    //return m_lower_bound(m_cached_SA_begin,m_cached_SA_end,
-    //                     str,str_end,m_src_begin,m_src_end,m_cached_SA_begin,0);
+    //不 使用 any cached range 表
+    //返回 m_lower_bound(m_cached_SA_begin,m_cached_SA_end,
+    //                     第三方实现细节。
 #if (_SSTRING_FAST_MATCH>0)
     if (m_isUsedFastMatch&&(!m_fastMatch.isHit(TFastMatchForSString::getHash(str))))
         return -1;
     #define kMinStrLen _SSTRING_FAST_MATCH
 #else
-    //assert(str_end-str>=2);
+    //第三方实现细节。
     #define kMinStrLen 2
 #endif
     if ((kMinStrLen>=2)&(m_cached2char_range!=0)){
@@ -393,11 +393,11 @@ void TSuffixString::build_cache(size_t threadNum){
     }
 
     void TFastMatchForSString::buildMatchCache(const TChar* src_begin,const TChar* src_end,size_t threadNum){
-        #define kFMZoom 4  //ctrl memory size & match speed
+        #define kFMZoom 4  //ctrl 内存 大小 & 匹配 speed
         size_t srcSize=src_end-src_begin;
         if (srcSize>=kFMMinStrSize){
             const size_t rollSize=srcSize-(kFMMinStrSize-1);
-            bf.init(rollSize,kFMZoom); //alloc large memory
+            bf.init(rollSize,kFMZoom); //分配 large 内存
 #if (_IS_USED_MULTITHREAD)
             const size_t kInsertMinParallelSize=4096;
             if ((threadNum>1)&&(rollSize>=kInsertMinParallelSize)) {
@@ -425,4 +425,4 @@ void TSuffixString::build_cache(size_t threadNum){
     }
 #endif
     
-}//namespace hdiff_private
+}//命名空间 hdiff_private

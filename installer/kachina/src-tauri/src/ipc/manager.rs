@@ -17,7 +17,7 @@ use tokio::net::windows::named_pipe::ServerOptions;
 use tokio::time;
 use windows::Win32::Foundation::ERROR_PIPE_BUSY;
 
-// 1m buffer size
+// 1 MB 缓冲区大小
 static PIPE_BUFFER_SIZE: usize = 1024 * 1024;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
@@ -210,8 +210,8 @@ pub async fn managed_operation(
             }
             let pipeerr = v["PipeErr"].as_str();
             if let Some(pipeerr) = pipeerr {
-                // 提权进程已断开：把句柄清掉，否则 mgr.process 一直是 Some，
-                // 后面的 managed_operation 会跳过 start()、把消息发进死管道，
+                // 提权进程已断开：把句柄清掉，否则 mgr.处理 一直是 Some，
+                // 后面的 managed_operation 会跳过 开始()、把消息发进死管道，
                 // 再等一个永远不会来的广播 —— 界面就这么无限挂住（不是报错）。
                 *mgr.process.write().await = None;
                 return Err(anyhow::anyhow!("Elevate process disconnected: {}", pipeerr)

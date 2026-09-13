@@ -36,12 +36,12 @@ extern "C" {
 #endif
 
     
-//byte rle type , ctrl code: high 2bit + packedLen(6bit+...)
+//byte rle 类型 , ctrl 代码: high 2bit + packedLen(6bit+...)
 typedef enum TByteRleType{
-    kByteRleType_rle0  = 0,    //00 rle 0  , data code:0 byte
-    kByteRleType_rle255= 1,    //01 rle 255, data code:0 byte
-    kByteRleType_rle   = 2,    //10 rle x(1--254), data code:1 byte (save x)
-    kByteRleType_unrle = 3     //11 n byte data, data code:n byte(save no rle data)
+    kByteRleType_rle0  = 0,    //00 rle 0  , 数据 代码:0 byte
+    kByteRleType_rle255= 1,    //01 rle 255, 数据 代码:0 byte
+    kByteRleType_rle   = 2,    //10 rle x(1--254), 数据 代码:1 byte (保存 x)
+    kByteRleType_unrle = 3     //11 n byte 数据, 数据 代码:n byte(保存 no rle 数据)
 } TByteRleType;
     
 static const hpatch_uint kByteRleType_bit=2;
@@ -68,7 +68,7 @@ typedef struct _THDiffzHead{
 hpatch_BOOL read_diffz_head(hpatch_compressedDiffInfo* out_diffInfo,_THDiffzHead* out_head,
                             const hpatch_TStreamInput* compressedDiff);
 
-// Stream Clip cache
+// 流 Clip 缓存
 typedef struct TStreamCacheClip{
     hpatch_StreamPos_t          streamPos;
     hpatch_StreamPos_t          streamPos_end;
@@ -102,9 +102,9 @@ void _TStreamCacheClip_init(TStreamCacheClip* sclip,const hpatch_TStreamInput* s
     
 hpatch_BOOL _TStreamCacheClip_updateCache(TStreamCacheClip* sclip);
     
-hpatch_inline static //error return 0
+hpatch_inline static //错误 返回 0
 unsigned char* _TStreamCacheClip_accessData(TStreamCacheClip* sclip,hpatch_size_t readSize){
-    //assert(readSize<=sclip->cacheEnd);
+    //第三方实现细节。
     if (readSize>_TStreamCacheClip_cachedSize(sclip)){
         if (!_TStreamCacheClip_updateCache(sclip)) return 0;
         if (readSize>_TStreamCacheClip_cachedSize(sclip)) return 0;
@@ -115,7 +115,7 @@ unsigned char* _TStreamCacheClip_accessData(TStreamCacheClip* sclip,hpatch_size_
 #define _TStreamCacheClip_skipData_noCheck(sclip,skipSize) ((sclip)->cacheBegin+=skipSize)
 hpatch_BOOL _TStreamCacheClip_skipData(TStreamCacheClip* sclip,hpatch_StreamPos_t skipLongSize);
     
-hpatch_inline static //error return 0
+hpatch_inline static //错误 返回 0
 unsigned char* _TStreamCacheClip_readData(TStreamCacheClip* sclip,hpatch_size_t readSize){
     unsigned char* result=_TStreamCacheClip_accessData(sclip,readSize);
     _TStreamCacheClip_skipData_noCheck(sclip,readSize);
@@ -132,7 +132,7 @@ hpatch_BOOL _TStreamCacheClip_unpackUIntWithTag(TStreamCacheClip* sclip,
 hpatch_BOOL _TStreamCacheClip_readType_end(TStreamCacheClip* sclip,unsigned char endTag,
                                            char out_type[hpatch_kMaxPluginTypeLength+1]);
 
-// Stream Clip cache
+// 流 Clip 缓存
 typedef struct {
     hpatch_StreamPos_t           writeToPos;
     const hpatch_TStreamOutput*  dstStream;

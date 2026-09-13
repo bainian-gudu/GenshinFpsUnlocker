@@ -27,7 +27,7 @@
 #include "divsufsort_private.h"
 
 
-/*- Private Functions -*/
+/*- 私有 Functions -*/
 
 #if (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE)
 
@@ -45,7 +45,7 @@ ss_ilg(saidx_t n) {
 #endif
 }
 
-#endif /* (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE) */
+#endif 第三方实现细节。
 
 #if SS_BLOCKSIZE != 0
 
@@ -95,12 +95,12 @@ ss_isqrt(saidx_t x) {
   return (x < (y * y)) ? y - 1 : y;
 }
 
-#endif /* SS_BLOCKSIZE != 0 */
+#endif 第三方实现细节。
 
 
 /*---------------------------------------------------------------------------*/
 
-/* Compares two suffixes. */
+第三方实现细节。
 static INLINE
 saint_t
 ss_compare(const sauchar_t *T,
@@ -126,7 +126,7 @@ ss_compare(const sauchar_t *T,
 
 #if (SS_BLOCKSIZE != 1) && (SS_INSERTIONSORT_THRESHOLD != 1)
 
-/* Insertionsort for small size groups */
+/* Insertionsort 用于 small 大小 groups */
 static
 void
 ss_insertionsort(const sauchar_t *T, const sastore_t *PA,
@@ -145,7 +145,7 @@ ss_insertionsort(const sauchar_t *T, const sastore_t *PA,
   }
 }
 
-#endif /* (SS_BLOCKSIZE != 1) && (SS_INSERTIONSORT_THRESHOLD != 1) */
+#endif 第三方实现细节。
 
 
 /*---------------------------------------------------------------------------*/
@@ -168,7 +168,7 @@ ss_fixdown(const sauchar_t *Td, const sastore_t *PA,
   SA[i] = v;
 }
 
-/* Simple top-down heapsort. */
+第三方实现细节。
 static
 void
 ss_heapsort(const sauchar_t *Td, const sastore_t*PA, sastore_t* SA, saidx_t size) {
@@ -193,7 +193,7 @@ ss_heapsort(const sauchar_t *Td, const sastore_t*PA, sastore_t* SA, saidx_t size
 
 /*---------------------------------------------------------------------------*/
 
-/* Returns the median of three elements. */
+/* Returns the median 的 three elements. */
 static INLINE
 sastore_t*
 ss_median3(const sauchar_t *Td, const sastore_t*PA,
@@ -207,7 +207,7 @@ ss_median3(const sauchar_t *Td, const sastore_t*PA,
   return v2;
 }
 
-/* Returns the median of five elements. */
+/* Returns the median 的 five elements. */
 static INLINE
 sastore_t*
 ss_median5(const sauchar_t *Td, const sastore_t*PA,
@@ -222,7 +222,7 @@ ss_median5(const sauchar_t *Td, const sastore_t*PA,
   return v3;
 }
 
-/* Returns the pivot element. */
+第三方实现细节。
 static INLINE
 sastore_t*
 ss_pivot(const sauchar_t *Td, const sastore_t*PA, sastore_t*first, sastore_t*last) {
@@ -250,7 +250,7 @@ ss_pivot(const sauchar_t *Td, const sastore_t*PA, sastore_t*first, sastore_t*las
 
 /*---------------------------------------------------------------------------*/
 
-/* Binary partition for substrings. */
+/* Binary partition 用于 substrings. */
 static INLINE
 sastore_t*
 ss_partition(const sastore_t*PA,
@@ -269,7 +269,7 @@ ss_partition(const sastore_t*PA,
   return a;
 }
 
-/* Multikey introsort for medium size groups. */
+/* Multikey introsort 用于 medium 大小 groups. */
 static
 void
 ss_mintrosort(const sauchar_t *T, const sastore_t *PA,
@@ -325,12 +325,12 @@ ss_mintrosort(const sauchar_t *T, const sastore_t *PA,
       continue;
     }
 
-    /* choose pivot */
+    第三方实现细节。
     a = ss_pivot(Td, PA, first, last);
     v = Td[PA[*a]];
     SWAP(*first, *a);
 
-    /* partition */
+    第三方实现细节。
     for(b = first; (++b < last) && ((x = Td[PA[*b]]) == v);) { }
     if(((a = b) < last) && (x < v)) {
       for(; (++b < last) && ((x = Td[PA[*b]]) <= v);) {
@@ -405,7 +405,7 @@ ss_mintrosort(const sauchar_t *T, const sastore_t *PA,
 #undef STACK_SIZE
 }
 
-#endif /* (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE) */
+#endif 第三方实现细节。
 
 
 /*---------------------------------------------------------------------------*/
@@ -504,7 +504,7 @@ ss_inplacemerge(const sauchar_t *T, const sastore_t*PA,
 
 /*---------------------------------------------------------------------------*/
 
-/* Merge-forward with internal buffer. */
+/* Merge-forward 含有 内部 缓冲区. */
 static
 void
 ss_mergeforward(const sauchar_t *T, const sastore_t*PA,
@@ -554,7 +554,7 @@ ss_mergeforward(const sauchar_t *T, const sastore_t*PA,
   }
 }
 
-/* Merge-backward with internal buffer. */
+/* Merge-backward 含有 内部 缓冲区. */
 static
 void
 ss_mergebackward(const sauchar_t *T, const sastore_t*PA,
@@ -613,7 +613,7 @@ ss_mergebackward(const sauchar_t *T, const sastore_t*PA,
   }
 }
 
-/* D&C based merge. */
+第三方实现细节。
 static
 void
 ss_swapmerge(const sauchar_t *T, const sastore_t*PA,
@@ -700,14 +700,14 @@ ss_swapmerge(const sauchar_t *T, const sastore_t*PA,
 #undef STACK_SIZE
 }
 
-#endif /* SS_BLOCKSIZE != 0 */
+#endif 第三方实现细节。
 
 
 /*---------------------------------------------------------------------------*/
 
-/*- Function -*/
+/*- 函数 -*/
 
-/* Substring sort */
+/* Substring 排序 */
 void
 sssort(const sauchar_t *T, const sastore_t*PA,
        sastore_t *first, sastore_t*last,
@@ -768,7 +768,7 @@ sssort(const sauchar_t *T, const sastore_t*PA,
 #endif
 
   if(lastsuffix != 0) {
-    /* Insert last type B* suffix. */
+    /* Insert last 类型 B* 后缀. */
     sastore_t PAi[2]; PAi[0] = PA[*(first - 1)], PAi[1] = n - 2;
     for(a = first, i = *(first - 1);
         (a < last) && ((*a < 0) || (0 < ss_compare(T, &(PAi[0]), PA + *a, depth)));

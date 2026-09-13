@@ -16,9 +16,9 @@ export type AgreementFormat = 'text' | 'markdown' | 'html';
 export type AgreementConfig = {
   /** 链接与弹窗标题，默认「用户协议」 */
   title?: string;
-  /** 正文渲染方式，默认 text */
+  /** 正文渲染方式，默认 文本 */
   format?: AgreementFormat;
-  /** 正文（text/markdown/html 源码） */
+  /** 正文（文本/markdown/html 源码） */
   content: string;
 };
 
@@ -64,7 +64,7 @@ export type ProjectConfig = {
   extraUninstallRegistry?: RegistryCleanupItem[];
   /**
    * 卸载时额外清理的快捷方式**文件名**（不是完整路径）。
-   * 目录由卸载器用 shell API 解析（公共桌面 / 用户桌面 / 公共开始菜单 /
+   * 目录由卸载器用 Shell API 解析（公共桌面 / 用户桌面 / 公共开始菜单 /
    * 用户开始菜单四侧都试），因此桌面被 OneDrive 重定向也能命中。
    * 删不掉只记日志，不会让卸载失败。
    */
@@ -151,7 +151,7 @@ export type InvokeGetDfsRes = {
   source: string;
 };
 
-// DFS2 types
+// DFS2 类型
 export type Dfs2Metadata = {
   resource_version: string;
   name: string;
@@ -201,7 +201,7 @@ export interface InsightItem {
   time: number; // 纯下载时间(ms) = 总时间 - TTFB
   size: number; // 实际下载字节数
   error?: string;
-  range?: [number, number][]; // HTTP Range请求范围
+  range?: [number, number][]; // HTTP 范围请求范围
   mode?: string; // 安装模式
 }
 

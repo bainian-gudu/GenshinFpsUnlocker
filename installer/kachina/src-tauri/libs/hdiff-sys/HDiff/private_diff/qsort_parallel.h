@@ -1,5 +1,5 @@
 //  qsort_parallel.h
-//  parallel sort for HDiffz
+//  并行 排序 用于 HDiffz
 /*
  The MIT License (MIT)
  Copyright (c) 2022 HouSisong
@@ -31,7 +31,7 @@
 #include <algorithm>
 #include "../../../libParallel/parallel_import.h"
 #if (_IS_USED_MULTITHREAD)
-#include <thread>   //if used vc++, need >= vc2012
+#include <thread>   //使用 VC++ 时需要 VC2012 或更高版本
 #endif
 
 #if (_IS_USED_MULTITHREAD)
@@ -57,7 +57,7 @@
         const size_t _kIndexStep=size/kSampleSize+1;
         size_t curIndex=0;
         for(size_t i=0;i<kSampleSize;i++,curIndex+=_kIndexStep){
-            size_t ri=(curIndex+(size_t)rand()) % size;  //muti thread safe
+            size_t ri=(curIndex+(size_t)rand()) % size;  //muti 线程 安全
             samples[i]=ri;
         }
         const bool _kIsSortNotNth=false;
@@ -84,8 +84,8 @@
             TValue* mid;
             const bool _kIsPartitionNotMerge=true;
             if (_kIsPartitionNotMerge){ // partition
-                //mid=begin+__index_by_ratio(size,leftWeight,threadNum); std::nth_element(begin,mid,end,cmp); //for test 
-                //mid=std::_Partition_by_median_guess_unchecked(begin, end, cmp).first; //for test by vc
+                //mid=开始+__index_by_ratio(大小,leftWeight,threadNum); std::nth_element(开始,mid,结束,cmp); //用于 测试
+                //mid=std::_Partition_by_median_guess_unchecked(开始, 结束, cmp).first; //用于 测试 通过 vc
                 mid=_sort_parallel_partition<TValue,TCmp,kSampleSize>(begin,end,cmp,leftWeight,rightWeight);
             }else{
                 mid=begin+__index_by_ratio(end-begin,leftWeight,threadNum);
@@ -101,7 +101,7 @@
             }
         }else{
             std::sort(begin,end,cmp);
-            //printf("parallel sort size: %" PRIu64 " \n",(hpatch_StreamPos_t)(end-begin));
+            //printf("并行 排序 大小: %" PRIu64 " \n",(hpatch_StreamPos_t)(结束-开始));
         }
     }
 #endif
@@ -113,7 +113,7 @@
         if ((threadNum>1)&&(size>=kMinQSortParallelSize)){
             const size_t maxThreanNum=size/(kMinQSortParallelSize/2);
             threadNum=(threadNum<=maxThreanNum)?threadNum:maxThreanNum;
-            //std::random_shuffle(begin,end); //test shuffle befor parallel sort?
+            //std::random_shuffle(开始,结束); //测试 shuffle befor 并行 排序?
             _sort_parallel_thread<TValue,TCmp,kSampleSize>(begin,end,cmp,threadNum);
         }else
 #endif

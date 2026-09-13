@@ -28,7 +28,7 @@
 #ifndef stream_serialize_h
 #define stream_serialize_h
 #include "covers.h"
-#include "../pack_uint.h" //for packUInt_fixSize
+#include "../pack_uint.h" //用于 packUInt_fixSize
 #include "../mem_buf.h"
 #include "../bytes_rle.h"
 
@@ -109,7 +109,7 @@ private:
     size_t                      readedCoverCount;
     hpatch_StreamPos_t          _readFromPos_back;
 
-    //by range
+    //通过 range
     size_t                      _coveri;
     hpatch_StreamPos_t          _newDataPos;
 
@@ -248,7 +248,7 @@ private:
     
     void _packUInt_limit(hpatch_StreamPos_t uValue,size_t limitOutSize);
     
-    //stream->read can return currently readed data size,return <0 error
+    //流->读取 可以 返回 currently readed 数据 大小,返回 <0 错误
     void _pushStream(const hpatch_TStreamInput* stream);
 };
 
@@ -315,5 +315,5 @@ static inline void do_compress(std::vector<unsigned char>& out_code,const std::v
     do_compress(out_code,&dataStream,compressPlugin,isMustCompress);
 }
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 #endif

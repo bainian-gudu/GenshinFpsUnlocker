@@ -27,8 +27,8 @@
 #ifndef _DIVSUFSORT_H
 #define _DIVSUFSORT_H 1
 
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 */)
-#   include <stdint.h> //for uint8_t,int32_t
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#   include <stdint.h> //用于 uint8_t,int32_t
 #else
 #   if (_MSC_VER >= 1300)
     typedef unsigned __int8     uint8_t;
@@ -41,7 +41,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif /* __cplusplus */
+#endif 第三方实现细节。
 
 #ifndef PRId32
 #   define PRId32 "d"
@@ -55,43 +55,43 @@ extern "C" {
 # endif
 #endif
 
-/*- Datatypes -*/
+第三方实现细节。
 #ifndef SAUCHAR_T
 #define SAUCHAR_T
 typedef uint8_t sauchar_t;
-#endif /* SAUCHAR_T */
+#endif 第三方实现细节。
 #ifndef SAINT_T
 #define SAINT_T
 typedef int32_t saint_t;
-#endif /* SAINT_T */
+#endif 第三方实现细节。
 #ifndef SAIDX32_T
 #define SAIDX32_T
 typedef int32_t saidx32_t;
-#endif /* SAIDX32_T */
+#endif 第三方实现细节。
 
-/*- Prototypes -*/
+第三方实现细节。
 
 /**
- * Constructs the suffix array of a given string.
- * @param T[0..n-1] The input string.
- * @param SA[0..n-1] The output array of suffixes.
- * @param n The length of the given string.
- * @return 0 if no error occurred, -1 or -2 otherwise.
+ * Constructs the 后缀 数组 的 a given 字符串.
+ * @param T[0..n-1] The 输入 字符串.
+ * @param SA[0..n-1] The 输出 数组 的 suffixes.
+ * @param n The 长度 的 the given 字符串.
+ * @返回 0 如果 no 错误 occurred, -1 或 -2 otherwise.
  */
 DIVSUFSORT_API
 saint_t
 divsufsort(const sauchar_t *T,saidx32_t *SA,saidx32_t n,int threadNum);
 
 /**
- * Returns the version of the divsufsort library.
- * @return The version number string.
+ * Returns the 版本 的 the divsufsort library.
+ * @返回 The 版本 数量 字符串.
  */
 DIVSUFSORT_API
 const char *
 divsufsort_version(void);
 
 #ifdef __cplusplus
-} /* extern "C" */
-#endif /* __cplusplus */
+} 第三方实现细节。
+#endif 第三方实现细节。
 
-#endif /* _DIVSUFSORT_H */
+#endif 第三方实现细节。

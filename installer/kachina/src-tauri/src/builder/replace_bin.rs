@@ -84,21 +84,21 @@ async fn parse_file_index(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 跳过 TLV 头部 ("!IN\0" + name_len + name + size)
+    // 跳过 TLV 头部 ("!IN\0" + name_len + 名称 + 大小)
     // 查找 \0INDEX 的数据部分
     let mut current_pos = index_offset;
     let _end_pos = index_offset + index_size;
 
-    // 跳过 TLV 头部: !IN\0 (4) + name_len (2) + \0INDEX (6) + size (4) = 16 bytes
+    // 跳过 TLV 头部: !IN\0 (4) + name_len (2) + \0INDEX (6) + 大小 (4) = 16 字节
     current_pos += 4; // !IN\0
 
     let name_len_data = file.slice(current_pos as usize, 2);
     let name_len = u16::from_be_bytes(name_len_data.try_into().unwrap()) as u64;
-    current_pos += 2 + name_len; // name_len + name
+    current_pos += 2 + name_len; // name_len + 名称
 
     let content_size_data = file.slice(current_pos as usize, 4);
     let content_size = u32::from_be_bytes(content_size_data.try_into().unwrap()) as u64;
-    current_pos += 4; // content size
+    current_pos += 4; // 内容 大小
 
     // 现在 current_pos 指向索引数据的开始
     let index_data = file.slice(current_pos as usize, content_size as usize);
@@ -127,11 +127,11 @@ async fn parse_file_index(
             break;
         }
 
-        // 读取大小 (u32 big endian)
+        // 读取大小 (u32 大 端序)
         let size = u32::from_be_bytes(index_data[pos..pos + 4].try_into().unwrap());
         pos += 4;
 
-        // 读取偏移量 (u32 big endian)
+        // 读取偏移量 (u32 大 端序)
         let offset = u32::from_be_bytes(index_data[pos..pos + 4].try_into().unwrap());
         pos += 4;
 
@@ -164,7 +164,7 @@ fn update_offsets(
         },
     };
 
-    // 更新文件索引中的偏移量（除了 \0CONFIG 和 \0IMAGE）
+    // 更新文件索引中的偏移量（除了 \0配置 和 \0IMAGE）
     for entry in file_entries.iter_mut() {
         if entry.name != "\\0CONFIG" && entry.name != "\\0IMAGE" {
             entry.offset = (entry.offset as i64 + size_diff) as u32;
@@ -202,7 +202,7 @@ async fn copy_data_range(
         .await
         .map_err(|e| e.to_string())?;
 
-    let chunk_size = 8192; // 8KB chunks
+    let chunk_size = 8192; // 8 KB 分块
     let mut copied = 0u64;
 
     while copied < len {
@@ -218,7 +218,7 @@ async fn copy_data_range(
 
 // 更新 PE 头
 async fn update_pe_header(output: &mut File, new_index_header: &[u8]) -> Result<(), String> {
-    // 查找 "This program cannot be run in DOS mode" 位置
+    // 查找 DOS 模式提示文本的位置
     output
         .seek(SeekFrom::Start(0))
         .await
@@ -273,7 +273,7 @@ async fn write_new_installer(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 2. 复制配置数据 (\0CONFIG)
+    // 2. 复制配置数据 (\0配置)
     let config_start = old_index.base_end as u64;
     let config_len = old_index.config_end as u64 - config_start;
     copy_data_range(input, &mut output_file, config_start, config_len).await?;

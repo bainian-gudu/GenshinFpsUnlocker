@@ -1,10 +1,10 @@
-//! H3 (HTTP/3 over QUIC) capability management for kachina-installer.
+//! kachina-installer 的 H3（基于 QUIC 的 HTTP/3）能力管理。
 //!
-//! This module provides:
-//! - `init()` — Startup probe that checks H3 availability (Win11+, no proxy, MsQuic OK)
-//! - `is_h3_available()` / `disable_h3()` — Runtime H3 state management
-//! - `DynamicUaMiddleware` — Injects User-Agent with h3/enabled when available
-//! - `H3FallbackMiddleware` — Intercepts http3:// URLs, falls back on failure
+//! 此模块提供：
+//! - `init()`：启动时检查 H3 是否可用（Win11+、无代理、MsQuic 正常）
+//! - `is_h3_available()` / `disable_h3()`：运行时 H3 状态管理
+//! - `DynamicUaMiddleware`：注入 User-Agent，并在 H3 可用时加入 h3/enabled
+//! - `H3FallbackMiddleware`：拦截 http3:// URL，并在失败时回退
 
 pub(crate) mod h3;
 pub(crate) mod sftp;
@@ -19,29 +19,29 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Global H3 availability state
+// 全局 H3 可用状态
 // ══════════════════════════════════════════════════════════════════════════════
 
 static H3_AVAILABLE: AtomicBool = AtomicBool::new(false);
 
-/// Returns whether H3 is currently available for this session.
+/// 返回当前会话是否可以使用 H3。
 pub fn is_h3_available() -> bool {
     H3_AVAILABLE.load(Ordering::Relaxed)
 }
 
-/// Permanently disables H3 for this session (idempotent).
-/// Called on first H3 connection failure.
+/// 在当前会话中永久禁用 H3（可重复调用）。
+/// 首次 H3 连接失败时调用。
 pub fn disable_h3() {
     H3_AVAILABLE.store(false, Ordering::Relaxed);
     tracing::warn!("[H3] Disabled for this session");
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Startup probe
+// 启动探测
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Probes H3 support at startup. Returns whether H3 is available.
-/// Sets `H3_AVAILABLE` internally.
+/// 启动时探测 H3 支持情况，返回 H3 是否可用。
+/// 在内部设置 `H3_AVAILABLE`。
 pub fn init() -> bool {
     let ok = probe_h3_support();
     H3_AVAILABLE.store(ok, Ordering::Relaxed);
@@ -49,7 +49,7 @@ pub fn init() -> bool {
 }
 
 fn probe_h3_support() -> bool {
-    // 1. Win11+ check (MsQuic QUIC with Schannel requires build >= 22000)
+    // 1. Win11+ 检查 (MsQuic QUIC 使用 Schannel requires 构建 >= 22000)
     let (major, minor, build) = nt_version::get();
     let build_num = build & 0xffff;
     if !(major == 10 && minor == 0 && build_num >= 22000) {
@@ -60,13 +60,13 @@ fn probe_h3_support() -> bool {
         return false;
     }
 
-    // 2. System proxy check — H3 doesn't work through proxies
+    // 2. 检查系统代理：H3 不支持通过代理连接
     if has_system_proxy() {
         tracing::info!("[H3] System proxy detected, disabled");
         return false;
     }
 
-    // 3. MsQuic availability probe — create Registration to verify DLL + Schannel
+    // 3. MsQuic availability 探测 — 创建 Registration 到 验证 DLL + Schannel
     use h3_msquic_async::msquic_async::msquic;
     match msquic::Registration::new(&msquic::RegistrationConfig::default()) {
         Ok(_reg) => {
@@ -90,11 +90,11 @@ fn has_system_proxy() -> bool {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Dynamic User-Agent middleware
+// 动态 用户-Agent middleware
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Middleware that injects a dynamic User-Agent header.
-/// Includes "h3/enabled" when H3 is available, so the control plane knows.
+/// 注入动态 User-Agent 请求头的中间件。
+/// H3 可用时加入 "h3/enabled"，供控制端识别。
 pub struct DynamicUaMiddleware;
 
 impl Default for DynamicUaMiddleware {
@@ -125,7 +125,7 @@ impl Middleware for DynamicUaMiddleware {
     }
 }
 
-/// Generates the User-Agent string with optional h3/enabled suffix.
+/// 生成 User-Agent 字符串，并按需附加 h3/enabled 后缀。
 pub fn ua_string() -> String {
     let (major, minor, build) = nt_version::get();
     let cpu_cores = num_cpus::get();
@@ -152,11 +152,11 @@ pub fn ua_string() -> String {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// H3 Fallback middleware
+// H3 回退 middleware
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Middleware that intercepts `http3://` URLs and routes them through H3Middleware.
-/// On any H3 failure, permanently disables H3 for this session and returns the error.
+/// 拦截 `http3://` URL 并交由 H3Middleware 处理的中间件。
+/// 任何 H3 请求失败后，永久禁用当前会话的 H3 并返回错误。
 pub struct H3FallbackMiddleware {
     h3: H3Middleware,
 }
@@ -167,7 +167,7 @@ impl H3FallbackMiddleware {
         Ok(Self { h3 })
     }
 
-    /// Get a reference to the inner H3Middleware (for shutdown, discover, etc.)
+    /// 获取内部 H3Middleware 的引用，用于关闭、发现等操作。
     pub fn inner(&self) -> &H3Middleware {
         &self.h3
     }
@@ -176,16 +176,16 @@ impl H3FallbackMiddleware {
 #[async_trait]
 impl Middleware for H3FallbackMiddleware {
     async fn handle(&self, req: Request, ext: &mut Extensions, next: Next<'_>) -> Result<Response> {
-        // Only intercept http3:// scheme
+        // 仅 intercept http3:// 方案
         if req.url().scheme() != "http3" {
             return next.run(req, ext).await;
         }
 
-        // Attempt H3 request
+        // 尝试发起 H3 请求
         match self.h3.h3_request(req).await {
             Ok(resp) => Ok(resp),
             Err(e) => {
-                // First H3 failure → disable for this session
+                // 首次 H3 失败后禁用当前会话的 H3
                 disable_h3();
                 Err(e)
             }

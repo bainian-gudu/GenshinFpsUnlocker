@@ -120,18 +120,18 @@ name = "kachina-builder"
 path = "src/builder/main.rs"
 
 [profile.dev]
-incremental = true # Compile your binary in smaller steps.
-rustflags = ["-Zthreads=16"] # Better compile performance.
+incremental = true # 将编译拆成更小的步骤。
+rustflags = ["-Zthreads=16"] # 提高编译性能。
 
 [profile.release]
 debug = true
 split-debuginfo = "packed"
-codegen-units = 1 # Allows LLVM to perform better optimization.
-lto = true # Enables link-time-optimizations.
-opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
-panic = "abort" # Higher performance by disabling panic handlers.
-trim-paths = "all" # Removes potentially privileged information from your binaries.
-rustflags = ["-Zthreads=16"] # Better compile performance.
+codegen-units = 1 # 允许 LLVM 进行更好的优化。
+lto = true # 启用链接时优化。
+opt-level = "s" # 优先减小二进制体积；更重视速度时可改为 `3`。
+panic = "abort" # 禁用 panic 处理器以提高性能。
+trim-paths = "all" # 从二进制文件中移除可能包含特权信息的路径。
+rustflags = ["-Zthreads=16"] # 提高编译性能。
 
 [patch.crates-io]
 msquic-async = { git = "https://github.com/xytoki/msquic-async-rs.git", branch = "main" }

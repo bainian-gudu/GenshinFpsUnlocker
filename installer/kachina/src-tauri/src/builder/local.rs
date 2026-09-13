@@ -11,9 +11,9 @@ pub async fn mmap() -> &'static AsyncMmapFile {
             let exe_path = {
                 #[cfg(debug_assertions)]
                 {
-                    // use last release build
+                    // 使用上一次发布构建
                     let exe_path = std::env::current_exe().unwrap();
-                    // ../release/${basename}
+                    // ../发布/${basename}
                     let exe_path = exe_path
                         .parent()
                         .ok_or("Failed to get parent dir".to_string())
@@ -37,7 +37,7 @@ pub async fn mmap() -> &'static AsyncMmapFile {
                     } else if debug_path.exists() {
                         debug_path
                     } else {
-                        // fallback to current exe
+                        // 回退到当前 exe
                         std::env::current_exe().unwrap()
                     }
                 }
@@ -61,7 +61,7 @@ async fn search_pattern_for_extract(file: &AsyncMmapFile) -> anyhow::Result<Vec<
     let mut read = 0;
 
     loop {
-        // move last 4 bytes to the beginning of the buffer
+        // 将最后 4 个字节移到缓冲区开头
         if read > 4 {
             buffer[0] = buffer[read + 4 - 4];
             buffer[1] = buffer[read + 4 - 3];
@@ -103,15 +103,15 @@ pub async fn get_embedded(file: &AsyncMmapFile) -> anyhow::Result<Vec<Embedded>>
     let mut last_offset: usize = 0;
     for offset in offsets.iter() {
         if *offset < last_offset {
-            // in case of content includes header
+            // 处理内容包含头部的情况
             continue;
         }
-        // TLV
-        // header: !IN\0
-        // name length: 2 bytes big endian
-        // name: variable length
-        // content length: 4 bytes big endian
-        // content: variable length
+        // 相关实现：TLV
+        // 头部：!IN\0
+        // 名称长度：2 字节，大端序
+        // 名称：可变长度
+        // 内容长度：4 字节，大端序
+        // 内容：可变长度
         let mem_pos_name_length = *offset + 4;
         let mem_pos_name = mem_pos_name_length + 2;
         let name_length =
@@ -134,7 +134,7 @@ pub async fn get_embedded(file: &AsyncMmapFile) -> anyhow::Result<Vec<Embedded>>
 }
 
 async fn search_pattern(file: &AsyncMmapFile) -> Result<Vec<usize>, String> {
-    let pattern: [u8; 4] = [0x4D, 0x5A, 0x90, 0x00]; // exe header
+    let pattern: [u8; 4] = [0x4D, 0x5A, 0x90, 0x00]; // exe 头部
     let mut reader = file.reader(0).map_err(|e| e.to_string())?;
     let mut buffer = [0u8; 4096];
     let mut offset: usize = 0;
@@ -147,7 +147,7 @@ async fn search_pattern(file: &AsyncMmapFile) -> Result<Vec<usize>, String> {
             break;
         }
 
-        // Step 1: Check across previous_bytes and buffer
+        // 步骤 1：检查 previous_bytes 与缓冲区
         if !previous_bytes.is_empty() {
             let pb_len = previous_bytes.len();
             let needed = 4 - pb_len;
@@ -163,14 +163,14 @@ async fn search_pattern(file: &AsyncMmapFile) -> Result<Vec<usize>, String> {
             }
         }
 
-        // Step 2: Check within the buffer
+        // 步骤 2：检查缓冲区内部
         for i in 0..bytes_read - 3 {
             if buffer[i..i + 4] == pattern {
                 founds.push(offset + i);
             }
         }
 
-        // Step 3: Update previous_bytes
+        // 步骤 3：更新 previous_bytes
         if bytes_read > 0 {
             let start = bytes_read - std::cmp::min(3, bytes_read);
             previous_bytes = buffer[start..bytes_read].to_vec();

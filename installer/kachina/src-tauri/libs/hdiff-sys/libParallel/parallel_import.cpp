@@ -29,9 +29,9 @@
 
 #if (_IS_USED_PTHREAD)
 #   ifdef WIN32
-#       include "windows.h" //for Sleep
-#       //pragma comment(lib,"pthread.lib") //for static pthread lib
-#       //define PTW32_STATIC_LIB  //for static pthread lib
+#       include "windows.h" //用于 Sleep
+#       //pragma comment(lib,"pthread.lib") //用于 静态 pthread lib
+#       //定义 PTW32_STATIC_LIB  //用于 静态 pthread lib
 #   endif
 #   include <pthread.h>
 #   ifdef __ANDROID__
@@ -51,7 +51,7 @@
 #endif
 
 #if (_IS_USED_PTHREAD)
-#include <string.h> //for memset
+#include <string.h> //用于 memset
 #include <stdlib.h>
 #include <stdexcept>
 #include <string>
@@ -255,7 +255,7 @@ void thread_parallel(int threadCount,TThreadRunCallBackProc threadProc,void* wor
 
 
 #if (_IS_USED_WIN32THREAD)
-#include <string.h> //for memset
+#include <string.h> //用于 memset
 #include <stdlib.h>
 #include <stdexcept>
 #include <string>

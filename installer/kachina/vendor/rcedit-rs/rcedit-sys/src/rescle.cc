@@ -2,14 +2,14 @@
 // Use of this source code is governed by MIT license that can be found in the
 // LICENSE.rcedit file.
 //
-// This file is modified from Rescle written by yoshio.okumura@gmail.com:
+// 此文件改编自 yoshio.okumura@gmail.com 编写的 Rescle：
 // http://code.google.com/p/rescle/
 
 #include "rescle.h"
 
 #include <assert.h>
 #include <sstream> // wstringstream
-#include <iomanip> // setw, setfill
+#include <iomanip> // 第三方实现细节。
 #include <fstream>
 #include <codecvt>
 #include <algorithm>
@@ -72,7 +72,7 @@ typedef struct _VS_VERSION_ROOT {
 } VS_VERSION_ROOT;
 #pragma pack(pop)
 
-// The default en-us LANGID.
+// The 默认 en-us LANGID.
 LANGID kLangEnUs = 1033;
 LANGID kCodePageEnUs = 1200;
 UINT   kDefaultIconBundle = 0;
@@ -84,8 +84,8 @@ inline T round(T value, int modula = 4) {
 
 std::wstring ReadFileToString(const wchar_t* filename) {
   std::wifstream wif(filename);
-  // Local patch: was a non-standard MSVC locale extension that newer toolchains
-  // removed. Rationale and provenance: ../../LOCAL_PATCHES.md
+  // 本地 补丁: was a non-standard MSVC locale extension that newer toolchains
+  // removed. Rationale 和 provenance: ../../LOCAL_PATCHES.md
   wif.imbue(std::locale(std::locale::classic(), new std::codecvt_utf8<wchar_t>));
   std::wstringstream wss;
   wss << wif.rdbuf();
@@ -105,17 +105,17 @@ class ScopedFile {
 };
 
 struct VersionStampValue {
-  WORD valueLength = 0; // stringfileinfo, stringtable: 0; string: Value size in WORD; var: Value size in bytes
-  WORD type = 0; // 0: binary data; 1: text data
-  std::wstring key; // stringtable: 8-digit hex stored as UTF-16 (hiword: hi6: sublang, lo10: majorlang; loword: code page); must include zero words to align next member on 32-bit boundary
-  std::vector<BYTE> value; // string: zero-terminated string; var: array of language & code page ID pairs
+  WORD valueLength = 0; // stringfileinfo, stringtable: 0; 字符串: 值 大小 在 WORD; var: 值 大小 在 bytes
+  WORD type = 0; // 0: binary 数据; 1: text 数据
+  std::wstring key; // stringtable: 8-digit hex stored 作为 UTF-16 (hiword: hi6: sublang, lo10: majorlang; loword: 代码 page); 必须 包含 zero words 到 align 下一个 member 在 32-bit boundary
+  std::vector<BYTE> value; // 字符串: zero-terminated 字符串; var: 数组 的 language & 代码 page ID pairs
   std::vector<VersionStampValue> children;
 
   size_t GetLength() const;
   std::vector<BYTE> Serialize() const;
 };
 
-}  // namespace
+}  // 命名空间
 
 VersionInfo::VersionInfo() {
   FillDefaultData();
@@ -304,7 +304,7 @@ VersionStringTable VersionInfo::DeserializeVersionStringTable(const BYTE* tableD
 
   VersionStringTable tableEntry;
 
-  // unicode string of 8 hex digits
+  // unicode 字符串 的 8 hex digits
   tableEntry.encoding.wLanguage = langIdCodePagePair >> 16;
   tableEntry.encoding.wCodePage = langIdCodePagePair;
 
@@ -457,7 +457,7 @@ bool ResourceUpdater::SetVersionString(WORD languageId, const WCHAR* name, const
       }
     }
 
-    // Not found, append one for all tables.
+    // 未找到，为所有表追加一个。
     stringPairs.push_back(VersionString(nameStr, valueStr));
   }
 
@@ -538,7 +538,7 @@ bool ResourceUpdater::ChangeString(WORD languageId, UINT id, const WCHAR* value)
 
   UINT blockId = id / 16;
   if (table.find(blockId) == table.end()) {
-    // Fill the table until we reach the block.
+    // 填充表，直到到达该块。
     for (size_t i = table.size(); i <= blockId; ++i) {
       table[i] = std::vector<std::wstring>(16);
     }
@@ -599,7 +599,7 @@ const WCHAR* ResourceUpdater::GetString(WORD languageId, UINT id) {
 
   UINT blockId = id / 16;
   if (table.find(blockId) == table.end()) {
-    // Fill the table until we reach the block.
+    // 填充表，直到到达该块。
     for (size_t i = table.size(); i <= blockId; ++i) {
       table[i] = std::vector<std::wstring>(16);
     }
@@ -707,7 +707,7 @@ bool ResourceUpdater::Commit() {
     return false;
   }
 
-  // update version info.
+  // 更新版本信息。
   for (const auto& i : versionStampMap_) {
     LANGID langId = i.first;
     std::vector<BYTE> out = i.second.Serialize();
@@ -718,23 +718,23 @@ bool ResourceUpdater::Commit() {
     }
   }
 
-  // update the execution level
+  // 更新执行级别
   if (applicationManifestPath_.empty() && !executionLevel_.empty()) {
-    // string replace with requested executionLevel
+    // 用请求的执行级别替换字符串
     std::wstring::size_type pos = 0u;
     while ((pos = manifestString_.find(originalExecutionLevel_, pos)) != std::string::npos) {
       manifestString_.replace(pos, originalExecutionLevel_.length(), executionLevel_);
       pos += executionLevel_.length();
     }
 
-    // clean old padding and add new padding, ensuring that the size is a multiple of 4
+    // 清理旧填充并添加新填充，确保大小为 4 的倍数
     std::wstring::size_type padPos = manifestString_.find(L"</assembly>");
-    // trim anything after the </assembly>, 11 being the length of </assembly> (ie, remove old padding)
+    // trim anything 之后 the </assembly>, 11 being the 长度 的 </assembly> (ie, 移除 旧 padding)
     std::wstring trimmedStr = manifestString_.substr(0, padPos + 11);
     std::wstring padding = L"\n<!--Padding to make filesize even multiple of 4 X -->";
 
     int offset = (trimmedStr.length() + padding.length()) % 4;
-    // multiple X by the number in offset
+    // 多个 X 通过 the 数量 在 偏移量
     pos = 0u;
     for (int posCount = 0; posCount < offset; posCount = posCount + 1) {
       if ((pos = padding.find(L"X", pos)) != std::string::npos) {
@@ -743,30 +743,30 @@ bool ResourceUpdater::Commit() {
       }
     }
 
-    // convert the wchar back into char, so that it encodes correctly for Windows to read the XML.
+    // 转换 the wchar back 到 char, so that it encodes correctly 用于 Windows 到 读取 the XML.
     std::wstring stringSectionW = trimmedStr + padding;
     std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
     std::string stringSection = converter.to_bytes(stringSectionW);
 
     if (!UpdateResourceW(ru.Get(), RT_MANIFEST, MAKEINTRESOURCEW(1),
-                         kLangEnUs, // this is hardcoded at 1033, ie, en-us, as that is what RT_MANIFEST default uses
+                         kLangEnUs, // this 是 hardcoded at 1033, ie, en-us, 作为 that 是 what RT_MANIFEST 默认 uses
                          &stringSection.at(0), sizeof(char) * stringSection.size())) {
       return false;
     }
   }
 
-  // load file contents and replace the manifest
+  // 读取文件内容并替换清单
   if (!applicationManifestPath_.empty()) {
     std::wstring fileContents = ReadFileToString(applicationManifestPath_.c_str());
 
-    // clean old padding and add new padding, ensuring that the size is a multiple of 4
+    // 清理旧填充并添加新填充，确保大小为 4 的倍数
     std::wstring::size_type padPos = fileContents.find(L"</assembly>");
-    // trim anything after the </assembly>, 11 being the length of </assembly> (ie, remove old padding)
+    // trim anything 之后 the </assembly>, 11 being the 长度 的 </assembly> (ie, 移除 旧 padding)
     std::wstring trimmedStr = fileContents.substr(0, padPos + 11);
     std::wstring padding = L"\n<!--Padding to make filesize even multiple of 4 X -->";
 
     int offset = (trimmedStr.length() + padding.length()) % 4;
-    // multiple X by the number in offset
+    // 多个 X 通过 the 数量 在 偏移量
     std::wstring::size_type pos = 0u;
     for (int posCount = 0; posCount < offset; posCount = posCount + 1) {
       if ((pos = padding.find(L"X", pos)) != std::string::npos) {
@@ -775,19 +775,19 @@ bool ResourceUpdater::Commit() {
       }
     }
 
-    // convert the wchar back into char, so that it encodes correctly for Windows to read the XML.
+    // 转换 the wchar back 到 char, so that it encodes correctly 用于 Windows 到 读取 the XML.
     std::wstring stringSectionW = fileContents + padding;
     std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
     std::string stringSection = converter.to_bytes(stringSectionW);
 
     if (!UpdateResourceW(ru.Get(), RT_MANIFEST, MAKEINTRESOURCEW(1),
-                         kLangEnUs, // this is hardcoded at 1033, ie, en-us, as that is what RT_MANIFEST default uses
+                         kLangEnUs, // this 是 hardcoded at 1033, ie, en-us, 作为 that 是 what RT_MANIFEST 默认 uses
                          &stringSection.at(0), sizeof(char) * stringSection.size())) {
       return false;
     }
   }
 
-  // update string table.
+  // 更新字符串表。
   for (const auto& i : stringTableMap_) {
     for (const auto& j : i.second) {
       std::vector<char> stringTableBuffer;
@@ -821,7 +821,7 @@ bool ResourceUpdater::Commit() {
         continue;
 
       auto& icon = *pIcon;
-      // update icon.
+      // 更新图标。
       if (icon.grpHeader.size() > 0) {
         if (!UpdateResourceW(ru.Get(), RT_GROUP_ICON, MAKEINTRESOURCEW(bundleId),
                              langId, icon.grpHeader.data(), icon.grpHeader.size())) {
@@ -850,8 +850,8 @@ bool ResourceUpdater::Commit() {
 }
 
 bool ResourceUpdater::SerializeStringTable(const StringValues& values, UINT blockId, std::vector<char>* out) {
-  // calc total size.
-  // string table is pascal string list.
+  // 计算总大小。
+  // 字符串表是 Pascal 字符串列表。
   size_t size = 0;
   for (size_t i = 0; i < 16; i++) {
     size += sizeof(WORD);
@@ -877,7 +877,7 @@ bool ResourceUpdater::SerializeStringTable(const StringValues& values, UINT bloc
   return true;
 }
 
-// static
+// 静态
 BOOL CALLBACK ResourceUpdater::OnEnumResourceLanguage(HANDLE hModule, LPCWSTR lpszType, LPCWSTR lpszName, WORD wIDLanguage, LONG_PTR lParam) {
   ResourceUpdater* instance = reinterpret_cast<ResourceUpdater*>(lParam);
   if (IS_INTRESOURCE(lpszName) && IS_INTRESOURCE(lpszType)) {
@@ -946,14 +946,14 @@ BOOL CALLBACK ResourceUpdater::OnEnumResourceLanguage(HANDLE hModule, LPCWSTR lp
   return TRUE;
 }
 
-// static
+// 静态
 BOOL CALLBACK ResourceUpdater::OnEnumResourceName(HMODULE hModule, LPCWSTR lpszType, LPWSTR lpszName, LONG_PTR lParam) {
   EnumResourceLanguagesW(hModule, lpszType, lpszName, (ENUMRESLANGPROCW) OnEnumResourceLanguage, lParam);
   return TRUE;
 }
 
-// static
-// courtesy of http://stackoverflow.com/questions/420852/reading-an-applications-manifest-file
+// 静态
+// 参考：http://stackoverflow.com/questions/420852/reading-an-applications-manifest-file
 BOOL CALLBACK ResourceUpdater::OnEnumResourceManifest(HMODULE hModule, LPCTSTR lpType, LPWSTR lpName, LONG_PTR lParam) {
   ResourceUpdater* instance = reinterpret_cast<ResourceUpdater*>(lParam);
   HRSRC hResInfo = FindResource(hModule, lpName, lpType);
@@ -962,17 +962,17 @@ BOOL CALLBACK ResourceUpdater::OnEnumResourceManifest(HMODULE hModule, LPCTSTR l
   HGLOBAL hResData = LoadResource(hModule, hResInfo);
   const BYTE *pResource = (const BYTE *)LockResource(hResData);
 
-  // FIXME(zcbenz): Do a real UTF string convertion.
+  // 待修复(zcbenz): Do a real UTF 字符串 convertion.
   int len = strlen(reinterpret_cast<const char*>(pResource));
   std::wstring manifestStringLocal(pResource, pResource + len);
 
-  // FIXME(zcbenz): Strip the BOM instead of doing string search.
+  // 待修复(zcbenz): Strip the BOM instead 的 doing 字符串 search.
   size_t start = manifestStringLocal.find(L"<?xml");
   if (start > 0) {
     manifestStringLocal = manifestStringLocal.substr(start);
   }
 
-  // Support alternative formatting, such as using " vs ' and level="..." on another line
+  // 支持 alternative formatting, such 作为 using " vs ' 和 level="..." 在 another 行
   size_t found = manifestStringLocal.find(L"requestedExecutionLevel");
   size_t level = manifestStringLocal.find(L"level=\"", found);
   size_t end = manifestStringLocal.find(L"\"", level + 7);
@@ -984,13 +984,13 @@ BOOL CALLBACK ResourceUpdater::OnEnumResourceManifest(HMODULE hModule, LPCTSTR l
 
   instance->originalExecutionLevel_ = manifestStringLocal.substr(level + 7, end - level - 7);
 
-  // also store original manifestString
+  // 还 store original manifestString
   instance->manifestString_ = manifestStringLocal;
 
   UnlockResource(hResData);
   FreeResource(hResData);
 
-  return TRUE;   // Keep going
+  return TRUE;   // 第三方实现细节。
 }
 
 ScopedResourceUpdater::ScopedResourceUpdater(const WCHAR* filename, bool deleteOld)
@@ -1019,4 +1019,4 @@ bool ScopedResourceUpdater::EndUpdate(bool doesCommit) {
   return bResult ? true : false;
 }
 
-}  // namespace rescle
+}  // 命名空间 rescle

@@ -14,13 +14,13 @@ pub struct InstallArgs {
     pub online: bool,
     #[clap(short = 'U', help = "Uninstall")]
     pub uninstall: bool,
-    // override install source
+    // 覆盖安装来源
     #[clap(long, hide = true)]
     pub source: Option<String>,
-    // dfs extra data
+    // DFS 附加数据
     #[clap(long, hide = true)]
     pub dfs_extras: Option<String>,
-    // override mirrorc cdk
+    // 相关实现：override mirrorc cdk
     #[clap(long, hide = true)]
     pub mirrorc_cdk: Option<String>,
 }

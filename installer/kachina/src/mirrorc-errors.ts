@@ -59,7 +59,7 @@ export const MIRRORC_ERROR_CODES: Record<number, MirrorcErrorInfo> = {
 /**
  * 获取Mirror酱错误信息
  * @param code 错误码
- * @returns 错误信息，如果不是已知错误码则返回null
+ * @返回 错误信息，如果不是已知错误码则返回空
  */
 export function getMirrorcErrorInfo(code: number): MirrorcErrorInfo | null {
   return MIRRORC_ERROR_CODES[code] || null;
@@ -69,7 +69,7 @@ export function getMirrorcErrorInfo(code: number): MirrorcErrorInfo | null {
  * 处理Mirror酱错误并记录日志
  * @param mirrorcStatus Mirror酱状态响应
  * @param contextType 错误上下文类型（用于日志区分）
- * @returns 处理后的错误信息
+ * @返回 处理后的错误信息
  */
 export function processMirrorcError(
   mirrorcStatus: { code: number; msg?: string },

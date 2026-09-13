@@ -70,19 +70,12 @@ pub async fn select_dir(
         return None;
     }
     if path.exists() {
-        // check writeable by direct open the directory
-        let handle = tokio::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .create_new(true)
-            .open(path)
-            .await;
-        if handle.is_err() {
+        // 使用写入/截断标志打开目录在以下系统上始终失败：
+        // Windows。通过创建唯一名称的子文件来探测可写性，
+        // 然后删除该文件；这样也不会触碰用户文件。
+        if !probe_directory_writable(path).await {
             state = DirState::Unwritable;
         }
-        drop(handle);
         let exe_path = path.join(exe_name);
         if exe_path.exists() {
             upgrade = true;
@@ -96,19 +89,11 @@ pub async fn select_dir(
             }
         }
     } else {
-        // get parent dir
+        // 获取父目录
         let parent = path.parent();
         parent?;
         let parent = parent.unwrap();
-        let handle = tokio::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .create_new(true)
-            .open(parent)
-            .await;
-        if handle.is_err() {
+        if !probe_directory_writable(parent).await {
             state = DirState::Unwritable;
         }
     }
@@ -123,10 +108,30 @@ pub async fn select_dir(
     })
 }
 
+async fn probe_directory_writable(dir: &std::path::Path) -> bool {
+    if !dir.is_dir() {
+        return false;
+    }
+    let probe = dir.join(format!(".kachina-write-test-{}", uuid::Uuid::new_v4()));
+    let result = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .await;
+    match result {
+        Ok(file) => {
+            drop(file);
+            let _ = tokio::fs::remove_file(probe).await;
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 #[tauri::command]
 pub async fn kill_process(pid: u32) -> Result<()> {
     let ret = tokio::task::spawn_blocking(move || {
-        // use the windows crate
+        // 使用 windows crate
         let handle = unsafe {
             windows::Win32::System::Threading::OpenProcess(
                 windows::Win32::System::Threading::PROCESS_TERMINATE
@@ -142,7 +147,7 @@ pub async fn kill_process(pid: u32) -> Result<()> {
             let _ = unsafe { CloseHandle(handle) };
             return ret;
         }
-        // wait for the process to exit, timeout 10s
+        // 等待进程退出，超时 10 秒
         let ret = unsafe { windows::Win32::System::Threading::WaitForSingleObject(handle, 10000) };
         match ret {
             WAIT_FAILED => {
@@ -245,29 +250,29 @@ pub async fn find_process_by_name(name: String) -> Result<Vec<(u32, String)>> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct VersionInfo {
-    /// The comments associated with the file.
+    /// 文件的备注。
     pub comments: String,
-    /// The name of the company that produced the file.
+    /// 生成该文件的公司名称。
     pub company_name: String,
-    /// The description of the file.
+    /// 文件描述。
     pub file_description: String,
-    /// The file version number.
+    /// 文件版本号。
     pub file_version: String,
-    /// The internal name of the file, if one exists.
+    /// 文件的内部名称（如果存在）。
     pub internal_name: String,
-    /// The copyright notices that apply to the specified file.
+    /// 适用于该文件的版权声明。
     pub legal_copyright: String,
-    /// The trademarks and registered trademarks that apply to the file.
+    /// 适用于该文件的商标和注册商标。
     pub legal_trademarks: String,
-    /// The name the file was created with.
+    /// 文件创建时的名称。
     pub original_filename: String,
-    /// The name of the product this file is distributed with.
+    /// 发布该文件的产品名称。
     pub product_name: String,
-    /// The version of the product this file is distributed with.
+    /// 发布该文件的产品版本。
     pub product_version: String,
-    /// The private build information for the file.
+    /// 文件的私有构建信息。
     pub private_build: String,
-    /// The special build information for the file.
+    /// 文件的特殊构建信息。
     pub special_build: String,
 }
 

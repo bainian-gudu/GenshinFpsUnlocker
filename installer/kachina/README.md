@@ -1,6 +1,42 @@
-# Kachina Installer
+# Kachina Installer（本项目构建工具）
 
-快速、多功能的通用安装程序。
+本目录是 Kachina 安装器的源码快照和本地修改。它只用于构建
+`GenshinFpsUnlocker.Install.<版本>.exe`、`GenshinFpsUnlocker.uninst.exe` 和
+`GenshinFpsUnlocker.update.exe`，不是终端用户需要单独运行的程序。项目实际配置在
+上一级的 [`../kachina.config.json`](../kachina.config.json)，本地修改记录在
+[`LOCAL_PATCHES.md`](LOCAL_PATCHES.md)。
+
+## 本项目的构建入口
+
+在仓库根目录运行：
+
+```powershell
+.\build.ps1 -Configuration Release
+```
+
+只重新打包已有 `dist\`：
+
+```powershell
+.\installer\pack.ps1
+```
+
+若要单独验证 Kachina 前端：
+
+```bash
+cd installer/kachina
+pnpm install --frozen-lockfile
+pnpm exec rsbuild build
+```
+
+构建需要 Rust nightly（含 `rust-src` 和 Windows MSVC target）、Node.js 20+、pnpm 10、
+PowerShell 7 以及 Windows MSVC/VS Build Tools。依赖可安装在 WSL 用户目录；Windows 目标
+编译仍由 Windows MSVC 工具链完成。
+
+下面保留 Kachina 的通用配置和Command，便于维护源码快照。
+
+## Kachina 功能
+
+Kachina 是快速、多功能的通用安装程序，支持：
 
 - 离线安装
   - 多线程安装，速度快

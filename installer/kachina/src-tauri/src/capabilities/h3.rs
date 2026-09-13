@@ -14,35 +14,35 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, trace, warn};
 
-// Re-export for user convenience
+// 为方便用户重新导出
 pub use h3_msquic_async::msquic_async::{CertValidator, PeerCertInfo};
 
 // ============================================================
-// Pinning Mode & Config
+// 固定模式与配置
 // ============================================================
 
-/// Controls how certificate pinning interacts with system certificate validation.
+/// 控制证书固定校验与系统证书验证之间的关系。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PinningMode {
-    /// Always check pin, regardless of system trust (default).
-    /// Even if Schannel trusts the certificate, the pin must match.
+    /// 无论系统是否信任证书，始终检查固定值（默认）。
+    /// 即使 Schannel 信任该证书，固定值也必须匹配。
     Force,
-    /// Check pin only if the system (Schannel) does NOT trust the certificate.
-    /// If the system trusts it, accept immediately without checking the pin.
+    /// 仅在系统（Schannel）不信任证书时检查固定值。
+    /// 系统信任证书时直接接受，不检查固定值。
     Add,
 }
 
-/// What to pin against: SPKI hash or full certificate hash.
+/// 固定校验的目标：SPKI 哈希或完整证书哈希。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PinTarget {
-    /// SHA-256 of the SubjectPublicKeyInfo DER encoding.
+    /// SubjectPublicKeyInfo 的 DER 编码的 SHA-256 哈希。
     Spki([u8; 32]),
-    /// SHA-256 of the full certificate DER encoding.
-    /// Matches: `openssl x509 -in cert.crt -outform DER | openssl dgst -sha256 -binary | xxd -p -c 32`
+    /// 完整证书 DER 编码的 SHA-256 哈希。
+    /// 对应命令：`openssl x509 -in cert.crt -outform DER | openssl dgst -sha256 -binary | xxd -p -c 32`
     Cert([u8; 32]),
 }
 
-/// Parsed pin configuration from URL fragment.
+/// 从 URL 片段解析得到的证书固定配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PinConfig {
     pub target: PinTarget,
@@ -50,7 +50,7 @@ pub struct PinConfig {
 }
 
 // ============================================================
-// Windows CryptoAPI-based Pin Validator
+// 基于 Windows CryptoAPI 的固定校验器
 // ============================================================
 
 #[cfg(target_os = "windows")]
@@ -60,29 +60,29 @@ mod win_pin {
     use tracing::info;
     use windows::Win32::Security::Cryptography::*;
 
-    /// Computes the SHA-256 hash of the SubjectPublicKeyInfo (SPKI) DER encoding
-    /// from a PCCERT_CONTEXT pointer. Returns None on any failure.
+    /// 根据 PCCERT_CONTEXT 指针，计算 SubjectPublicKeyInfo（SPKI）
+    /// DER 编码的 SHA-256 哈希；任何步骤失败均返回 None。
     ///
-    /// # Safety
-    /// `certificate` must be a valid PCCERT_CONTEXT pointer and must only be called
-    /// during the MsQuic PeerCertificateReceived callback (pointer lifetime).
+    /// # 安全要求
+    /// `certificate` 必须是有效的 PCCERT_CONTEXT 指针，且只能在
+    /// MsQuic 的 PeerCertificateReceived 回调期间调用（受指针生命周期限制）。
     unsafe fn compute_spki_hash(certificate: *mut c_void) -> Option<[u8; 32]> {
         if certificate.is_null() {
             return None;
         }
 
-        // Cast to windows crate's CERT_CONTEXT (correct layout, correct alignment)
+        // 转换为 windows crate 的 CERT_CONTEXT（布局和对齐均正确）
         let cert_ctx = &*(certificate as *const CERT_CONTEXT);
 
-        // pCertInfo is PCERT_INFO — already parsed by Schannel, always valid
-        // during the callback
+        // pCertInfo 是 PCERT_INFO，已由 Schannel 解析，始终有效
+        // 在回调期间
         let cert_info = cert_ctx.pCertInfo;
         if cert_info.is_null() {
             return None;
         }
         let spki = &(*cert_info).SubjectPublicKeyInfo;
 
-        // DER-encode the SubjectPublicKeyInfo
+        // 对 SubjectPublicKeyInfo 进行 DER 编码
         let mut spki_der_size: u32 = 0;
         if CryptEncodeObjectEx(
             X509_ASN_ENCODING,
@@ -116,7 +116,7 @@ mod win_pin {
         }
         spki_der.truncate(spki_der_size as usize);
 
-        // SHA-256 hash via CNG (BCRYPT_SHA256_ALG_HANDLE is a pre-allocated pseudo-handle)
+        // 通过 CNG 计算 SHA-256 哈希（BCRYPT_SHA256_ALG_HANDLE 是预分配的伪句柄）
         let mut hash = [0u8; 32];
         if BCryptHash(BCRYPT_SHA256_ALG_HANDLE, None, &spki_der, &mut hash).is_err() {
             debug!("[Pin] BCryptHash (SPKI) failed");
@@ -126,14 +126,14 @@ mod win_pin {
         Some(hash)
     }
 
-    /// Computes the SHA-256 hash of the full certificate DER encoding
-    /// from a PCCERT_CONTEXT pointer.
+    /// 计算完整证书 DER 编码的 SHA-256 哈希，
+    /// 输入为 PCCERT_CONTEXT 指针。
     ///
-    /// Equivalent to:
+    /// 等价于以下命令：
     ///   openssl x509 -in cert.crt -outform DER | openssl dgst -sha256 -binary | xxd -p -c 32
     ///
-    /// # Safety
-    /// Same as `compute_spki_hash`.
+    /// # 安全要求
+    /// 与 `compute_spki_hash` 相同。
     unsafe fn compute_cert_hash(certificate: *mut c_void) -> Option<[u8; 32]> {
         if certificate.is_null() {
             return None;
@@ -141,7 +141,7 @@ mod win_pin {
 
         let cert_ctx = &*(certificate as *const CERT_CONTEXT);
 
-        // pbCertEncoded + cbCertEncoded is the full DER-encoded certificate
+        // pbCertEncoded 与 cbCertEncoded 指定完整证书的 DER 编码
         if cert_ctx.pbCertEncoded.is_null() || cert_ctx.cbCertEncoded == 0 {
             return None;
         }
@@ -157,7 +157,7 @@ mod win_pin {
         Some(hash)
     }
 
-    /// Check pin against a certificate, dispatching on PinTarget.
+    /// 根据 PinTarget 选择目标，对证书执行固定值校验。
     fn check_pin(info: &PeerCertInfo, config: &PinConfig) -> bool {
         let system_trusts = info.deferred_status.is_ok();
 
@@ -226,7 +226,7 @@ mod win_pin {
         }
     }
 
-    /// CertValidator that uses PinConfig (target + mode).
+    /// 使用 PinConfig（目标和模式）的 CertValidator。
     pub struct PinValidator {
         pub config: PinConfig,
     }
@@ -237,15 +237,15 @@ mod win_pin {
         }
     }
 
-    /// Discovered hashes from a server certificate.
+    /// 从服务器证书中发现的哈希值。
     #[derive(Debug, Clone, Default)]
     pub struct DiscoveredHashes {
         pub spki: Option<[u8; 32]>,
         pub cert: Option<[u8; 32]>,
     }
 
-    /// A CertValidator that accepts everything but captures computed hashes.
-    /// Use this for discovering the SPKI/cert hash of a server's certificate.
+    /// 接受所有证书并捕获所计算哈希值的 CertValidator。
+    /// 用于发现服务器证书的 SPKI/完整证书哈希。
     pub struct DiscoveryValidator {
         pub results: std::sync::Arc<std::sync::Mutex<DiscoveredHashes>>,
     }
@@ -287,7 +287,7 @@ mod win_pin {
                 results.cert = cert;
             }
 
-            true // Accept anyway for discovery
+            true // 发现模式下仍然接受
         }
     }
 }
@@ -296,12 +296,12 @@ mod win_pin {
 pub use win_pin::{DiscoveredHashes, DiscoveryValidator, PinValidator};
 
 // ============================================================
-// URL fragment parser: #spki={hex}&cert={hex}&pinning_mode=force|add
+// URL 片段解析器：#spki={hex}&cert={hex}&pinning_mode=force|add
 // ============================================================
 
-/// Parse pin configuration from URL fragment.
+/// 从 URL 片段解析证书固定配置。
 ///
-/// Supported formats:
+/// 支持的格式：
 ///   `#spki={hex64}`                           → PinConfig { target: Spki, mode: Force }
 ///   `#spki={hex64}&pinning_mode=add`          → PinConfig { target: Spki, mode: Add }
 ///   `#cert={hex64}`                           → PinConfig { target: Cert, mode: Force }
@@ -313,7 +313,7 @@ fn parse_pin_from_fragment(url: &url::Url) -> Option<PinConfig> {
 
     let mut spki_hex: Option<&str> = None;
     let mut cert_hex: Option<&str> = None;
-    let mut mode = PinningMode::Force; // default
+    let mut mode = PinningMode::Force; // 默认值
 
     for part in frag.split('&') {
         if let Some(val) = part.strip_prefix("spki=") {
@@ -323,12 +323,12 @@ fn parse_pin_from_fragment(url: &url::Url) -> Option<PinConfig> {
         } else if let Some(val) = part.strip_prefix("pinning_mode=") {
             mode = match val {
                 "add" => PinningMode::Add,
-                _ => PinningMode::Force, // unknown → force (safe default)
+                _ => PinningMode::Force, // 未知值 → force（安全默认值）
             };
         }
     }
 
-    // cert takes priority over spki
+    // 证书优先于 SPKI
     let (hex_str, make_target): (&str, fn([u8; 32]) -> PinTarget) = if let Some(h) = cert_hex {
         (h, PinTarget::Cert)
     } else if let Some(h) = spki_hex {
@@ -337,7 +337,7 @@ fn parse_pin_from_fragment(url: &url::Url) -> Option<PinConfig> {
         return None;
     };
 
-    // Guard: SHA-256 hex must be exactly 64 chars, reject early to avoid large alloc
+    // 保护: SHA-256 hex 必须 为 exactly 64 chars, reject 尽早 到 avoid large alloc
     if hex_str.len() != 64 {
         return None;
     }
@@ -350,7 +350,7 @@ fn parse_pin_from_fragment(url: &url::Url) -> Option<PinConfig> {
 }
 
 // ============================================================
-// FIX 1 — Narrow SendWrapper: specific newtypes instead of generic
+// 修复 1：缩小 SendWrapper 的适用范围，使用专用新类型替代泛型
 // ============================================================
 
 #[repr(transparent)]
@@ -376,7 +376,7 @@ impl Deref for QuicConfiguration {
 }
 
 // ============================================================
-// FIX 5 — Active stream guard to prevent idle eviction
+// 修复 5：使用活动流守卫，避免连接被当作空闲连接移除
 // ============================================================
 
 struct ActiveStreamGuard {
@@ -390,12 +390,12 @@ impl Drop for ActiveStreamGuard {
 }
 
 // ============================================================
-// Connection pool entry
+// 连接池条目
 // ============================================================
 
 pub type H3SendRequest = h3::client::SendRequest<h3_msquic_async::OpenStreams, Bytes>;
 
-/// Maximum number of connections in the pool
+/// 连接池中的最大连接数。
 const MAX_POOL_SIZE: usize = 32;
 
 struct H3ConnEntry {
@@ -411,19 +411,19 @@ impl Drop for H3ConnEntry {
     fn drop(&mut self) {
         debug!("[H3ConnEntry] Cancelling and aborting H3 driver task");
         self.cancel_token.cancel();
-        self.driver_handle.abort(); // P1-2: Also abort the driver task
+        self.driver_handle.abort(); // P1-2：同时中止驱动任务
     }
 }
 
 // ============================================================
-// FIX 2 — H3Inner: shared state behind Arc for body keepalive
+// 修复 2：H3Inner 通过 Arc 共享状态，在响应体存活期间保持连接
 // ============================================================
 
 type PoolKey = (String, u16, Option<PinConfig>);
 
-/// Normalize host for consistent pool key matching.
-/// - Lowercase (DNS is case-insensitive)
-/// - Strip IPv6 brackets (url::Url adds them)
+/// 规范化主机名，确保连接池键匹配一致。
+/// - 转为小写（DNS 不区分大小写）
+/// - 移除 IPv6 方括号（url::Url 会自动添加）
 fn normalize_host(host: &str) -> String {
     let h = host.to_ascii_lowercase();
     if h.starts_with('[') && h.ends_with(']') {
@@ -466,7 +466,7 @@ impl Drop for H3Inner {
 }
 
 // ============================================================
-// H3 Middleware
+// 相关实现：H3 Middleware
 // ============================================================
 
 pub struct H3Middleware {
@@ -510,11 +510,11 @@ impl H3Middleware {
         let norm_host = normalize_host(host);
         let key = (norm_host.clone(), port, pin_config);
 
-        // Check pool (hold std::sync::Mutex briefly, release before .await)
+        // 检查 连接池 (hold std::sync::Mutex briefly, 发布 之前 .等待)
         {
             let mut pool = self.inner.lock_pool()?;
 
-            // P1-1: Sweep stale connections and enforce max pool size
+            // P1-1: Sweep 过期 connections 和 enforce max 连接池 大小
             let now = Instant::now();
             let keys_to_evict: Vec<PoolKey> = pool
                 .iter()
@@ -539,7 +539,7 @@ impl H3Middleware {
                 pool.remove(&k);
             }
 
-            // Enforce max pool size by evicting oldest entries
+            // 移除最旧条目，限制连接池的最大大小
             if pool.len() >= MAX_POOL_SIZE {
                 let mut entries: Vec<_> =
                     pool.iter().map(|(k, e)| (k.clone(), e.last_used)).collect();
@@ -587,9 +587,9 @@ impl H3Middleware {
                 }
             }
         }
-        // Lock released
+        // 已释放锁
 
-        // Create per-request CertValidator from PinConfig
+        // 根据 PinConfig 为每个请求创建 CertValidator
         let cert_validator: Option<Arc<dyn CertValidator>> =
             pin_config.map(|cfg| Arc::new(PinValidator { config: cfg }) as Arc<dyn CertValidator>);
 
@@ -643,7 +643,7 @@ impl H3Middleware {
             active_streams: Arc::new(AtomicUsize::new(0)),
         };
 
-        // Race-safe pool insert
+        // 以竞态安全方式插入连接池
         {
             let mut pool = self.inner.lock_pool()?;
             if let Some(existing) = pool.get_mut(&key) {
@@ -665,10 +665,10 @@ impl H3Middleware {
         }
     }
 
-    /// Perform an H3/QUIC request.
+    /// 执行 H3/QUIC 请求。
     ///
-    /// **NOTE**: Only GET requests without body are supported. Request body is ignored.
-    /// This is designed for file downloads where the server provides the content.
+    /// 注意：仅支持不带请求体的 GET 请求；传入的请求体会被忽略。
+    /// 用于服务器提供内容的文件下载场景。
     pub async fn h3_request(
         &self,
         req: reqwest::Request,
@@ -688,18 +688,18 @@ impl H3Middleware {
             Some(q) => format!("{}?{}", original_url.path(), q),
             None => original_url.path().to_string(),
         };
-        // IPv6 addresses need brackets in URI authority: https://[::1]:443/path
-        // Note: url.host_str() may already include brackets for IPv6, so check first
+        // URI 的主机部分需要用方括号包裹 IPv6 地址，例如 https://[::1]:443/path
+        // url.host_str() 返回的 IPv6 地址可能已包含方括号，因此先检查
         let authority_host = if host.starts_with('[') {
-            host.clone() // Already has brackets
+            host.clone() // 已经 has brackets
         } else if host.contains(':') {
-            format!("[{}]", host) // IPv6 without brackets
+            format!("[{}]", host) // IPv6 地址尚未包含方括号
         } else {
-            host.clone() // IPv4 or hostname
+            host.clone() // IPv4 地址或主机名
         };
         let h3_uri = format!("https://{}:{}{}", authority_host, port, path_and_query);
 
-        // Parse pin config from URL fragment: #spki={hex}&cert={hex}&pinning_mode=force|add
+        // 从 URL 片段解析固定配置：#spki={hex}&cert={hex}&pinning_mode=force|add
         let pin_config = parse_pin_from_fragment(&original_url);
 
         debug!(url = %original_url, h3_uri = %h3_uri, pin = ?pin_config, "[H3] Intercepted");
@@ -717,7 +717,7 @@ impl H3Middleware {
             .body(())
             .map_err(|e| reqwest_middleware::Error::Middleware(e.into()))?;
 
-        // Clone key for error paths
+        // 复制键，供错误路径使用
         let pool_key = (normalize_host(&host), port, pin_config);
 
         let mut stream = send_request.send_request(h3_req).await.map_err(|e| {
@@ -728,7 +728,7 @@ impl H3Middleware {
             reqwest_middleware::Error::Middleware(anyhow::anyhow!("h3 send: {}", e))
         })?;
 
-        // P1-4: Also evict on finish/recv_response errors
+        // P1-4：完成或 recv_response 出错时也移除连接
         stream.finish().await.map_err(|e| {
             warn!(host = %host, port, error = %e, "[H3] finish failed, evicting");
             if let Ok(mut pool) = self.inner.pool.lock() {
@@ -810,8 +810,8 @@ impl H3Middleware {
         debug!("[H3] Shut down complete.");
     }
 
-    /// Discover the SPKI and cert SHA-256 hashes of a remote server's certificate.
-    /// Makes a one-shot QUIC connection, extracts hashes via DiscoveryValidator, then closes.
+    /// 发现远程服务器证书的 SPKI 和完整证书 SHA-256 哈希。
+    /// 建立一次性 QUIC 连接，通过 DiscoveryValidator 提取哈希后关闭连接。
     pub async fn discover(
         &self,
         host: &str,
@@ -829,7 +829,7 @@ impl H3Middleware {
             .await
             .map_err(|e| reqwest_middleware::Error::Middleware(e.into()))?;
 
-        // Do a minimal H3 handshake to ensure cert callback fires
+        // 执行最小 H3 握手，确保触发证书回调
         let h3_conn = h3_msquic_async::Connection::new(conn);
         let (_driver, _send_request) = h3::client::new(h3_conn).await.map_err(|e| {
             reqwest_middleware::Error::Middleware(anyhow::anyhow!("h3 discover: {}", e))

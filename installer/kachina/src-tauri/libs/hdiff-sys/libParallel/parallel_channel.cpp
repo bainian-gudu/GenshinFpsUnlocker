@@ -41,15 +41,15 @@ public:
     }
     ~_CChannel_import(){
         close();
-        while (true) { //wait all thread exit
+        while (true) { //wait 全部 线程 exit
             {
                 CAutoLocker locker(_locker);
                 if (_waitingCount==0) break;
             }
-            this_thread_yield(); //todo:优化?
+            this_thread_yield(); //待办:优化?
         }
         locker_delete(_locker);
-        assert(_dataList.empty()); // why? if saved resource then leaks
+        assert(_dataList.empty()); // why? 如果 saved resource 然后 leaks
         condvar_delete(_acceptCond);
         condvar_delete(_sendCond);
     }
@@ -74,7 +74,7 @@ public:
                 return true;
             }else if(!isWait){
                 return false;
-            }//else wait
+            }//否则 wait
             ++_waitingCount;
             condvar_wait(_sendCond,&locker);
             --_waitingCount;
@@ -94,27 +94,27 @@ public:
                         return false;
                     }
                     condvar_signal(_acceptCond);
-                    if (_maxDataCount==0) //must wait accepted?
-                        break;// to wait accepted
+                    if (_maxDataCount==0) //必须 wait accepted?
+                        break;// 到 wait accepted
                     else
                         return true; //ok
                 }else if(!isWait){
                     return false;
-                }//else wait
+                }//否则 wait
                 ++_waitingCount;
                 condvar_wait(_sendCond,&locker);
                 --_waitingCount;
             }
         }
 
-        //wait accepted
-        while (true) { //wait _dataList empty
+        //第三方实现细节。
+        while (true) { //wait _dataList 空
             {
                 CAutoLocker locker(_locker);
                 if (_isClosed) break;
                 if (_dataList.empty()) break;
             }
-            this_thread_yield(); //todo:优化;
+            this_thread_yield(); //待办:优化;
         }
         return true;
     }
@@ -131,7 +131,7 @@ public:
                 return 0;
             }else if(!isWait){
                 return 0;
-            }//else wait
+            }//否则 wait
             ++_waitingCount;
             condvar_wait(_acceptCond,&locker);
             --_waitingCount;

@@ -40,7 +40,7 @@ async fn search_pattern(file: &'static AsyncMmapFile) -> anyhow::Result<Vec<usiz
     let mut read = 0;
 
     loop {
-        // move last 4 bytes to the beginning of the buffer
+        // 将最后 4 个字节移到缓冲区开头
         if read > 4 {
             buffer[0] = buffer[read + 4 - 4];
             buffer[1] = buffer[read + 4 - 3];
@@ -82,15 +82,15 @@ pub async fn get_embedded(file: &'static AsyncMmapFile) -> anyhow::Result<Vec<Em
     let mut last_offset: usize = 0;
     for offset in offsets.iter() {
         if *offset < last_offset {
-            // in case of content includes header
+            // 处理内容包含头部的情况
             continue;
         }
-        // TLV
-        // header: !IN\0
-        // name length: 2 bytes big endian
-        // name: variable length
-        // content length: 4 bytes big endian
-        // content: variable length
+        // 相关实现：TLV
+        // 头部：!IN\0
+        // 名称长度：2 字节，大端序
+        // 名称：可变长度
+        // 内容长度：4 字节，大端序
+        // 内容：可变长度
         let mem_pos_name_length = *offset + 4;
         let mem_pos_name = mem_pos_name_length + 2;
         let name_length =
@@ -139,7 +139,7 @@ pub async fn get_config_from_embedded(
             let content = String::from_utf8_lossy(content);
             metadata = Some(serde_json::from_str(&content).context("LOCAL_CONFIG_ERR")?);
         } else if entry.name == "\0INDEX" {
-            // u8: name_len var: name u32: size u32: offset
+            // u8：名称长度；可变长度名称；u32：大小；u32：偏移量
             let content: &[u8] = file.slice(entry.offset, entry.size);
             let mut index_entries = Vec::new();
             let mut offset = 0;
@@ -165,7 +165,7 @@ pub async fn get_config_from_embedded(
         }
     }
 
-    // Process \0IMAGE if it exists
+    // 如果存在则处理 \0IMAGE
     let mut image_base64 = None;
     for entry in embedded.iter() {
         if entry.name == "\0IMAGE" {
@@ -197,7 +197,7 @@ pub async fn get_base_with_config() -> anyhow::Result<AsyncMmapFileReader<'stati
         );
     }
     let config_index = config_index.unwrap();
-    // config index should be 0
+    // 配置索引应为 0
     if config_index != 0 {
         return return_anyhow_result(
             "Malformed packed files: config not at index 0".to_string(),
@@ -206,7 +206,7 @@ pub async fn get_base_with_config() -> anyhow::Result<AsyncMmapFileReader<'stati
     }
     let mut end_pos = embedded[config_index].offset + embedded[config_index].size;
     if let Some(image_index) = image_index {
-        // image index should be 1
+        // 图片索引应为 1
         if image_index != 1 {
             return return_anyhow_result(
                 "Malformed packed files: image not at index 1".to_string(),

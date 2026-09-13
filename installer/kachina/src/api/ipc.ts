@@ -11,7 +11,7 @@ import {
   TAErrorData,
 } from '../types';
 
-// Helper function to add mode to insight and report it
+// 向 insight 添加模式并记录的辅助函数
 export function addInsightWithMode(insight: InsightItem, mode?: string) {
   if (mode) {
     insight.mode = mode;

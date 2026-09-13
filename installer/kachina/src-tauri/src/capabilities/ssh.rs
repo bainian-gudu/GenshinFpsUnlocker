@@ -1,16 +1,16 @@
-//! Reqwest middleware that tunnels HTTP requests through SSH port-forwarding.
+//! 通过 SSH 端口转发传输 HTTP 请求的 Reqwest 中间件。
 //!
-//! URL format (all SSH credentials live in the **fragment** because reqwest
-//! strips URL userinfo):
+//! URL 格式（所有 SSH 凭据都放在**片段**中，因为 reqwest
+//! 会移除 URL 的用户信息）：
 //!
 //! ```text
 //! ssh+http://ssh_host:ssh_port/http_path?http_query
 //!     #user=<ssh_user>&pass=<ssh_pass>&fingerprint=<hex SHA-256>
-//!      &internal_host=<tunnel target host, default "tunnel">
-//!      &internal_port=<tunnel target port, default 80>
+//!      &internal_host=<隧道目标主机，默认 "tunnel">
+//!      &internal_port=<隧道目标端口，默认 80>
 //! ```
 //!
-//! Non-`ssh+http` requests are passed through to the next middleware unchanged.
+//! 非 `ssh+http` 请求会原样传给下一个中间件。
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -28,11 +28,11 @@ use tokio::task::AbortHandle;
 use tracing::{debug, warn};
 
 // ====================================================================
-// SSH Handler — host key fingerprint verification
+// SSH 处理器——主机密钥指纹校验
 // ====================================================================
 
 pub(crate) struct SshHandler {
-    expected_fingerprint: String, // hex-encoded SHA-256, always required
+    expected_fingerprint: String, // 十六进制编码的 SHA-256，始终必需
 }
 
 impl russh::client::Handler for SshHandler {
@@ -58,7 +58,7 @@ impl russh::client::Handler for SshHandler {
     }
 }
 
-/// Strip non-hex characters (colons, spaces, …) and lowercase.
+/// 移除冒号、空格等非十六进制字符，并转换为小写。
 pub(crate) fn normalize_hex(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_ascii_hexdigit())
@@ -67,7 +67,7 @@ pub(crate) fn normalize_hex(s: &str) -> String {
 }
 
 // ====================================================================
-// URL parsing
+// URL 解析
 // ====================================================================
 
 pub(crate) struct SshUrlParts {
@@ -75,15 +75,15 @@ pub(crate) struct SshUrlParts {
     pub(crate) ssh_pass: String,
     pub(crate) ssh_host: String,
     pub(crate) ssh_port: u16,
-    pub(crate) fingerprint: String, // required
+    pub(crate) fingerprint: String, // 必需
     pub(crate) internal_host: String,
     pub(crate) internal_port: u16,
-    /// e.g. "/api/v1?foo=bar"
+    /// 例如："/api/v1?foo=bar"
     pub(crate) http_path_and_query: String,
 }
 
 impl SshUrlParts {
-    /// Build the canonical pool key (host lowercased, fingerprint normalised).
+    /// 构建规范化的连接池键（主机名转小写，指纹规范化）。
     fn pool_key(&self) -> PoolKey {
         PoolKey {
             host: self.ssh_host.to_ascii_lowercase(),
@@ -93,7 +93,7 @@ impl SshUrlParts {
         }
     }
 
-    /// HTTP `Host` header value.
+    /// HTTP `Host` 请求头的值。
     fn http_host_header(&self) -> String {
         let host_part = if self.internal_host.contains(':') {
             format!("[{}]", self.internal_host)
@@ -107,7 +107,7 @@ impl SshUrlParts {
         }
     }
 
-    /// Human-readable target for error messages.
+    /// 用于错误信息的可读目标描述。
     fn ssh_target(&self) -> String {
         format!("{}@{}:{}", self.ssh_user, self.ssh_host, self.ssh_port)
     }
@@ -123,7 +123,7 @@ fn parse_ssh_url(url: &reqwest::Url) -> anyhow::Result<SshUrlParts> {
     let raw_host = url
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("missing SSH host in URL"))?;
-    // Strip IPv6 brackets: url crate returns "[::1]" for non-special schemes
+    // 移除 IPv6 方括号：url crate 对非特殊协议返回“[::1]”
     let ssh_host = raw_host
         .strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))
@@ -137,7 +137,7 @@ fn parse_ssh_url(url: &reqwest::Url) -> anyhow::Result<SshUrlParts> {
         None => url.path().to_string(),
     };
 
-    // Fragment: user=xxx&pass=xxx&fingerprint=xxx&internal_host=xxx&internal_port=xxx
+    // 片段: 用户=xxx&pass=xxx&fingerprint=xxx&internal_host=xxx&internal_port=xxx
     let frag_str = url.fragment().unwrap_or("");
     let mut frag: HashMap<&str, String> = HashMap::new();
     for pair in frag_str.split('&') {
@@ -146,7 +146,7 @@ fn parse_ssh_url(url: &reqwest::Url) -> anyhow::Result<SshUrlParts> {
         }
     }
 
-    // user is REQUIRED (in fragment, not URL userinfo — reqwest strips userinfo)
+    // 用户 是 必需 (在 片段, 不 URL userinfo — reqwest strips userinfo)
     let ssh_user = frag
         .get("user")
         .filter(|s| !s.is_empty())
@@ -155,7 +155,7 @@ fn parse_ssh_url(url: &reqwest::Url) -> anyhow::Result<SshUrlParts> {
 
     let ssh_pass = frag.get("pass").cloned().unwrap_or_default();
 
-    // fingerprint is REQUIRED
+    // fingerprint 是 必需
     let fingerprint = frag
         .get("fingerprint")
         .filter(|s| !s.is_empty())
@@ -200,7 +200,7 @@ fn parse_ssh_url(url: &reqwest::Url) -> anyhow::Result<SshUrlParts> {
     })
 }
 
-/// Minimal percent-decoding for URL fragment components.
+/// 对 URL 片段组件进行最小百分号解码。
 pub(crate) fn percent_decode(input: &str) -> anyhow::Result<String> {
     let mut bytes = Vec::with_capacity(input.len());
     let src = input.as_bytes();
@@ -223,7 +223,7 @@ pub(crate) fn percent_decode(input: &str) -> anyhow::Result<String> {
 }
 
 // ====================================================================
-// Connection pool types
+// 连接池类型
 // ====================================================================
 
 pub(crate) const MAX_POOL_SIZE: usize = 16;
@@ -235,7 +235,7 @@ const SSH_CHANNEL_TIMEOUT: Duration = Duration::from_secs(15);
 const HTTP_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const HTTP_SEND_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Hop-by-hop headers that MUST NOT be forwarded through the tunnel.
+/// 禁止通过隧道转发的逐跳请求头。
 const HOP_BY_HOP_HEADERS: &[&str] = &[
     "connection",
     "keep-alive",
@@ -250,10 +250,10 @@ const HOP_BY_HOP_HEADERS: &[&str] = &[
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub(crate) struct PoolKey {
-    pub(crate) host: String, // lowercased
+    pub(crate) host: String, // 已转为小写
     pub(crate) port: u16,
     pub(crate) user: String,
-    pub(crate) fingerprint: String, // normalised hex
+    pub(crate) fingerprint: String, // 已规范化的十六进制
 }
 
 pub(crate) struct SshConnEntry {
@@ -262,7 +262,7 @@ pub(crate) struct SshConnEntry {
     pub(crate) active_streams: Arc<AtomicUsize>,
 }
 
-/// RAII guard — decrements active-stream count on drop.
+/// RAII 守卫：释放时减少活动流计数。
 pub(crate) struct ActiveStreamGuard {
     pub(crate) counter: Arc<AtomicUsize>,
 }
@@ -272,7 +272,7 @@ impl Drop for ActiveStreamGuard {
     }
 }
 
-/// RAII guard — aborts a spawned task on drop.
+/// RAII 守卫：释放时中止已创建的任务。
 struct AbortOnDrop(AbortHandle);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
@@ -295,7 +295,7 @@ impl SshPoolInner {
 }
 
 // ====================================================================
-// SSH connect helper
+// SSH 连接辅助函数
 // ====================================================================
 
 pub(crate) async fn ssh_connect(
@@ -340,9 +340,9 @@ pub(crate) async fn ssh_connect(
     Ok(session)
 }
 
-/// Conservative check: only known "session is dead" errors trigger
-/// reconnection.  Everything else (policy rejection, auth failure, …)
-/// is treated as permanent.
+/// 保守检查：只有已知的“会话已失效”错误才触发
+/// 重新连接。其他错误（策略拒绝、认证失败等）
+/// 均视为不可重试的错误。
 pub(crate) fn is_recoverable_ssh_error(err: &russh::Error) -> bool {
     matches!(
         err,
@@ -351,7 +351,7 @@ pub(crate) fn is_recoverable_ssh_error(err: &russh::Error) -> bool {
 }
 
 // ====================================================================
-// SshMiddleware
+// 相关实现：SshMiddleware
 // ====================================================================
 
 pub struct SshMiddleware {
@@ -366,14 +366,14 @@ impl SshMiddleware {
         }
     }
 
-    /// Create a middleware sharing an existing SSH connection pool.
+    /// 创建共享现有 SSH 连接池的中间件。
     pub(crate) fn with_pool(pool: Arc<SshPoolInner>) -> Self {
         Self { inner: pool }
     }
 
-    // ---- pool helpers ------------------------------------------------
+    // ---- 连接池 helpers ------------------------------------------------
 
-    /// Evict idle entries.  **Never** evicts entries with `active_streams > 0`.
+    /// 移除空闲条目，**绝不**移除 `active_streams > 0` 的条目。
     pub(crate) fn sweep(pool: &mut HashMap<PoolKey, SshConnEntry>, idle_timeout: Duration) {
         let now = Instant::now();
         pool.retain(|_, e| {
@@ -383,9 +383,9 @@ impl SshMiddleware {
         });
     }
 
-    /// Enforce MAX_POOL_SIZE by evicting LRU entries **with zero active
-    /// streams**.  If all entries are active, the pool is allowed to
-    /// temporarily exceed the limit (hard cap enforced at insert time).
+    /// 移除**没有活动流**的最久未使用条目，以满足 MAX_POOL_SIZE
+    /// 限制。如果所有条目都处于活动状态，允许连接池
+    /// 暂时超过上限（插入时仍会执行硬上限检查）。
     pub(crate) fn enforce_size(pool: &mut HashMap<PoolKey, SshConnEntry>) {
         while pool.len() >= MAX_POOL_SIZE {
             let victim = pool
@@ -402,17 +402,17 @@ impl SshMiddleware {
         }
     }
 
-    /// Best-effort eviction of a single key (non-blocking).
+    /// 尽力移除单个键对应的条目，不阻塞调用方。
     pub(crate) fn evict(&self, key: &PoolKey) {
         if let Ok(mut pool) = self.inner.pool.try_lock() {
             pool.remove(key);
         }
     }
 
-    /// Get a pooled session or create a new one.
+    /// 获取池中的会话，或创建新会话。
     ///
-    /// When a connection's active streams reach [`MAX_STREAMS_PER_SESSION`],
-    /// a new SSH connection is opened to spread load across connections.
+    /// 当连接的活动流数量达到 [`MAX_STREAMS_PER_SESSION`] 时，
+    /// 建立新的 SSH 连接，将负载分散到多个连接。
     pub(crate) async fn get_session(
         &self,
         parts: &SshUrlParts,
@@ -422,7 +422,7 @@ impl SshMiddleware {
     > {
         let key = parts.pool_key();
 
-        // ── fast path: pool hit ──
+        // ── fast 路径: 连接池 hit ──
         {
             let mut pool = self.inner.pool.lock().await;
             Self::sweep(&mut pool, self.inner.idle_timeout);
@@ -447,7 +447,7 @@ impl SshMiddleware {
             }
         }
 
-        // ── slow path: new connection ──
+        // ── 缓慢 路径: 新 连接 ──
         let handle = ssh_connect(
             &parts.ssh_host,
             parts.ssh_port,
@@ -469,7 +469,7 @@ impl SshMiddleware {
             counter: Arc::clone(&active),
         };
 
-        // Race-safe insert
+        // 以竞态安全方式插入
         {
             let mut pool = self.inner.pool.lock().await;
 
@@ -505,8 +505,8 @@ impl SshMiddleware {
         Ok((handle, guard))
     }
 
-    /// Open a direct-tcpip channel, reconnecting **once** if the session
-    /// appears dead.
+    /// 打开 direct-tcpip 通道；如果会话看起来已经失效，
+    /// 则重新连接**一次**。
     async fn open_channel(
         &self,
         parts: &SshUrlParts,
@@ -550,7 +550,7 @@ impl SshMiddleware {
             }
         }
 
-        // ── reconnect once ──
+        // 相关处理说明
         drop(guard);
         self.evict(&parts.pool_key());
 
@@ -586,7 +586,7 @@ impl SshMiddleware {
         Ok((ch, guard, handle))
     }
 
-    // ---- HTTP-over-SSH -----------------------------------------------
+    // ---- HTTP-超过-SSH -----------------------------------------------
 
     async fn ssh_request(
         &self,
@@ -611,11 +611,11 @@ impl SshMiddleware {
 
         let key = parts.pool_key();
 
-        // 1. Open SSH channel
+        // 1. 打开 SSH channel
         let (channel, stream_guard, session_handle) = self.open_channel(&parts).await?;
         let io = TokioIo::new(channel.into_stream());
 
-        // 2. HTTP/1.1 handshake
+        // 相关实现：2. HTTP/1.1 handshake
         let (mut sender, conn) = tokio::time::timeout(
             HTTP_HANDSHAKE_TIMEOUT,
             hyper::client::conn::http1::handshake(io),
@@ -643,7 +643,7 @@ impl SshMiddleware {
         });
         let abort_guard = AbortOnDrop(conn_task.abort_handle());
 
-        // 3. Build the HTTP request
+        // 3. 构建 HTTP 请求
         let host_hdr = parts.http_host_header();
         let mut builder = http::Request::builder()
             .method(method.as_str())
@@ -662,7 +662,7 @@ impl SshMiddleware {
             .body(http_body_util::Full::new(body_bytes))
             .map_err(|e| mw_err(format!("failed to build HTTP request: {e}")))?;
 
-        // 4. Send request
+        // 4. Send 请求
         let hyper_resp = tokio::time::timeout(HTTP_SEND_TIMEOUT, sender.send_request(hyper_req))
             .await
             .map_err(|_| {
@@ -684,9 +684,9 @@ impl SshMiddleware {
 
         let (resp_parts, body) = hyper_resp.into_parts();
 
-        // 5. Stream response body — captures keep the SSH session, pool
-        //    guard, and conn driver alive until the body is fully consumed
-        //    or dropped.
+        // 5. 流式传输响应体；捕获的对象使 SSH 会话、连接池
+        //    守卫和连接驱动保持存活，直到响应体被完全读取
+        //    或释放。
         let byte_stream: Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>> =
             Box::pin(async_stream::try_stream! {
                 let _guard = stream_guard;
@@ -706,7 +706,7 @@ impl SshMiddleware {
                 }
             });
 
-        // 6. Convert to reqwest::Response
+        // 6. 转换 到 reqwest::响应
         let mut resp_builder = http::Response::builder().status(resp_parts.status);
         for (name, value) in &resp_parts.headers {
             resp_builder = resp_builder.header(name, value);

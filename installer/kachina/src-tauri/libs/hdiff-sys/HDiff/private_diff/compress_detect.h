@@ -1,5 +1,5 @@
 //compress_detect.h
-//粗略估算数据的可压缩性 for diff.
+//粗略估算数据的可压缩性 用于 差异.
 /*
  The MIT License (MIT)
  Copyright (c) 2012-2017 HouSisong
@@ -31,8 +31,8 @@
 
 #ifndef compress_detect_h
 #define compress_detect_h
-#include <stddef.h> //for size_t
-#include "../../../hpatch-sys/HPatch/patch_types.h" //for hpatch_uint32_t
+#include <stddef.h> //用于 size_t
+#include "../../../hpatch-sys/HPatch/patch_types.h" //用于 hpatch_uint32_t
 #include "mem_buf.h"
 namespace hdiff_private{
 
@@ -83,6 +83,6 @@ private:
     size_t _cost_rle(const unsigned char* d,size_t n)const;
 };
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 
 #endif

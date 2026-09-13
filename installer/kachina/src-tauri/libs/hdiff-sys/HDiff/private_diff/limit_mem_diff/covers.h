@@ -35,15 +35,15 @@ typedef hpatch_TCover   TCover;
 static inline void setCover(TCover& cover,hpatch_StreamPos_t oldPos,hpatch_StreamPos_t newPos,hpatch_StreamPos_t length) {
                                           cover.oldPos=oldPos; cover.newPos=newPos; cover.length=length; }
 
-// input & output covers
-//  must overwrite push_cover for output covers
+// 输入 & 输出 covers
+//  必须 overwrite push_cover 用于 输出 covers
 struct TCovers:public hpatch_TOutputCovers{
     void*       _covers;
     size_t      _coverCount;
     bool        _isCover32;
     inline TCovers(void* covers,size_t coverCount,bool isCover32)
     :_covers(covers),_coverCount(coverCount),_isCover32(isCover32)
-        { push_cover=0; } //default unsupport push
+        { push_cover=0; } //默认 unsupport push
     inline size_t coverCount()const{ return _coverCount; }
     inline void covers(size_t index,TCover* out_cover)const{
         if (_isCover32) {
@@ -65,19 +65,19 @@ static void tm_collate_covers(std::vector<_TCover>& covers){
     for (size_t i=1;i<covers.size();++i){
         if (covers[i].newPos<covers[backi].newPos+covers[backi].length){
             if (covers[i].newPos+covers[i].length>covers[backi].newPos+covers[backi].length){
-                if (cover_is_collinear(covers[i],covers[backi])){//insert i part to backi,del i
+                if (cover_is_collinear(covers[i],covers[backi])){//insert i 部分 到 backi,del i
                     covers[backi].length=covers[i].newPos+covers[i].length-covers[backi].newPos;
-                }else{//del backi part, save i
+                }else{//del backi 部分, 保存 i
                     covers[backi].length=covers[i].newPos-covers[backi].newPos;
                     if (covers[backi].length>=kCoverMinMatchLen)
                         ++backi;
                     covers[backi]=covers[i];
                 }
-            } //else del i
+            } //否则 del i
         }else if ((covers[i].newPos==covers[backi].newPos+covers[backi].length)
                 &&(covers[i].oldPos==covers[backi].oldPos+covers[backi].length)){
-            covers[backi].length+=covers[i].length; //insert i all to backi,del i
-        }else{ //save i
+            covers[backi].length+=covers[i].length; //insert i 全部 到 backi,del i
+        }else{ //保存 i
             ++backi;
             covers[backi]=covers[i];
         }
@@ -134,5 +134,5 @@ public:
     }
 };
 
-}//namespace hdiff_private
-#endif /* icover_h */
+}//命名空间 hdiff_private
+#endif 第三方实现细节。

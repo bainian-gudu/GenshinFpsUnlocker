@@ -31,7 +31,7 @@
 #include <thread>
 #endif
 
-/*- Private Functions -*/
+/*- 私有 Functions -*/
 
 #if (_IS_USED_MULTITHREAD)
 struct mt_data_t{
@@ -73,7 +73,7 @@ static void _sssort_thread(saint_t* c0,saint_t* c1,saidx_t* j,
 }
 #endif
 
-/* Sorts suffixes of type B*. */
+/* Sorts suffixes 的 类型 B*. */
 static
 saidx_t
 sort_typeBstar(const sauchar_t *T, sastore_t* SA,
@@ -83,21 +83,21 @@ sort_typeBstar(const sauchar_t *T, sastore_t* SA,
   saidx_t i, j, k, t, m;
   saint_t c0, c1;
 
-  /* Initialize bucket arrays. */
+  第三方实现细节。
   for(i = 0; i < BUCKET_A_SIZE; ++i) { bucket_A[i] = 0; }
   for(i = 0; i < BUCKET_B_SIZE; ++i) { bucket_B[i] = 0; }
 
-  /* Count the number of occurrences of the first one or two characters of each
-     type A, B and B* suffix. Moreover, store the beginning position of all
-     type B* suffixes into the array SA. */
+  /* 数量 the 数量 的 occurrences 的 the first one 或 two 字符 的 each
+     类型 A, B 和 B* 后缀. Moreover, store the beginning 位置 的 全部
+     类型 B* suffixes 到 the 数组 SA. */
   for(i = n - 1, m = n, c0 = T[n - 1]; 0 <= i;) {
-    /* type A suffix. */
+    /* 类型 A 后缀. */
     do { ++BUCKET_A(c1 = c0); } while((0 <= --i) && ((c0 = T[i]) >= c1));
     if(0 <= i) {
-      /* type B* suffix. */
+      /* 类型 B* 后缀. */
       ++BUCKET_BSTAR(c0, c1);
       SA[--m] = i;
-      /* type B suffix. */
+      /* 类型 B 后缀. */
       for(--i, c1 = c0; (0 <= i) && ((c0 = T[i]) <= c1); --i, c1 = c0) {
         ++BUCKET_B(c0, c1);
       }
@@ -106,24 +106,24 @@ sort_typeBstar(const sauchar_t *T, sastore_t* SA,
   m = n - m;
 /*
 note:
-  A type B* suffix is lexicographically smaller than a type B suffix that
-  begins with the same first two characters.
+  A 类型 B* 后缀 是 lexicographically smaller than a 类型 B 后缀 that
+  begins 含有 the same first two 字符.
 */
 
-  /* Calculate the index of start/end point of each bucket. */
+  /* 计算 the 索引 的 开始/结束 point 的 each bucket. */
   for(c0 = 0, i = 0, j = 0; c0 < ALPHABET_SIZE; ++c0) {
     t = i + BUCKET_A(c0);
-    BUCKET_A(c0) = i + j; /* start point */
+    BUCKET_A(c0) = i + j; /* 开始 point */
     i = t + BUCKET_B(c0, c0);
     for(c1 = c0 + 1; c1 < ALPHABET_SIZE; ++c1) {
       j += BUCKET_BSTAR(c0, c1);
-      BUCKET_BSTAR(c0, c1) = j; /* end point */
+      BUCKET_BSTAR(c0, c1) = j; /* 结束 point */
       i += BUCKET_B(c0, c1);
     }
   }
 
   if(0 < m) {
-    /* Sort the type B* suffixes by their first two characters. */
+    /* 排序 the 类型 B* suffixes 通过 their first two 字符. */
     PAb = SA + n - m; ISAb = SA + m;
     for(i = m - 2; 0 <= i; --i) {
       t = PAb[i], c0 = T[t], c1 = T[t + 1];
@@ -132,7 +132,7 @@ note:
     t = PAb[m - 1], c0 = T[t], c1 = T[t + 1];
     SA[--BUCKET_BSTAR(c0, c1)] = m - 1;
 
-    /* Sort the type B* substrings using sssort. */
+    /* 排序 the 类型 B* substrings using sssort. */
 #if (_IS_USED_MULTITHREAD)
     if (threadNum>1){
         const saidx_t bufsize = (n - (2 * m)) / (saidx_t)threadNum;
@@ -170,7 +170,7 @@ note:
         }
     }
 
-    /* Compute ranks of type B* substrings. */
+    /* Compute ranks 的 类型 B* substrings. */
     for(i = m - 1; 0 <= i; --i) {
       if(0 <= SA[i]) {
         j = i;
@@ -183,10 +183,10 @@ note:
       ISAb[SA[i]] = j;
     }
 
-    /* Construct the inverse suffix array of type B* suffixes using trsort. */
+    /* Construct the inverse 后缀 数组 的 类型 B* suffixes using trsort. */
     trsort(ISAb, SA, m, 1);
 
-    /* Set the sorted order of tyoe B* suffixes. */
+    /* Set the sorted order 的 tyoe B* suffixes. */
     for(i = n - 1, j = m, c0 = T[n - 1]; 0 <= i;) {
       for(--i, c1 = c0; (0 <= i) && ((c0 = T[i]) >= c1); --i, c1 = c0) { }
       if(0 <= i) {
@@ -196,28 +196,28 @@ note:
       }
     }
 
-    /* Calculate the index of start/end point of each bucket. */
-    BUCKET_B(ALPHABET_SIZE - 1, ALPHABET_SIZE - 1) = n; /* end point */
+    /* 计算 the 索引 的 开始/结束 point 的 each bucket. */
+    BUCKET_B(ALPHABET_SIZE - 1, ALPHABET_SIZE - 1) = n; /* 结束 point */
     for(c0 = ALPHABET_SIZE - 2, k = m - 1; 0 <= c0; --c0) {
       i = BUCKET_A(c0 + 1) - 1;
       for(c1 = ALPHABET_SIZE - 1; c0 < c1; --c1) {
         t = i - BUCKET_B(c0, c1);
-        BUCKET_B(c0, c1) = i; /* end point */
+        BUCKET_B(c0, c1) = i; /* 结束 point */
 
-        /* Move all type B* suffixes to the correct position. */
+        /* 移动 全部 类型 B* suffixes 到 the correct 位置. */
         for(i = t, j = BUCKET_BSTAR(c0, c1);
             j <= k;
             --i, --k) { SA[i] = SA[k]; }
       }
-      BUCKET_BSTAR(c0, c0 + 1) = i - BUCKET_B(c0, c0) + 1; /* start point */
-      BUCKET_B(c0, c0) = i; /* end point */
+      BUCKET_BSTAR(c0, c0 + 1) = i - BUCKET_B(c0, c0) + 1; /* 开始 point */
+      BUCKET_B(c0, c0) = i; /* 结束 point */
     }
   }
 
   return m;
 }
 
-/* Constructs the suffix array by using the sorted order of type B* suffixes. */
+/* Constructs the 后缀 数组 通过 using the sorted order 的 类型 B* suffixes. */
 static
 void
 construct_SA(const sauchar_t *T, sastore_t* SA,
@@ -228,10 +228,10 @@ construct_SA(const sauchar_t *T, sastore_t* SA,
   saint_t c0, c1, c2;
 
   if(0 < m) {
-    /* Construct the sorted order of type B suffixes by using
-       the sorted order of type B* suffixes. */
+    /* Construct the sorted order 的 类型 B suffixes 通过 using
+       the sorted order 的 类型 B* suffixes. */
     for(c1 = ALPHABET_SIZE - 2; 0 <= c1; --c1) {
-      /* Scan the suffix array from right to left. */
+      /* Scan the 后缀 数组 从 right 到 left. */
       for(i = SA + BUCKET_BSTAR(c1, c1 + 1),
           j = SA + BUCKET_A(c1 + 1) - 1, k = NULL, c2 = -1;
           i <= j;
@@ -257,11 +257,11 @@ construct_SA(const sauchar_t *T, sastore_t* SA,
     }
   }
 
-  /* Construct the suffix array by using
-     the sorted order of type B suffixes. */
+  /* Construct the 后缀 数组 通过 using
+     the sorted order 的 类型 B suffixes. */
   k = SA + BUCKET_A(c2 = T[n - 1]);
   *k++ = (T[n - 2] < c2) ? ~(n - 1) : (n - 1);
-  /* Scan the suffix array from left to right. */
+  /* Scan the 后缀 数组 从 left 到 right. */
   for(i = SA, j = SA + n; i < j; ++i) {
     if(0 < (s = *i)) {
       assert(T[s - 1] >= T[s]);
@@ -282,7 +282,7 @@ construct_SA(const sauchar_t *T, sastore_t* SA,
 
 /*---------------------------------------------------------------------------*/
 
-/*- Function -*/
+/*- 函数 -*/
 
 saint_t
 divsufsort(const sauchar_t *T, sastore_t* SA, saidx_t n,int threadNum) {
@@ -290,7 +290,7 @@ divsufsort(const sauchar_t *T, sastore_t* SA, saidx_t n,int threadNum) {
   saidx_t m;
   saint_t err = 0;
 
-  /* Check arguments. */
+  /* 检查 arguments. */
   if((T == NULL) || (SA == NULL) || (n < 0)) { return -1; }
   else if(n == 0) { return 0; }
   else if(n == 1) { SA[0] = 0; return 0; }
@@ -299,7 +299,7 @@ divsufsort(const sauchar_t *T, sastore_t* SA, saidx_t n,int threadNum) {
   bucket_A = (saidx_t *)malloc(BUCKET_A_SIZE * sizeof(saidx_t));
   bucket_B = (saidx_t *)malloc(BUCKET_B_SIZE * sizeof(saidx_t));
 
-  /* Suffixsort. */
+  第三方实现细节。
   if((bucket_A != NULL) && (bucket_B != NULL)) {
     m = sort_typeBstar(T, SA, bucket_A, bucket_B, n, threadNum);
     construct_SA(T, SA, bucket_A, bucket_B, n, m);

@@ -10,23 +10,23 @@ pub async fn install_runtime(
     size: Option<usize>,
     notify: impl Fn(serde_json::Value) + std::marker::Send + 'static,
 ) -> Result<String> {
-    // if tag startswith Microsoft.DotNet, install .NET runtime
+    // 如果标签以 Microsoft.DotNet 开头，安装 .NET 运行时
     if tag.starts_with("Microsoft.DotNet") {
         return install_dotnet(tag, offset, size, notify).await;
     }
     if tag.starts_with("Microsoft.VCRedist") {
         return install_vcredist(tag, offset, size, notify).await;
     }
-    // else not supported
+    // 否则不支持
     Err(anyhow::anyhow!("UNSUPPORTED_RUNTIME"))
 }
 
 /*
- * Install .NET runtime package
- * Supported tags:
+ * 安装 .NET 运行时包。
+ * 支持的标签：
  * Microsoft.DotNet.DesktopRuntime.*
  * Microsoft.DotNet.Runtime.*
- * * may be number '8' or '8.0.1'
+ * * 可以是数字“8”或“8.0.1”。
  */
 pub async fn install_dotnet(
     tag: String,
@@ -50,13 +50,13 @@ pub async fn install_dotnet(
             return Err(anyhow::anyhow!("UNSUPPORTED_DOTNET_RUNTIME"));
         }
     };
-    // check if runtime is installed by running dotnet --list-runtimes
+    // 通过运行 dotnet --list-runtimes 检查运行时是否已安装
     let cmd = tokio::process::Command::new("dotnet")
         .arg("--list-runtimes")
         .creation_flags(CREATE_NO_WINDOW.0)
         .output()
         .await;
-    // if installed, continue; if check failed, return error
+    // 已安装则继续；检查失败则返回错误
     if let Ok(output) = cmd {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -73,7 +73,7 @@ pub async fn install_dotnet(
     // 落地目录 / 随机文件名 / 独占创建 / 执行前验签：全部见 utils/secure_temp.rs
     let installer_path = secure_temp::package_path(&format!("Kachina.RuntimePackage.{tag}"));
     let (mut stream, len) = if offset.is_some() || size.is_some() {
-        // runtime packed, just extract and run
+        // 运行时已打包，只需解压并运行
         let stream = create_local_stream(offset.unwrap(), size.unwrap(), true)
             .await
             .context("RUNTIME_EXTRACT_ERR")?;
@@ -86,7 +86,7 @@ pub async fn install_dotnet(
         (stream, size.unwrap())
     } else {
         let mut vernum = tag.split('.').skip(3).collect::<Vec<&str>>().join(".");
-        // if vernum is release version, get real version
+        // 如果 vernum 是发布版本，获取实际版本
         if vernum.len() == 1 || vernum.len() == 2 {
             let relver = if vernum.len() == 1 {
                 format!("{vernum}.0")
@@ -103,7 +103,7 @@ pub async fn install_dotnet(
             let text = resp.text().await.context("RUNTIME_VERSION_READ_ERR")?;
             vernum = text.trim().to_string();
         }
-        // get real download url
+        // 获取实际下载 URL
         let url = runtime.1.replace("$", &vernum);
         let (stream, len, _insight) = create_http_stream(&url, 0, 0, true)
             .await
@@ -115,7 +115,7 @@ pub async fn install_dotnet(
         notify(serde_json::json!((downloaded, len)));
     };
     let copied = progressed_copy(&mut stream, &mut target, progress_noti).await;
-    // close streams
+    // 关闭流
     drop(stream);
     drop(target);
     if let Err(e) = copied {
@@ -124,7 +124,7 @@ pub async fn install_dotnet(
         return Err(e);
     }
     secure_temp::verify_microsoft_signed(&installer_path).await?;
-    // run installer with /passive /norestart
+    // 使用 /passive /norestart 运行安装器
     let mut cmd = tokio::process::Command::new(&installer_path)
         .arg("/passive")
         .arg("/norestart")
@@ -134,7 +134,7 @@ pub async fn install_dotnet(
     if !status.success() {
         return Err(anyhow::anyhow!("RUNTIME_INSTALL_FAILED"));
     }
-    // remove installer
+    // 删除安装器
     let _ = tokio::fs::remove_file(&installer_path).await;
     Ok("NEWLY_INSTALLED".to_string())
 }
@@ -173,14 +173,14 @@ pub async fn install_vcredist(
             return Err(anyhow::anyhow!("UNSUPPORTED_TAG"));
         }
     };
-    // check registry for already installed
+    // 检查注册表中是否已安装
     if check_vcredist(&reg) {
         return Ok("ALREADY_INSTALLED".to_string());
     }
     // 落地目录 / 随机文件名 / 独占创建 / 执行前验签：全部见 utils/secure_temp.rs
     let installer_path = secure_temp::package_path(&format!("Kachina.RuntimePackage.{tag}"));
     let (mut stream, len) = if offset.is_some() || size.is_some() {
-        // runtime packed, just extract and run
+        // 运行时已打包，只需解压并运行
         let stream = create_local_stream(offset.unwrap(), size.unwrap(), true)
             .await
             .context("RUNTIME_EXTRACT_ERR")?;
@@ -202,7 +202,7 @@ pub async fn install_vcredist(
         notify(serde_json::json!((downloaded, len)));
     };
     let copied = progressed_copy(&mut stream, &mut target, progress_noti).await;
-    // close streams
+    // 关闭流
     drop(stream);
     drop(target);
     if let Err(e) = copied {

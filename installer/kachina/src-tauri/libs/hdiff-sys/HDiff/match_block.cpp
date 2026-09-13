@@ -71,7 +71,7 @@ namespace hdiff_private {
             out_packedCovers.push_back(pkcover);
             dst+=moveLen;
         }
-        //return dst;
+        //返回 dst;
     }
 
 
@@ -165,7 +165,7 @@ void TMatchBlock::packData(){
             do{
                 if (sbegin+s.length<=clipPosi){
                     _cover_pos(isNew,&s)+=(TPos)unpackLeni;
-                    break; //ok next cover
+                    break; //ok 下一个 cover
                 }
                 hpatch_TCover _c={s.oldPos,s.newPos,clipPosi-sbegin};
                 _cover_pos(isNew,&_c)+=(TPos)unpackLeni;
@@ -263,7 +263,7 @@ void loadOldAndNewStream(TAutoMem& out_mem,const hpatch_TStreamInput* oldStream,
     _check(newStream->read(newStream,0,out_mem.data()+old_size,out_mem.data()+old_size+new_size),"loadOldAndNew() newStream->read");
 }
 
-} //namespace hdiff_private
+} //命名空间 hdiff_private
 
 using namespace hdiff_private;
 

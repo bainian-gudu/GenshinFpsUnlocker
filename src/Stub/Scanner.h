@@ -12,7 +12,7 @@
 // =============================================================================
 namespace Scanner
 {
-    /// <summary>将 "AA BB ??" 形式的特征串解析为字节数组（-1 表示通配）。</summary>
+    /// <summary>将 "AA BB ??" 形式的特征串解析为字节数组（-1 表示通配；非法签名返回空数组）。</summary>
     std::vector<int> ParsePattern(const std::string& signature);
 
     /// <summary>在指定模块的可执行节中扫描特征，返回首处匹配地址；失败返回 nullptr。</summary>

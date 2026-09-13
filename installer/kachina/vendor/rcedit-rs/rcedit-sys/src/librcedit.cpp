@@ -1,4 +1,4 @@
-// C-API for rcedit library
+// C-API 用于 rcedit library
 #include <cstdint>
 #include "rescle.h"
 

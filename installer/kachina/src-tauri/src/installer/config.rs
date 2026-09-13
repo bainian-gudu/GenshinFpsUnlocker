@@ -96,7 +96,7 @@ pub async fn get_config_pre(
             .unwrap_or("Unknown");
         // 上游在这里把这些信息塞进上报事件的 scope（连同设备标识与 IP 一起发到
         // 第三方服务器）。本项目已移除遥测：同样的信息只写进本地日志
-        // （%TEMP%\KachinaInstaller.log），不外发。
+        // （%TEMP%\KachinaInstaller.日志），不外发。
         tracing::info!(
             "Embedded config: name={embed_name} source={embed_source} metadata={} files={} index={} uninstall={} override_source={:?} non_interactive={} silent={}",
             enbedded_metadata.is_some(),
@@ -144,7 +144,7 @@ pub async fn get_installer_config(
     scan_exe: bool,
 ) -> TAResult<InstallerConfig> {
     APP_BOOT_SIGNAL.store(true, std::sync::atomic::Ordering::SeqCst);
-    // check if current dir has exeName
+    // 检查当前目录是否包含 exeName
     let exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
     let mut config = get_config_pre(&exe_path, args.inner().clone(), scan_exe).await?;
     let mut uninstall_name = "uninst.exe";
@@ -179,7 +179,7 @@ pub async fn get_installer_config(
     }
     let key_path = format!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{reg_name}");
 
-    // First try HKLM, if not exist, try HKCU
+    // 先尝试 HKLM，不存在时再尝试 HKCU
     let key = windows_registry::LOCAL_MACHINE
         .options()
         .read()

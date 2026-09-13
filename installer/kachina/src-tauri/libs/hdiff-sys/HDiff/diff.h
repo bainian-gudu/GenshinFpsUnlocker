@@ -33,19 +33,19 @@
 
 static const int kMinSingleMatchScore_default = 6;
 
-//create a diff data between oldData and newData
-//  out_diff is uncompressed, you can use create_compressed_diff()
-//       or create_single_compressed_diff() create compressed diff data
-//  recommended always use create_single_compressed_diff() replace create_diff()
-//  kMinSingleMatchScore: default 6, bin: 0--4  text: 4--9
-//  isUseBigCacheMatch: big cache max used O(oldSize) memory, match speed faster, but build big cache slow 
+//创建 oldData 与 newData 之间的差异数据
+//  out_diff 是 uncompressed, you 可以 使用 create_compressed_diff()
+//       或 create_single_compressed_diff() 创建 compressed 差异 数据
+//  recommended always 使用 create_single_compressed_diff() replace create_diff()
+//  kMinSingleMatchScore: 默认 6, bin: 0--4  text: 4--9
+//  isUseBigCacheMatch: big 缓存 max 已使用 O(oldSize) 内存, 匹配 speed faster, but build big 缓存 slow
 void create_diff(const unsigned char* newData,const unsigned char* newData_end,
                  const unsigned char* oldData,const unsigned char* oldData_end,
                  std::vector<unsigned char>& out_diff,
                  int kMinSingleMatchScore=kMinSingleMatchScore_default,
                  bool isUseBigCacheMatch=false,size_t threadNum=1);
 
-//return patch(oldData+diff)==newData?
+//返回 补丁(旧数据+差异)==新数据?
 bool check_diff(const unsigned char* newData,const unsigned char* newData_end,
                 const unsigned char* oldData,const unsigned char* oldData_end,
                 const unsigned char* diff,const unsigned char* diff_end);
@@ -56,11 +56,11 @@ bool check_diff(const hpatch_TStreamInput*  newData,
 
 
 
-//create a compressed diff data between oldData and newData
-//  out_diff compressed by compressPlugin
-//  recommended always use create_single_compressed_diff() replace create_compressed_diff()
-//  kMinSingleMatchScore: default 6, bin: 0--4  text: 4--9
-//  isUseBigCacheMatch: big cache max used O(oldSize) memory, match speed faster, but build big cache slow 
+//创建 a compressed 差异 数据 between 旧数据 和 新数据
+//  out_diff compressed 通过 compressPlugin
+//  recommended always 使用 create_single_compressed_diff() replace create_compressed_diff()
+//  kMinSingleMatchScore: 默认 6, bin: 0--4  text: 4--9
+//  isUseBigCacheMatch: big 缓存 max 已使用 O(oldSize) 内存, 匹配 speed faster, but build big 缓存 slow
 void create_compressed_diff(const unsigned char* newData,const unsigned char* newData_end,
                             const unsigned char* oldData,const unsigned char* oldData_end,
                             std::vector<unsigned char>& out_diff,
@@ -76,15 +76,15 @@ void create_compressed_diff(const unsigned char* newData,const unsigned char* ne
                             bool isUseBigCacheMatch=false,
                             ICoverLinesListener* listener=0,size_t threadNum=1);
 
-//create a compressed diff data by stream:
-//  can control memory requires and run speed by different kMatchBlockSize value,
-//      but out_diff size is larger than create_compressed_diff()
-//  recommended used in limited environment or support large file
-//  recommended always use create_single_compressed_diff_stream() replace create_compressed_diff_stream()
-//  kMatchBlockSize: recommended (1<<4)--(1<<14)
-//    if increase kMatchBlockSize then run faster and require less memory, but out_diff size increase
-//  NOTICE: out_diff->write()'s writeToPos may be back to update headData!
-//  throw std::runtime_error when I/O error,etc.
+//创建 a compressed 差异 数据 通过 流:
+//  可以 control 内存 requires 和 run speed 通过 different kMatchBlockSize 值,
+//      but out_diff 大小 是 larger than create_compressed_diff()
+//  recommended 已使用 在 limited environment 或 支持 large 文件
+//  recommended always 使用 create_single_compressed_diff_stream() replace create_compressed_diff_stream()
+//  第三方实现细节。
+//    如果 increase kMatchBlockSize 然后 run faster 和 require less 内存, but out_diff 大小 increase
+//  注意: out_diff->写入()'s writeToPos may 为 back 到 update headData!
+//  throw std::runtime_error 当 I/O 错误,etc.
 static const size_t kMatchBlockSize_default = (1<<6);
 static const size_t kMatchBlockSize_min=4;
 void create_compressed_diff_stream(const hpatch_TStreamInput*  newData,
@@ -94,7 +94,7 @@ void create_compressed_diff_stream(const hpatch_TStreamInput*  newData,
                                    size_t kMatchBlockSize=kMatchBlockSize_default,
                                    const hdiff_TMTSets_s* mtsets=0);
 
-//return patch_decompress(oldData+diff)==newData?
+//返回 patch_decompress(旧数据+差异)==新数据?
 bool check_compressed_diff(const unsigned char* newData,const unsigned char* newData_end,
                            const unsigned char* oldData,const unsigned char* oldData_end,
                            const unsigned char* diff,const unsigned char* diff_end,
@@ -103,11 +103,11 @@ bool check_compressed_diff(const hpatch_TStreamInput*  newData,
                            const hpatch_TStreamInput*  oldData,
                            const hpatch_TStreamInput*  compressed_diff,
                            hpatch_TDecompress* decompressPlugin);
-// check_compressed_diff_stream rename to check_compressed_diff
+// check_compressed_diff_stream rename 到 check_compressed_diff
 
-//resave compressed_diff
-//  decompress in_diff and recompress to out_diff
-//  throw std::runtime_error when input file error or I/O error,etc.
+//重新保存 compressed_diff
+//  解压 in_diff 并重新压缩到 out_diff
+//  throw std::runtime_error 当 输入 文件 错误 或 I/O 错误,etc.
 void resave_compressed_diff(const hpatch_TStreamInput*  in_diff,
                             hpatch_TDecompress*         decompressPlugin,
                             const hpatch_TStreamOutput* out_diff,
@@ -119,10 +119,10 @@ void resave_compressed_diff(const hpatch_TStreamInput*  in_diff,
 
 static const size_t kDefaultPatchStepMemSize =1024*256;
 
-//create a diff data between oldData and newData, the diffData saved as single compressed stream
-//  kMinSingleMatchScore: default 6, bin: 0--4  text: 4--9
-//  patchStepMemSize>=hpatch_kStreamCacheSize, default 256k, recommended 64k,2m etc...
-//  isUseBigCacheMatch: big cache max used O(oldSize) memory, match speed faster, but build big cache slow 
+//创建 a 差异 数据 between 旧数据 和 新数据, the diffData saved 作为 单个 compressed 流
+//  kMinSingleMatchScore: 默认 6, bin: 0--4  text: 4--9
+//  patchStepMemSize>=hpatch_kStreamCacheSize, 默认 256k, recommended 64k,2m etc...
+//  isUseBigCacheMatch: big 缓存 max 已使用 O(oldSize) 内存, 匹配 speed faster, but build big 缓存 slow
 void create_single_compressed_diff(const unsigned char* newData,const unsigned char* newData_end,
                                    const unsigned char* oldData,const unsigned char* oldData_end,
                                    std::vector<unsigned char>& out_diff,const hdiff_TCompress* compressPlugin=0,
@@ -137,14 +137,14 @@ extern "C" void create_single_compressed_diff(const unsigned char* newData,const
                                    size_t patchStepMemSize=kDefaultPatchStepMemSize,
                                    bool isUseBigCacheMatch=false,
                                    ICoverLinesListener* listener=0,size_t threadNum=1);
-//create single compressed diff data by stream:
-//  can control memory requires and run speed by different kMatchBlockSize value,
-//      but out_diff size is larger than create_single_compressed_diff()
-//  recommended used in limited environment or support large file
-//  kMatchBlockSize: recommended (1<<4)--(1<<14)
-//    if increase kMatchBlockSize then run faster and require less memory, but out_diff size increase
-//  NOTICE: out_diff->write()'s writeToPos may be back to update headData!
-//  throw std::runtime_error when I/O error,etc.
+//创建 单个 compressed 差异 数据 通过 流:
+//  可以 control 内存 requires 和 run speed 通过 different kMatchBlockSize 值,
+//      but out_diff 大小 是 larger than create_single_compressed_diff()
+//  recommended 已使用 在 limited environment 或 支持 large 文件
+//  第三方实现细节。
+//    如果 increase kMatchBlockSize 然后 run faster 和 require less 内存, but out_diff 大小 increase
+//  注意: out_diff->写入()'s writeToPos may 为 back 到 update headData!
+//  throw std::runtime_error 当 I/O 错误,etc.
 void create_single_compressed_diff_stream(const hpatch_TStreamInput*  newData,
                                           const hpatch_TStreamInput*  oldData,
                                           const hpatch_TStreamOutput* out_diff,
@@ -153,7 +153,7 @@ void create_single_compressed_diff_stream(const hpatch_TStreamInput*  newData,
                                           size_t patchStepMemSize=kDefaultPatchStepMemSize,
                                           const hdiff_TMTSets_s* mtsets=0);
 
-//return patch_single_?(oldData+diff)==newData?
+//返回 patch_single_?(旧数据+差异)==新数据?
 bool check_single_compressed_diff(const unsigned char* newData,const unsigned char* newData_end,
                                   const unsigned char* oldData,const unsigned char* oldData_end,
                                   const unsigned char* diff,const unsigned char* diff_end,
@@ -163,10 +163,10 @@ bool check_single_compressed_diff(const hpatch_TStreamInput* newData,
                                   const hpatch_TStreamInput* diff,
                                   hpatch_TDecompress* decompressPlugin);
 
-//resave single_compressed_diff
-//  decompress in_diff and recompress to out_diff
-//  throw std::runtime_error when input file error or I/O error,etc.
-//  return new out_diff curPos
+//第三方实现细节。
+//  解压 in_diff 并重新压缩到 out_diff
+//  throw std::runtime_error 当 输入 文件 错误 或 I/O 错误,etc.
+//  返回 新 out_diff curPos
 hpatch_StreamPos_t
      resave_single_compressed_diff(const hpatch_TStreamInput*  in_diff,
                                    hpatch_TDecompress*         decompressPlugin,
@@ -177,14 +177,14 @@ hpatch_StreamPos_t
                                    hpatch_StreamPos_t          out_diff_curPos=0);
 
 
-//same as create?compressed_diff_stream(), but not serialize diffData, only got covers
+//same 作为 创建?compressed_diff_stream(), but 不 serialize diffData, 仅 got covers
 void get_match_covers_by_block(const hpatch_TStreamInput* newData,const hpatch_TStreamInput* oldData,
                                hpatch_TOutputCovers* out_covers,size_t kMatchBlockSize,const hdiff_TMTSets_s* mtsets);
 void get_match_covers_by_block(const unsigned char* newData,const unsigned char* newData_end,
                                const unsigned char* oldData,const unsigned char* oldData_end,
                                hpatch_TOutputCovers* out_covers,size_t kMatchBlockSize,size_t threadNum);
 
-//same as create?_diff(), but not serialize diffData, only got covers
+//same 作为 创建?_diff(), but 不 serialize diffData, 仅 got covers
 void get_match_covers_by_sstring(const unsigned char* newData,const unsigned char* newData_end,
                                  const unsigned char* oldData,const unsigned char* oldData_end,
                                  hpatch_TOutputCovers* out_covers,

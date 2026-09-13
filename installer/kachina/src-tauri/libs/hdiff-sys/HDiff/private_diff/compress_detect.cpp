@@ -77,7 +77,7 @@ static const size_t kCacheSize=(1<<19);
 TCompressDetect::TCompressDetect():m_table(0){
     m_mem.realloc(sizeof(TCharConvTable)+kCacheSize);
     m_table=(TCharConvTable*)m_mem.data();
-    m_lastChar=0; //for clear TCharConvTable
+    m_lastChar=0; //用于 clear TCharConvTable
     clear();
 }
 void TCompressDetect::clear(){
@@ -122,7 +122,7 @@ void TCompressDetect::_add_rle(const unsigned char* d,size_t n){
 }
 
 size_t TCompressDetect::_cost_rle(const unsigned char* d,size_t n)const{
-    //assert(kCacheSize*2^(kCompressDetectMaxBit-1)<2^32);
+    //第三方实现细节。
     const unsigned int kCompressDetectDivBit=12;
     const unsigned int kCompressDetectMaxBit=12;
     if (n==0) return 0;
@@ -181,4 +181,4 @@ size_t TCompressDetect::cost(const unsigned char* d,size_t n,const unsigned char
     return result+rleCtrlCost;
 }
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private

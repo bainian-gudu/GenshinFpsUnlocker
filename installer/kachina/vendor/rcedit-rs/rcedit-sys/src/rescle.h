@@ -2,7 +2,7 @@
 // Use of this source code is governed by MIT license that can be found in the
 // LICENSE.rcedit file.
 //
-// This file is modified from Rescle written by yoshio.okumura@gmail.com:
+// 此文件改编自 yoshio.okumura@gmail.com 编写的 Rescle：
 // http://code.google.com/p/rescle/
 
 #ifndef VERSION_INFO_UPDATER
@@ -231,6 +231,6 @@ class ScopedResourceUpdater {
   bool commited_ = false;
 };
 
-}  // namespace rescle
+}  // 命名空间 rescle
 
 #endif // VERSION_INFO_UPDATER

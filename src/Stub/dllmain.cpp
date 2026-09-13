@@ -329,25 +329,10 @@ namespace
 
     /// <summary>
     /// 工作线程主循环：
-    /// 等共享内存 → 扫描特征 → 启用 Hook → 周期 ApplyTargetFps → 收到 Exiting 退出。
+    /// 等共享内存 → 扫描特征 → 启用 Hook → 周期 ApplyTargetFps → 收到 Exiting 暂停会话。
     /// </summary>
-    DWORD WINAPI WorkerThread(LPVOID)
+    DWORD RunSession()
     {
-        // 等待 Host 共享内存就绪（最多约 15s）
-        for (int i = 0; i < 150 && g_running.load(std::memory_order_relaxed); ++i)
-        {
-            if (OpenSharedMemory())
-            {
-                break;
-            }
-            Sleep(100);
-        }
-
-        if (!g_ipc)
-        {
-            return 1;
-        }
-
         g_ipc->Status = IpcStatus::Waiting;
 
         // 游戏模块可能尚未完全加载，重试扫描。
@@ -441,12 +426,41 @@ namespace
 
         AntiBlur::Shutdown(g_ipc);
         MH_DisableHook(MH_ALL_HOOKS);
-        if (g_ipc)
-        {
+        // Error 必须保留给 Host 读取，Exiting 也保留到下次 Host 重置。
+        if (g_ipc && g_ipc->Status != IpcStatus::Error && g_ipc->Status != IpcStatus::Exiting)
             g_ipc->Status = IpcStatus::None;
-        }
         return 0;
     }
+
+    DWORD WINAPI WorkerThread(LPVOID)
+    {
+        while (g_running.load(std::memory_order_relaxed))
+        {
+            if (OpenSharedMemory()) break;
+            Sleep(500);
+        }
+        if (!g_ipc) return 1;
+
+        while (g_running.load(std::memory_order_relaxed))
+        {
+            const DWORD result = RunSession();
+            if (result != 0)
+            {
+                // 扫描或启用失败也要撤回本轮可能已创建的 Patch/Hook，
+                // 否则下一次 Host 重试会叠加旧状态。
+                AntiBlur::Shutdown(g_ipc);
+                MH_DisableHook(MH_ALL_HOOKS);
+            }
+            // 重复 LoadLibrary 不会重新执行 DllMain。保留线程并等待 Host 的
+            // ResetForNewInject 请求（None），使错误重试和 Host 重启能够重新初始化。
+            while (g_running.load(std::memory_order_relaxed) && g_ipc->Status != IpcStatus::None)
+                Sleep(250);
+        }
+
+        CloseSharedMemory();
+        return 0;
+    }
+
 }
 
 /// <summary>
@@ -458,12 +472,21 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK WndProc(int code, WPARAM wPara
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 {
     switch (reason)
     {
     case DLL_PROCESS_ATTACH:
+    {
         DisableThreadLibraryCalls(hModule);
+        // 把模块固定到目标进程生命周期，避免 FreeLibrary 在工作线程仍执行时
+        // 触发 DLL_PROCESS_DETACH 并卸载本模块代码。工作线程会自行清理 Hook，
+        // 地址空间由目标进程退出统一回收。
+        HMODULE pinned = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                reinterpret_cast<LPCWSTR>(hModule), &pinned))
+            return FALSE;
         g_running.store(true, std::memory_order_relaxed);
         if (MH_Initialize() != MH_OK)
         {
@@ -471,31 +494,22 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         }
         // 在独立线程完成扫描与循环，避免阻塞装载器锁
         g_workerThread = CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr);
+        if (!g_workerThread)
+        {
+            g_running.store(false, std::memory_order_relaxed);
+            MH_Uninitialize();
+            return FALSE;
+        }
         break;
+    }
 
     case DLL_PROCESS_DETACH:
+    {
+        // 模块已在 attach 时 PIN；动态 FreeLibrary 不会进入这里。
+        // 进程终止时不要在 loader lock 上等待或访问正在销毁的游戏地址空间。
         g_running.store(false, std::memory_order_relaxed);
-        if (g_workerThread)
-        {
-            // 不要在装载器锁上阻塞太久。正常 ExitProcess 路径下其它线程已被终止，
-            // 这里会立刻返回。
-            const DWORD waitResult = WaitForSingleObject(g_workerThread, 1500);
-            CloseHandle(g_workerThread);
-            g_workerThread = nullptr;
-
-            // 超时说明工作线程还活着（FreeLibrary / 控制台关闭等非 ExitProcess 路径）。
-            // 这时继续卸钩、Uninitialize、解除共享内存映射，等于让还在跑的线程去踩
-            // 已释放的 trampoline 和已 unmap 的 g_ipc —— 崩在退出路上。
-            // 宁可把这点资源留给一个即将消失的进程。
-            if (waitResult != WAIT_OBJECT_0)
-            {
-                return TRUE;
-            }
-        }
-        MH_DisableHook(MH_ALL_HOOKS);
-        MH_Uninitialize();
-        CloseSharedMemory();
         break;
+    }
     }
     return TRUE;
 }

@@ -28,17 +28,17 @@
 #ifndef parallel_import_h
 #define parallel_import_h
 
-//select define one for support parallel
-//#define _IS_USED_PTHREAD       1
-//#define _IS_USED_CPP11THREAD   1
-//#define _IS_USED_WIN32THREAD   1
+//select 定义 one 用于 支持 并行
+//#定义 _IS_USED_PTHREAD       1
+//#定义 _IS_USED_CPP11THREAD   1
+//#定义 _IS_USED_WIN32THREAD   1
 
 #ifndef _IS_USED_MULTITHREAD
 #   define _IS_USED_MULTITHREAD 1
 #endif
 
 #if ((_IS_USED_PTHREAD>0) || (_IS_USED_CPP11THREAD>0) || (_IS_USED_WIN32THREAD>0))
-#   //ok have one
+#   //第三方实现细节。
 #   define _IS_USED_MULTITHREAD 1
 #else
 #   if (_IS_USED_MULTITHREAD>0)
@@ -68,7 +68,7 @@
     //同步变量;
     typedef void*   HCondvar;
 #if (_IS_USED_CPP11THREAD)
-#   define TLockerBox           void  /*  used std::unique_lock<std::mutex>  */
+#   define TLockerBox           void  /*  已使用 std::unique_lock<std::mutex>  */
 #   define _TLockerBox_name     std::unique_lock<std::mutex>
 #else
     typedef struct{
@@ -83,7 +83,7 @@
 
     void this_thread_yield(void);
 
-    //parallel run
+    //并行 run
     typedef void (*TThreadRunCallBackProc)(int threadIndex,void* workData);
     void  thread_parallel(int threadCount,TThreadRunCallBackProc threadProc,void* workData,
                           int isUseThisThread,int threadIndexOffset);

@@ -1,4 +1,4 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+// 发布版 Windows 下禁止额外控制台窗口，禁止删除！！
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub mod capabilities;
@@ -34,10 +34,10 @@ fn windows_text_scale_factor() -> f64 {
 }
 
 lazy_static::lazy_static! {
-    /// Raw HTTP client without middleware (for internal use)
+    /// 不带中间件的原始 HTTP 客户端，供内部使用。
     pub(crate) static ref RAW_CLIENT: reqwest::Client = {
         reqwest::Client::builder()
-            .user_agent(capabilities::ua_string()) // overwritten per-request by DynamicUaMiddleware
+            .user_agent(capabilities::ua_string()) // 由 DynamicUaMiddleware 按请求覆盖
             .gzip(true)
             .zstd(true)
             .read_timeout(Duration::from_secs(30))
@@ -46,14 +46,14 @@ lazy_static::lazy_static! {
             .unwrap()
     };
 
-    /// HTTP client for API calls — carries real-time dynamic UA
+    /// 用于 API 调用的 HTTP 客户端，携带实时动态 UA。
     pub static ref API_CLIENT: reqwest_middleware::ClientWithMiddleware = {
         reqwest_middleware::ClientBuilder::new(RAW_CLIENT.clone())
             .with(capabilities::DynamicUaMiddleware::new())
             .build()
     };
 
-    /// HTTP client for downloads (supports H3/QUIC via middleware)
+    /// 用于下载的 HTTP 客户端，通过中间件支持 H3/QUIC。
     pub static ref DOWNLOAD_CLIENT: reqwest_middleware::ClientWithMiddleware = {
         let h3_ok = capabilities::is_h3_available();
 
@@ -73,23 +73,23 @@ lazy_static::lazy_static! {
             }
         }
 
-        // Shared SSH connection pool for both SSH tunnel and SFTP middlewares
+        // SSH 隧道和 SFTP 中间件共用同一个 SSH 连接池
         let ssh_pool = std::sync::Arc::new(
             capabilities::ssh::SshPoolInner::new(Duration::from_secs(300)),
         );
 
-        // SSH tunnel middleware — routes ssh+http:// URLs through SSH direct-tcpip channels
+        // SSH 隧道中间件：通过 SSH direct-tcpip 通道处理 ssh+http:// URL
         builder = builder.with(capabilities::ssh::SshMiddleware::with_pool(ssh_pool.clone()));
         tracing::info!("[SSH] SshMiddleware enabled");
 
-        // SFTP download middleware — routes sftp:// URLs through SSH SFTP subsystem
+        // SFTP 下载中间件：通过 SSH SFTP 子系统处理 sftp:// URL
         builder = builder.with(capabilities::sftp::SftpMiddleware::new(ssh_pool));
         tracing::info!("[SFTP] SftpMiddleware enabled");
 
         builder.build()
     };
 
-    /// Legacy alias - will be removed after migration
+    /// 旧版别名，迁移完成后移除。
     pub static ref REQUEST_CLIENT: &'static reqwest_middleware::ClientWithMiddleware = &*API_CLIENT;
     pub static ref APP_BOOT_SIGNAL: AtomicBool = AtomicBool::new(false);
 }
@@ -105,11 +105,11 @@ fn main() {
         command = Command::InstallWebview2;
     }
     // 本项目已移除上游的遥测（见 ../../LOCAL_PATCHES.md 第 7 节）：不初始化
-    // 上报 client、不挂 sentry-tracing layer。日志只进本地控制台与
-    // %TEMP%\KachinaInstaller.log，一个字节都不外发。
+    // 上报 客户端、不挂 sentry-tracing layer。日志只进本地控制台与
+    // %TEMP%\KachinaInstaller.日志，一个字节都不外发。
     let info_filter = utils::InfoFilter {};
 
-    // Create log file in temp directory, ignore failures
+    // 在临时目录创建日志文件，失败时忽略
     let temp_dir = std::env::temp_dir();
     let log_file = temp_dir.join("KachinaInstaller.log");
 
@@ -143,10 +143,10 @@ fn main() {
         registry.init();
     }
 
-    // Initialize H3/QUIC probe early — before any client is created
+    // 在创建任何客户端前尽早初始化 H3/QUIC 探测
     capabilities::init();
 
-    // command is not  Command::Install, can be anything
+    // 命令不是 Command::Install，可以是其他任意命令
     match command {
         Command::HeadlessUac(args) => {
             tracing::info!("KachinaInstaller started as UAC Thread");
@@ -196,11 +196,11 @@ async fn tauri_main(args: InstallArgs) {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
     let (major, minor, build) = nt_version::get();
     let build = (build & 0xffff) as u16;
-    // use 22000 as the build number of Windows 11
+    // 使用 22000 作为 Windows 11 的构建号
     let is_win11 = major == 10 && minor == 0 && build >= 22000;
     let is_win11_ = is_win11;
 
-    // set cwd to temp dir
+    // 将当前工作目录设置为临时目录
     let temp_dir = std::env::temp_dir();
     let res = std::env::set_current_dir(&temp_dir);
     if res.is_err() {
@@ -212,12 +212,12 @@ async fn tauri_main(args: InstallArgs) {
     }
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            // things which can be run directly
+            // 可直接运行的Command
             fs::is_dir_empty,
             dfs::get_dfs,
             dfs::get_http_with_range,
             dfs::http_get_request,
-            // DFS2 commands
+            // DFS2 命令
             dfs::get_dfs2_metadata,
             dfs::create_dfs2_session,
             dfs::get_dfs2_chunk_url,
@@ -236,19 +236,19 @@ async fn tauri_main(args: InstallArgs) {
             installer::error_dialog,
             installer::confirm_dialog,
             installer::get_exe_version,
-            // wincred
+            // 相关实现：wincred
             utils::wincred::wincred_write,
             utils::wincred::wincred_read,
             utils::wincred::wincred_delete,
-            // mirrorc
+            // 相关实现：mirrorc
             thirdparty::mirrorc::get_mirrorc_status,
-            // new mamaned operation
+            // 新的托管操作
             ipc::manager::managed_operation,
         ])
         .manage(args)
         .manage(ipc::manager::ManagedElevate::new())
         .setup(move |app| {
-            // sleep 5s to check if window is alive
+            // 等待 5 秒检查窗口是否仍存活
             tokio::spawn({
                 async move {
                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -273,7 +273,7 @@ async fn tauri_main(args: InstallArgs) {
             let scaled_width = base_width * text_scale;
             let scaled_height = base_height * text_scale;
 
-            // Helper function to create base window builder
+            // 创建基础窗口构建器的辅助函数
             let create_window_builder = || {
                 tauri::WebviewWindowBuilder::new(
                     app,
@@ -288,10 +288,10 @@ async fn tauri_main(args: InstallArgs) {
                 .center()
             };
 
-            // Extract icon from current exe
+            // 从当前 exe 提取图标
             let window_icon = utils::icon::get_exe_icon_for_tauri();
 
-            // Create builder and optionally apply icon
+            // 创建构建器，并在提供图标时应用图标
             let mut main_window = create_window_builder();
             if let Some(icon) = window_icon {
                 main_window = main_window.icon(icon).unwrap_or_else(|e| {
@@ -317,7 +317,7 @@ async fn tauri_main(args: InstallArgs) {
                     ..Default::default()
                 }));
             } else {
-                // if mica is not available, just use solid background.
+                // mica 不可用时使用纯色背景。
                 let _ = if utils::gui::is_dark_mode().unwrap_or(false) {
                     main_window.set_background_color(Some(Color(0, 0, 0, 255)))
                 } else {

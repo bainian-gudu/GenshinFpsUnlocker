@@ -27,7 +27,7 @@
 #include "stream_serialize.h"
 #include <string.h> //memcpy
 #include <stdexcept> //std::runtime_error
-#include "../../diff.h" //for stream type
+#include "../../diff.h" //用于 流 类型
 #include <algorithm>
 
 #define checki(value,info) { if (!(value)) { throw std::runtime_error(info); } }
@@ -92,11 +92,11 @@ TCoversStream::~TCoversStream(){
 }
 
 #define __private_packCover(_TUInt,packWithTag,pack,dst,dst_end,cover,lastOldEnd,lastNewEnd){ \
-    if (cover.oldPos>=lastOldEnd) /*save inc_oldPos*/ \
+    if (cover.oldPos>=lastOldEnd) /*保存 inc_oldPos*/ \
         packWithTag(dst,dst_end,(_TUInt)(cover.oldPos-lastOldEnd), 0, 1); \
     else \
-        packWithTag(dst,dst_end,(_TUInt)(lastOldEnd-cover.oldPos), 1, 1);/*sub safe*/ \
-    pack(dst,dst_end,(_TUInt)(cover.newPos-lastNewEnd)); /*save inc_newPos*/ \
+        packWithTag(dst,dst_end,(_TUInt)(lastOldEnd-cover.oldPos), 1, 1);/*sub 安全*/ \
+    pack(dst,dst_end,(_TUInt)(cover.newPos-lastNewEnd)); /*保存 inc_newPos*/ \
     pack(dst,dst_end,(_TUInt)cover.length); \
 }
 
@@ -126,7 +126,7 @@ hpatch_BOOL TCoversStream::_read(const hpatch_TStreamInput* stream,hpatch_Stream
             self->curCodePos+=readLen;
         }else{
             size_t cur_index=self->readedCoverCount;
-            if (cur_index>=n) return hpatch_FALSE; //error
+            if (cur_index>=n) return hpatch_FALSE; //错误
             unsigned char* pcode_cur=self->_code_mem.data();
             unsigned char* pcode_end=pcode_cur+kCodeBufSize;
             for (;((size_t)(pcode_end-pcode_cur)>=hpatch_kMaxPackedUIntBytes*3)
@@ -135,7 +135,7 @@ hpatch_BOOL TCoversStream::_read(const hpatch_TStreamInput* stream,hpatch_Stream
                 self->covers.covers(cur_index,&cover);
                 __private_packCover(hpatch_StreamPos_t,hpatch_packUIntWithTag,hpatch_packUInt,
                                     &pcode_cur,pcode_end,cover,self->lastOldEnd,self->lastNewEnd);
-                self->lastOldEnd=cover.oldPos+cover.length;//! +length
+                self->lastOldEnd=cover.oldPos+cover.length;//! +长度
                 self->lastNewEnd=cover.newPos+cover.length;
             }
             self->readedCoverCount=cur_index;
@@ -166,7 +166,7 @@ hpatch_StreamPos_t TCoversStream::getDataSize(const TCovers& covers){
         assert(cover.newPos>=lastNewEnd);
         __private_packCover(hpatch_StreamPos_t,_packUIntWithTag_size,_packUInt_size,
                             &cover_buf_size,0,cover,lastOldEnd,lastNewEnd);
-        lastOldEnd=cover.oldPos+cover.length;//! +length
+        lastOldEnd=cover.oldPos+cover.length;//! +长度
         lastNewEnd=cover.newPos+cover.length;
     }
     return cover_buf_size;
@@ -221,7 +221,7 @@ hpatch_BOOL TNewDataDiffStream::_read(const hpatch_TStreamInput* stream,hpatch_S
         }else{
             TCover curCover;
             if (self->readedCoverCount==n){
-                if (self->lastNewEnd>=self->newData->streamSize) return hpatch_FALSE; //error;
+                if (self->lastNewEnd>=self->newData->streamSize) return hpatch_FALSE; //错误;
                 curCover.newPos=self->newData->streamSize;
                 curCover.length=0;
                 curCover.oldPos=0;
@@ -413,7 +413,7 @@ void TNewDataSubDiffCoverStream::resetCover(const TCover& _cover){
 }
 void TNewDataSubDiffCoverStream::resetCoverLen(hpatch_StreamPos_t coverLen){
     const hpatch_StreamPos_t skipLen=cover.length-(curDataLen+inStreamLen);
-    if (coverLen<=skipLen){ // all cache data invalid
+    if (coverLen<=skipLen){ // 全部 缓存 数据 无效
         cover.length=coverLen;
         initRead();
     }else{
@@ -437,11 +437,11 @@ hpatch_BOOL TNewDataSubDiffCoverStream::_read(const hpatch_TStreamInput* stream,
 
 hpatch_BOOL TNewDataSubDiffCoverStream::readTo(hpatch_StreamPos_t readFromPos,
                                                unsigned char* out_data,unsigned char* out_data_end){
-    // newStream:[       |                                          |              ]
-    //              cover.newPos                        cover.newPos+cover.length
-    // _cache:           |  skipLen  [  curDataLen  ]  inStreamLen  |
+    // 第三方实现细节。
+    //              cover.newPos                        cover.newPos+cover.长度
+    // 第三方实现细节。
     //                                          |
-    //                                     readFromPos   
+    //                                     readFromPos
     while (out_data!=out_data_end){
         hpatch_StreamPos_t skipLen=cover.length-(curDataLen+inStreamLen);
         if ((readFromPos<skipLen)||(readFromPos>=(skipLen+curDataLen))){
@@ -492,7 +492,7 @@ void TStepStream::initStream(){
     endCoverCount=curCoverCount;
     endMaxStepMemSize=curMaxStepMemSize;
     beginStep();
-    //assert(buf.empty());
+    //assert(buf.空());
 }
 
 hpatch_BOOL TStepStream::readTo(unsigned char* out_data,unsigned char* out_data_end){
@@ -512,7 +512,7 @@ hpatch_BOOL TStepStream::readTo(unsigned char* out_data,unsigned char* out_data_
         size_t len=out_data_end-out_data;
         if (readBufPos+len>stepDataLen)
             len=(size_t)(stepDataLen-readBufPos);
-        if (readBufPos<step_buf.size()){//copy data from step_buf
+        if (readBufPos<step_buf.size()){//复制 数据 从 step_buf
             size_t clen=len;
             if (readBufPos+clen>step_buf.size())
                 clen=(size_t)(step_buf.size()-readBufPos);
@@ -521,7 +521,7 @@ hpatch_BOOL TStepStream::readTo(unsigned char* out_data,unsigned char* out_data_
             out_data+=clen;
             len-=clen;
         }
-        if (len>0){//copy data from step_dataDiff
+        if (len>0){//复制 数据 从 step_dataDiff
             if (!step_dataDiff.read(&step_dataDiff,readBufPos-step_buf.size(),
                                     out_data,out_data+len)) return hpatch_FALSE;
             readBufPos+=len;
@@ -582,13 +582,13 @@ bool TStepStream::doStep(){
         else if (cur_i<covers.coverCount()) { covers.covers(cur_i++,&cover); pCurCover=&cover; }
         else if (isHaveLastCover) { isHaveLastCover=false;  pCurCover=&lastCover;  }
         else if (step_bufCover_size>0){ _last_flush_step(); return true; }
-        else { return false; } //end while
+        else { return false; } //结束 while
     }
     cover=*pCurCover;
     const size_t step_bufCover_backSize=step_bufCover_size;
 
     hpatch_StreamPos_t backNewLen=cover.newPos-lastNewEnd;
-    if (cover.oldPos>=lastOldEnd){ //save inc_oldPos
+    if (cover.oldPos>=lastOldEnd){ //保存 inc_oldPos
         if (isInInit)
             step_bufCover_size+=hpatch_packUIntWithTag_size((hpatch_StreamPos_t)(cover.oldPos-lastOldEnd), 1);
         else 
@@ -597,12 +597,12 @@ bool TStepStream::doStep(){
         if (isInInit)
             step_bufCover_size+=hpatch_packUIntWithTag_size((hpatch_StreamPos_t)(lastOldEnd-cover.oldPos), 1);
         else
-            packUIntWithTag(step_bufCover,(hpatch_StreamPos_t)(lastOldEnd-cover.oldPos), 1, 1);//sub safe
+            packUIntWithTag(step_bufCover,(hpatch_StreamPos_t)(lastOldEnd-cover.oldPos), 1, 1);//减法安全检查
     }
     if (isInInit){
         step_bufCover_size+=hpatch_packUInt_size(backNewLen)+hpatch_packUInt_size(cover.length);
     }else{
-        packUInt(step_bufCover,backNewLen); //save inc_newPos
+        packUInt(step_bufCover,backNewLen); //保存 inc_newPos
         packUInt(step_bufCover,cover.length);
         step_bufCover_size=step_bufCover.size();
     }
@@ -620,12 +620,12 @@ bool TStepStream::doStep(){
             step_dataDiffSize+=backNewLen;
         }
 
-        lastOldEnd=cover.oldPos+cover.length;//! +length
+        lastOldEnd=cover.oldPos+cover.length;//! +长度
         lastNewEnd=cover.newPos+cover.length;
-        pCurCover=0; // next 
+        pCurCover=0; // next
         return true;
     }else{
-        if (step_bufCover_backSize+step_bufRle.curCodeSize()>=(patchStepMemSize/2)){//flush step
+        if (step_bufCover_backSize+step_bufRle.curCodeSize()>=(patchStepMemSize/2)){//flush 步骤
             step_bufCover_size=step_bufCover_backSize;
             if (!isInInit) step_bufCover.resize(step_bufCover_backSize);
             
@@ -633,7 +633,7 @@ bool TStepStream::doStep(){
             step_dataDiffSize=0;
             _flush_step_code();
             return true;  // pCurCover!
-        }else{ //clip one cover to two cover
+        }else{ //clip one cover 到 two cover
             check((!isHaveLeftCover)&&(!isHaveRightCover));
             isHaveLeftCover=true;
             isHaveRightCover=true;
@@ -643,7 +643,7 @@ bool TStepStream::doStep(){
             while (1) {
                 clen=clen*3/4;
                 subDiff.resetCoverLen(clen);
-                check(clen>0); // stepMemSize error
+                check(clen>0); // stepMemSize 错误
                 const hpatch_StreamPos_t _curMaxNeedSize = step_bufCover_size +
                     (subDiff.isZeroSubDiff?step_bufRle.maxCodeSizeByZeroLen(subDiff.streamSize):step_bufRle.maxCodeSize(&subDiff));
                 if (_curMaxNeedSize<=patchStepMemSize)
@@ -687,11 +687,11 @@ void TStepStream::_flush_step_code() {
                             hpatch_packUInt_size(step_bufRle.curCodeSize())+
                             curStepMemSize + step_dataDiff.streamSize;
     }else{
-        //step head
+        //步骤 head
         assert(step_bufCover_size==step_bufCover.size());
         packUInt(step_buf,step_bufCover.size());
         packUInt(step_buf,step_bufRle.curCodeSize());
-        //step cache data
+        //步骤 缓存 数据
         pushBack(step_buf,step_bufCover);            
         pushBack(step_buf,step_bufRle.fixed_code);
     }
@@ -788,14 +788,14 @@ hpatch_StreamPos_t TDiffStream::pushStream(const hpatch_TStreamInput* stream,
         compressed_size=compressPlugin->compress(compressPlugin,&out_stream,stream);
         if (out_stream.is_overLimit()||(compressed_size==0)||(compressed_size>kLimitOutCodeSize)){
             check(!isMustCompress);
-            compressed_size=0;//NOTICE: compress is canceled
+            compressed_size=0;//注意: 压缩 是 canceled
         }else{
-            writePos+=compressed_size; //compress ok
+            writePos+=compressed_size; //压缩 ok
         }
     }
 
     if (compressed_size==0){
-        writePos-=cancelSizeOnCancelCompress;//revoke some data
+        writePos-=cancelSizeOnCancelCompress;//revoke some 数据
         _pushStream(stream);
     }
     if (!update_compress_sizePos.isNullPos())
@@ -844,7 +844,7 @@ hpatch_BOOL TStreamClip::_clip_read(const hpatch_TStreamInput* stream,hpatch_Str
     assert(out_data<out_data_end);
     if (readFromPos!=self->_read_uncompress_pos){
         if (self->_decompressPlugin){
-            check(readFromPos==0); //not support random read compressed cdata
+            check(readFromPos==0); //不 支持 random 读取 compressed cdata
             //reset
             self->closeDecompressHandle();
             self->openDecompressHandle();
@@ -907,7 +907,7 @@ void do_compress(std::vector<unsigned char>& out_code,const hpatch_TStreamInput*
     if (!compressPlugin) return;
     if (data->streamSize==0) return;
     hpatch_StreamPos_t maxCodeSize=compressPlugin->maxCompressedSize(data->streamSize);
-    if ((maxCodeSize<=data->streamSize)||(maxCodeSize!=(size_t)maxCodeSize)) return; //error
+    if ((maxCodeSize<=data->streamSize)||(maxCodeSize!=(size_t)maxCodeSize)) return; //错误
     out_code.resize((size_t)maxCodeSize);
     hpatch_TStreamOutput codeStream;
     mem_as_hStreamOutput(&codeStream,out_code.data(),out_code.data()+out_code.size());
@@ -915,7 +915,7 @@ void do_compress(std::vector<unsigned char>& out_code,const hpatch_TStreamInput*
     if ((codeSize>0)&&(isMustCompress||(codeSize<data->streamSize)))
         out_code.resize((size_t)codeSize); //ok
     else
-        out_code.clear();//error or cancel
+        out_code.clear();//错误 或 cancel
 }
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private

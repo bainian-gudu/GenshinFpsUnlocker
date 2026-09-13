@@ -1,5 +1,5 @@
 /**
- * 用户协议渲染：把配置里内联的协议正文（text / markdown / html）转成可安全
+ * 用户协议渲染：把配置里内联的协议正文（文本 / markdown / html）转成可安全
  * v-html 的字符串。正文来自打包时读入的本地文件，但仍统一过一遍 DOMPurify，
  * 任何情况下都不让脚本进安装器界面。
  */
@@ -11,9 +11,9 @@ import type { AgreementConfig } from '../types';
  *
  * 安装器界面是一个能触发提权 IPC 的 WebView，正文又来自打包配置，所以这里
  * 按「白名单排版 + 禁掉一切可执行/可提交/可嵌入外部内容」的思路收紧：
- * - 禁 style/form/input/iframe/object/embed/link/meta/base/svg/math 等标签
- * - 禁 style / srcdoc / formaction / data / background 等属性
- * - URI 只放行 http(s)、mailto 与页内锚点，杜绝 javascript: / data: / file:
+ * - 禁 样式/form/输入/iframe/object/embed/link/meta/基础/svg/math 等标签
+ * - 禁 样式 / srcdoc / formaction / 数据 / 背景 等属性
+ * - URI 只放行 http(s)、mailto 与页内锚点，杜绝 javascript: / 数据: / 文件:
  * 链接的点击行为另由 App.vue 拦截（见 onAgreementClick），不会导航走安装窗口。
  */
 const SANITIZE_OPTIONS = {

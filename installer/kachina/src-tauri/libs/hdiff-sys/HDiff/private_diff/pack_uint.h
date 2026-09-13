@@ -128,5 +128,5 @@ void packUInt_fixSize(unsigned char* out_code,unsigned char* out_code_fixEnd,
         throw std::runtime_error("packUInt_fixSize() out_code too small error!");
 }
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 #endif //__PACK_UINT_H_

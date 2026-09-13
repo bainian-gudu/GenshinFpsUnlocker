@@ -22,6 +22,30 @@ pub async fn create_lnk_with_args(args: CreateLnkArgs) -> Result<()> {
 pub async fn create_lnk(target: String, lnk: String) -> TAResult<()> {
     let target = Path::new(&target);
     let lnk = Path::new(&lnk);
+    if !target.is_absolute()
+        || !lnk.is_absolute()
+        || target
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        || lnk
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        || !lnk
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"))
+        || !crate::installer::uninstall::is_safe_delete_target(target)
+    {
+        return Err(anyhow!("Invalid shortcut path")
+            .context("CREATE_LNK_ERR")
+            .into());
+    }
+    // 命令可能在提权助手中运行。绝不创建或跟随
+    // 过期快捷方式目录提供的 junction 或符号链接。
+    if crate::installer::uninstall::has_reparse_point(lnk) {
+        return Err(anyhow!("Shortcut path is a reparse point")
+            .context("CREATE_LNK_ERR")
+            .into());
+    }
     let lnk_dir = lnk.parent();
     if lnk_dir.is_none() {
         return Err(anyhow!("Failed to get lnk parent dir")

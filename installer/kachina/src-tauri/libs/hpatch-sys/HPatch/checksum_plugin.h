@@ -1,5 +1,5 @@
 //checksum_plugin.h
-//  checksum plugin type
+//  checksum 插件 类型
 /*
  The MIT License (MIT)
  Copyright (c) 2018-2019 HouSisong
@@ -34,8 +34,8 @@ extern "C" {
     
     typedef void*  hpatch_checksumHandle;
     typedef struct hpatch_TChecksum{
-        //return type tag; strlen(result)<=hpatch_kMaxPluginTypeLength; (Note:result lifetime)
-        const char*   (*checksumType)(void); //ascii cstring,cannot contain '&'
+        //返回 类型 tag; strlen(结果)<=hpatch_kMaxPluginTypeLength; (注意:结果 lifetime)
+        const char*   (*checksumType)(void); //ascii cstring,不能 contain '&'
         hpatch_size_t (*checksumByteSize)(void); //result<=hpatch_kStreamCacheSize
         hpatch_checksumHandle (*open)(struct hpatch_TChecksum* plugin);
         void                 (*close)(struct hpatch_TChecksum* plugin,hpatch_checksumHandle handle);

@@ -4,11 +4,9 @@
 >
 > - **个人自用**：本项目只为作者自己玩游戏服务，不提供任何形式的对外服务、
 >   不做商业化、不接受付费；仓库公开仅作为个人备份与学习记录。
-> - **AI 生成**：代码与文档**主要由 AI 生成**（Arena.ai Agent Mode 的多模型协作会话；
->   历史提交里的 `arena-agent` 即 AI 会话，后已统一改写为项目所有者署名）。
->   **UI 使用 gpt-6-astra-max 设计**：界面设计稿由该模型出稿，代码按稿 1:1 实现。
->   作者负责提需求、验收结果与承担风险。**它没有经过任何安全审计，
->   请不要把它当作生产级软件对待。**
+> - **AI 辅助开发**：部分代码、界面和文档使用 AI 辅助生成与整理，由作者负责需求确认、
+>   结果验收和风险承担。**UI 使用 gpt-6-astra-max 设计**：界面设计稿由该模型出稿，
+>   代码按稿 1:1 实现。**项目未经独立安全审计，请不要将其视为生产级软件。**
 > - **与米哈游无关**：「原神 / Genshin Impact」及其角色、图标、场景素材的版权归
 >   米哈游 / HoYoverse 所有，本项目未获授权或背书，详见下文「素材与版权」。
 
@@ -31,6 +29,17 @@
 - **构建**：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）、Node.js 20+；
   打安装器另需 Rust nightly + `rust-src` 与 pnpm 10（源码随仓库提供，CI 会自动装）。
 
+## 快速使用
+
+1. 从 Releases 下载 `GenshinFpsUnlocker.Install.<版本>.exe`，运行安装器并选择安装目录。
+2. 首次启动时按提示安装缺少的 .NET Desktop Runtime、VC++ 或 WebView2 运行库。
+3. 在「设置」中启用帧率解锁并选择目标 FPS；启动游戏后保持程序运行即可注入。
+4. 关闭或最小化窗口会进入系统托盘，左键托盘图标可恢复窗口。
+
+安装器会创建开始菜单快捷方式、可选的桌面快捷方式和卸载项。卸载时可选择是否同时删除
+配置、日志和 WebView2 缓存；不删除用户数据时，重新安装仍会沿用原设置。便携版直接运行
+压缩包内的 `GenshinFpsUnlocker.exe`，退出程序后删除整个目录即可。
+
 ## 技术栈
 
 | 部分 | 技术 | 位置与说明 |
@@ -45,8 +54,10 @@
 
 ## 构建
 
-默认：**主程序框架依赖（包体小）**。安装器由项目内的 **Kachina** 源码构建出的
-`kachina-builder.exe` 生成，全部打包代码集中在 [`installer/`](installer/)：
+默认构建主程序和安装器。安装器由项目内 Kachina 源码构建出的 `kachina-builder.exe`
+生成，打包代码集中在 [`installer/`](installer/)。
+
+### 常用命令
 
 ```powershell
 # 仅编译 UI + Stub + 主程序（不打包）
@@ -65,6 +76,18 @@
 # 可选：主程序也自包含
 .\build.ps1 -Configuration Release -SelfContained
 ```
+
+只修改前端时可在 `src/Ui` 执行 `npm ci` 后运行 `npm run build`；只修改安装器前端时，
+在 `installer/kachina` 执行 `pnpm install --frozen-lockfile` 后运行 `pnpm exec rsbuild build`。
+
+### WSL 开发环境
+
+依赖可以安装在 WSL 用户目录，不会写入 Windows 环境。推荐准备 Rust nightly（含
+`rust-src` 和 `x86_64-pc-windows-msvc` target）、Node.js 20+、pnpm 10、.NET SDK 9、
+PowerShell 7 和 Clang/LLVM。最终的 Windows 安装器构建仍需要可用的 Windows MSVC / VS
+Build Tools；网络较慢时可为 `rustup`、npm/pnpm 和 NuGet 配置镜像后再安装依赖。
+
+完整的安装器依赖、目录和打包流程见 [`installer/README.md`](installer/README.md)。
 
 产物：
 
@@ -97,7 +120,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 分层清单、各层查什么、覆盖范围与抓不到的东西、维护约定，全部见
 [`tools/devcheck/README.md`](tools/devcheck/README.md)。
 
-## 安装 / 卸载
+## 安装、更新与卸载
 
 安装与卸载**只有 Kachina 一种实现**。主程序自身不做任何安装/卸载动作：
 `--install`、`--uninstall`、`Uninstall.cmd` 垫片、自写 ARP 卸载注册表项、

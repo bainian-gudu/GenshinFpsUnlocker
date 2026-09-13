@@ -75,7 +75,7 @@ fn validate_args(args: &ExtractArgs) -> Result<(), String> {
     Ok(())
 }
 
-// 解析metadata功能
+// 解析元数据功能
 async fn parse_metadata(file: &AsyncMmapFile) -> Result<Option<RepoMetadata>, String> {
     let embedded = get_embedded(file).await.map_err(|e| e.to_string())?;
 
@@ -112,7 +112,7 @@ fn classify_file_type(name: &str) -> FileType {
     }
 }
 
-// 构建hash到文件名的映射
+// 构建哈希到文件名的映射
 fn build_hash_to_name_map(metadata: &RepoMetadata) -> HashMap<String, String> {
     let mut map = HashMap::new();
 
@@ -148,7 +148,7 @@ async fn collect_file_info(file: &AsyncMmapFile) -> Result<Vec<FileInfo>, String
 
     let mut file_infos = Vec::new();
 
-    // 构建hash到metadata name的映射
+    // 构建哈希到元数据 名称的映射
     let hash_to_name = if let Some(ref meta) = metadata {
         build_hash_to_name_map(meta)
     } else {
@@ -224,7 +224,7 @@ async fn list_files(file: &AsyncMmapFile) -> Result<(), String> {
     Ok(())
 }
 
-// 实现通过hash name提取（原有功能）
+// 实现通过哈希 名称提取（原有功能）
 async fn extract_by_hash_name(
     file: &AsyncMmapFile,
     embedded: &[Embedded],
@@ -275,7 +275,7 @@ async fn extract_by_hash_name(
     Ok(())
 }
 
-// 实现通过metadata name提取
+// 实现通过元数据 名称提取
 async fn extract_by_meta_name(
     file: &AsyncMmapFile,
     meta_names: &[String],
@@ -286,7 +286,7 @@ async fn extract_by_meta_name(
     let embedded = get_embedded(file).await.map_err(|e| e.to_string())?;
     let hash_to_name = build_hash_to_name_map(metadata);
 
-    // 构建name到hash的反向映射
+    // 构建名称到哈希的反向映射
     let mut name_to_hash = HashMap::new();
     for (hash, name) in hash_to_name {
         name_to_hash.insert(name, hash);

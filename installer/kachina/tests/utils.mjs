@@ -55,7 +55,7 @@ export async function verifyFiles(installDir, expectedFiles) {
       }
     }
 
-    // 验证文件hash（可选）
+    // 验证文件哈希（可选）
     if (file.hash) {
       const actualHash = await getFileHash(fullPath);
       if (actualHash !== file.hash) {
@@ -96,7 +96,7 @@ export async function verifyUpdaterReplaced(installDir, expectedV2Hash) {
     return { success: false, message: 'Updater file not found' };
   }
 
-  // 通过hash比对验证更新器是否为v2版本
+  // 通过哈希比对验证更新器是否为v2版本
   const actualHash = await getFileHash(updaterPath);
 
   if (actualHash === expectedV2Hash) {

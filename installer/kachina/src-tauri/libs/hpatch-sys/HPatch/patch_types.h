@@ -29,7 +29,7 @@
 #ifndef HPatch_patch_types_h
 #define HPatch_patch_types_h
 
-#include <string.h> //for size_t memset memcpy memmove
+#include <string.h> //用于 size_t memset memcpy memmove
 #include <assert.h>
 
 #ifdef __cplusplus
@@ -74,7 +74,7 @@ extern "C" {
 #endif
 #endif
 #ifndef hpatch_StreamPos_t
-    typedef hpatch_uint64_t     hpatch_StreamPos_t; // file size type
+    typedef hpatch_uint64_t     hpatch_StreamPos_t; // 文件 大小 类型
 #endif
 #define hpatch_kNullStreamPos   (~(hpatch_StreamPos_t)0)
 
@@ -89,9 +89,9 @@ extern "C" {
 #endif
 
 #if (_HPATCH_IS_USED_errno)
-typedef    int          hpatch_FileError_t;// 0: no error; other: saved errno value;
+typedef    int          hpatch_FileError_t;// 0: no 错误; other: saved errno 值;
 #else
-typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
+typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no 错误; other: 错误;
 #endif
 
 #ifdef _MSC_VER
@@ -100,7 +100,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
 #   define hpatch_inline inline
 #endif
 
-//PRIu64 for printf type hpatch_StreamPos_t
+//PRIu64 用于 printf 类型 hpatch_StreamPos_t
 #ifndef PRIu64
 #   ifdef _MSC_VER
 #       define PRIu64 "I64u"
@@ -113,7 +113,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
 #   include <android/log.h>
 #   define LOG_ERR(...) __android_log_print(ANDROID_LOG_ERROR, "hpatch", __VA_ARGS__)
 #else
-#   include <stdio.h>  //for stderr
+#   include <stdio.h>  //用于 stderr
 #   define LOG_ERR(...) fprintf(stderr,__VA_ARGS__)
 #endif
 #ifndef _HPATCH_IS_USED_errno
@@ -136,8 +136,8 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
     
     typedef struct hpatch_TStreamInput{
         void*            streamImport;
-        hpatch_StreamPos_t streamSize; //stream size,max readable range;
-        //read() must read (out_data_end-out_data), otherwise error return hpatch_FALSE
+        hpatch_StreamPos_t streamSize; //流 大小,max 可读 range;
+        //读取() 必须 读取 (out_data_end-out_data), otherwise 错误 返回 hpatch_FALSE
         hpatch_BOOL            (*read)(const struct hpatch_TStreamInput* stream,hpatch_StreamPos_t readFromPos,
                                        unsigned char* out_data,unsigned char* out_data_end);
         void*        _private_reserved;
@@ -145,16 +145,16 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
     
     typedef struct hpatch_TStreamOutput{
         void*            streamImport;
-        hpatch_StreamPos_t streamSize; //stream size,max writable range; not is write pos!
-        //read_writed for ReadWriteIO, can null!
+        hpatch_StreamPos_t streamSize; //流 大小,max writable range; 不 是 写入 pos!
+        //read_writed 用于 ReadWriteIO, 可以 null!
         hpatch_BOOL     (*read_writed)(const struct hpatch_TStreamOutput* stream,hpatch_StreamPos_t readFromPos,
                                        unsigned char* out_data,unsigned char* out_data_end);
-        //write() must wrote (out_data_end-out_data), otherwise error return hpatch_FALSE
+        //写入() 必须 wrote (out_data_end-out_data), otherwise 错误 返回 hpatch_FALSE
         hpatch_BOOL           (*write)(const struct hpatch_TStreamOutput* stream,hpatch_StreamPos_t writeToPos,
                                        const unsigned char* data,const unsigned char* data_end);
     } hpatch_TStreamOutput;
     
-    //default once I/O (read/write) byte size
+    //默认 once I/O (读取/写入) byte 大小
     #ifndef hpatch_kStreamCacheSize
     #   define hpatch_kStreamCacheSize      (1024*4)
     #endif
@@ -169,8 +169,8 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
     typedef struct hpatch_compressedDiffInfo{
         hpatch_StreamPos_t  newDataSize;
         hpatch_StreamPos_t  oldDataSize;
-        hpatch_uint         compressedCount;//need open hpatch_decompressHandle number
-        char                compressType[hpatch_kMaxPluginTypeLength+1]; //ascii cstring 
+        hpatch_uint         compressedCount;//需要 打开 hpatch_decompressHandle 数量
+        char                compressType[hpatch_kMaxPluginTypeLength+1]; //第三方实现细节。
     } hpatch_compressedDiffInfo;
     
     typedef void*  hpatch_decompressHandle;
@@ -183,7 +183,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
     } hpatch_dec_error_t;
     typedef struct hpatch_TDecompress{
         hpatch_BOOL        (*is_can_open)(const char* compresseType);
-        //error return 0.
+        //错误 返回 0.
         hpatch_decompressHandle   (*open)(struct hpatch_TDecompress* decompressPlugin,
                                           hpatch_StreamPos_t dataSize,
                                           const struct hpatch_TStreamInput* codeStream,
@@ -191,16 +191,16 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
                                           hpatch_StreamPos_t code_end);//codeSize==code_end-code_begin
         hpatch_BOOL              (*close)(struct hpatch_TDecompress* decompressPlugin,
                                           hpatch_decompressHandle decompressHandle);
-        //decompress_part() must out (out_part_data_end-out_part_data), otherwise error return hpatch_FALSE
+        //decompress_part() 必须 out (out_part_data_end-out_part_data), otherwise 错误 返回 hpatch_FALSE
         hpatch_BOOL    (*decompress_part)(hpatch_decompressHandle decompressHandle,
                                           unsigned char* out_part_data,unsigned char* out_part_data_end);
-        //reset_code add new compressed data; for support vcpatch, can NULL
+        //reset_code add 新 compressed 数据; 用于 支持 vcpatch, 可以 NULL
         hpatch_BOOL         (*reset_code)(hpatch_decompressHandle decompressHandle,
                                           hpatch_StreamPos_t dataSize,
                                           const struct hpatch_TStreamInput* codeStream,
                                           hpatch_StreamPos_t code_begin,
                                           hpatch_StreamPos_t code_end);
-        volatile hpatch_dec_error_t decError; //if you used decError value, once patch must used it's own hpatch_TDecompress
+        volatile hpatch_dec_error_t decError; //如果 you 已使用 decError 值, once 补丁 必须 已使用 it's own hpatch_TDecompress
     } hpatch_TDecompress;
     #define _hpatch_update_decError(decompressPlugin,errorCode) \
         do { if ((decompressPlugin)->decError==hpatch_dec_ok)   \
@@ -221,7 +221,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
         const hpatch_TStreamInput*  srcStream;
         hpatch_StreamPos_t          clipBeginPos;
     } TStreamInputClip;
-    //clip srcStream from clipBeginPos to clipEndPos as a new StreamInput;
+    //clip srcStream 从 clipBeginPos 到 clipEndPos 作为 a 新 StreamInput;
     void TStreamInputClip_init(TStreamInputClip* self,const hpatch_TStreamInput*  srcStream,
                                hpatch_StreamPos_t clipBeginPos,hpatch_StreamPos_t clipEndPos);
     typedef struct{
@@ -229,7 +229,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
         const hpatch_TStreamOutput* srcStream;
         hpatch_StreamPos_t          clipBeginPos;
     } TStreamOutputClip;
-    //clip srcStream from clipBeginPos to clipEndPos as a new StreamInput;
+    //clip srcStream 从 clipBeginPos 到 clipEndPos 作为 a 新 StreamInput;
     void TStreamOutputClip_init(TStreamOutputClip* self,const hpatch_TStreamOutput*  srcStream,
                                 hpatch_StreamPos_t clipBeginPos,hpatch_StreamPos_t clipEndPos);
 
@@ -264,19 +264,19 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
         size_t length;
     } hpatch_TCover_sz;
 
-    //opened input covers
+    //opened 输入 covers
     typedef struct hpatch_TCovers{
         hpatch_StreamPos_t (*leave_cover_count)(const struct hpatch_TCovers* covers);
-        //read out a cover,and to next cover pos; if error then return false
+        //读取 out a cover,和 到 下一个 cover pos; 如果 错误 然后 返回 假
         hpatch_BOOL               (*read_cover)(struct hpatch_TCovers* covers,hpatch_TCover* out_cover);
         hpatch_BOOL                (*is_finish)(const struct hpatch_TCovers* covers);
         hpatch_BOOL                    (*close)(struct hpatch_TCovers* covers);
     } hpatch_TCovers;
     
-    //output covers
+    //输出 covers
     typedef struct hpatch_TOutputCovers{
         hpatch_BOOL (*push_cover)(struct hpatch_TOutputCovers* out_covers,const hpatch_TCover* cover); 
-        void (*collate_covers)(struct hpatch_TOutputCovers* out_covers); // for support search covers by multi-thread
+        void (*collate_covers)(struct hpatch_TOutputCovers* out_covers); // 用于 支持 search covers 通过 multi-线程
     } hpatch_TOutputCovers;
     
     typedef struct{
@@ -287,7 +287,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
         hpatch_StreamPos_t  diffDataPos;
         hpatch_StreamPos_t  coverCount;
         hpatch_StreamPos_t  stepMemSize;
-        char                compressType[hpatch_kMaxPluginTypeLength+1]; //ascii cstring
+        char                compressType[hpatch_kMaxPluginTypeLength+1]; //第三方实现细节。
     } hpatch_singleCompressedDiffInfo;
 
     hpatch_inline static void _singleDiffInfoToHDiffInfo(hpatch_compressedDiffInfo* out_diffInfo,const hpatch_singleCompressedDiffInfo* singleDiffInfo){
@@ -301,10 +301,10 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
         void*         import;   
         hpatch_BOOL (*onDiffInfo)(struct sspatch_listener_t* listener,
                                   const hpatch_singleCompressedDiffInfo* info,
-                                  hpatch_TDecompress** out_decompressPlugin,//find decompressPlugin by info->compressType
-                                  unsigned char** out_temp_cache,    //*out_temp_cacheEnd-*out_temp_cache == info->stepMemSize + (I/O cache memory)
-                                  unsigned char** out_temp_cacheEnd);//  note: (I/O cache memory) >= hpatch_kStreamCacheSize*3
-        void        (*onPatchFinish)(struct sspatch_listener_t* listener, //onPatchFinish can null
+                                  hpatch_TDecompress** out_decompressPlugin,//查找 decompressPlugin 通过 info->compressType
+                                  unsigned char** out_temp_cache,    //*out_temp_cacheEnd-*out_temp_cache == info->stepMemSize + (I/O 缓存 内存)
+                                  unsigned char** out_temp_cacheEnd);//  注意: (I/O 缓存 内存) >= hpatch_kStreamCacheSize*3
+        void        (*onPatchFinish)(struct sspatch_listener_t* listener, //onPatchFinish 可以 null
                                      unsigned char* temp_cache, unsigned char* temp_cacheEnd);
     } sspatch_listener_t;
 
@@ -316,7 +316,7 @@ typedef    hpatch_BOOL  hpatch_FileError_t;// 0: no error; other: error;
 
     typedef struct sspatch_coversListener_t{
         void*         import;
-        void        (*onStepCoversReset)(struct sspatch_coversListener_t* listener,hpatch_StreamPos_t leaveCoverCount);//can NULL, data(in covers_cache) will invalid
+        void        (*onStepCoversReset)(struct sspatch_coversListener_t* listener,hpatch_StreamPos_t leaveCoverCount);//可以 NULL, 数据(在 covers_cache) will 无效
         void        (*onStepCovers)(struct sspatch_coversListener_t* listener,
                                     const unsigned char* covers_cache,const unsigned char* covers_cacheEnd);
     } sspatch_coversListener_t;

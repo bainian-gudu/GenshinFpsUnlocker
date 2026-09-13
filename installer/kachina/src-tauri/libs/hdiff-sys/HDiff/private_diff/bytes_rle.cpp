@@ -96,7 +96,7 @@ namespace {
         }
         inline void endSame(){
             size_t sign=((size_t)(253-(size_t)(TByte)(sameCur-1))) >> (sizeof(size_t)*8-1);
-            if (sameCount+sign>kRleMinSameSize){//can rle
+            if (sameCount+sign>kRleMinSameSize){//可以 rle
                 endNoSame();
                 rle_pushSame(ctrlBuf,codeBuf,sameCur,sameCount);
                 sameCount=0;
@@ -123,7 +123,7 @@ namespace {
         }
     };
     
-}//end namespace
+}//命名空间结束
     
 void bytesRLE_save(std::vector<TByte>& out_ctrlBuf,std::vector<TByte>& out_codeBuf,
                     const TByte* src,const TByte* src_end,int rle_parameter){
@@ -380,4 +380,4 @@ void bytesRLE_save(std::vector<TByte>& out_code,const hpatch_TStreamInput* src,i
         if (!uncompressData.empty())
             _out_uncompressData(*this);
     }
-}//namespace hdiff_private
+}//命名空间 hdiff_private

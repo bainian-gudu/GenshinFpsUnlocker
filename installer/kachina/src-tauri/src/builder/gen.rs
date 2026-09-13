@@ -23,10 +23,10 @@ pub async fn gen_cli(args: GenArgs) {
         ProgressStyle::with_template("[{elapsed_precise}] {bar:20.cyan/blue} {pos}/{len} {msg} ")
             .unwrap()
             .progress_chars("##-");
-    // ensure output_dir
+    // 确保输出目录存在
     println!("Creating output directory...");
     let _ = tokio::fs::create_dir_all(&args.output_dir).await;
-    // hash updater
+    // 计算更新器哈希
     let mut installer = None;
     if let Some(updater) = args.updater.as_ref() {
         println!("Hashing updater...");
@@ -48,7 +48,7 @@ pub async fn gen_cli(args: GenArgs) {
         .await
         .expect("failed to generate metadata");
     if let Some(installer) = installer.as_ref() {
-        // remove updater from metadata
+        // 从元数据中移除更新器
         metadata.retain(|x| x.xxh.as_ref().unwrap() != installer.xxh.as_ref().unwrap());
     }
     println!("Writting metadata to {:?}", args.output_metadata);
@@ -69,49 +69,49 @@ pub async fn gen_cli(args: GenArgs) {
     println!("Compressing files...");
     let multi_pg = MultiProgress::new();
 
-    // create a progress bar to track overall status
+    // 创建进度条跟踪总体状态
     let pb_main = multi_pg.add(ProgressBar::new(metadata.len() as u64));
     pb_main.set_style(pb_style_total.clone());
     pb_main.set_message("TOTAL");
 
-    // Make the main progress bar render immediately rather than waiting for the
-    // first task to finish.
+    // 让主进度条立即渲染，不必等待
+    // 第一个任务完成。
     pb_main.tick();
 
     // tokio::task::JoinSet
-    // setup the JoinSet to manage the join handles for our futures
+    // 设置 JoinSet 管理 future 的 join 句柄
     let mut set = JoinSet::new();
 
     let mut last_item = false;
 
-    // iterate over our downloads vec and
-    // spawn a background task for each download (do_stuff)
-    // Does not spawn more tasks than MAX_CONCURRENT "allows"
+    // 遍历下载列表，并
+    // 为每个下载任务（do_stuff）创建后台任务
+    // 创建的任务数不超过 MAX_CONCURRENT 限制
     for (index, file) in metadata.iter().enumerate() {
         let pb_main_ = pb_main.clone();
         if index == metadata.len() - 1 {
             last_item = true;
         }
 
-        // create a progress bar for each download and set the style
-        // using insert_before() so that pb_main stays below the other progress bars
+        // 为每个下载创建进度条并设置样式
+        // 使用 insert_before()，让 pb_main 保持在其他进度条下方
         let pb_task = multi_pg.insert_before(&pb_main, ProgressBar::new(file.size));
         pb_task.set_style(pb_style.clone());
 
-        // spawns a background task immediatly no matter if the future is awaited
+        // 无论是否等待 future，都立即创建后台任务
         // https://docs.rs/tokio/latest/tokio/task/struct.JoinSet.html#method.spawn
         let file = file.clone();
         let output = args.output_dir.clone();
         let input: std::path::PathBuf = args.input_dir.clone();
         set.spawn(tokio::task::spawn_blocking(|| {
-            // create new tokio runtime for each task
+            // 为每个任务创建新的 tokio 运行时
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
             rt.block_on(async move {
                 let display_name = file.file_name.clone().replace("\\", "/");
-                // copy file to output_dir
+                // 将文件复制到输出目录
                 let file_path = input.join(&file.file_name);
                 let hash = if file.xxh.is_some() {
                     file.xxh.as_ref().unwrap()
@@ -145,9 +145,9 @@ pub async fn gen_cli(args: GenArgs) {
             });
         }));
 
-        // when limit is reached, wait until a running task finishes
-        // await the future (join_next().await) and get the execution result
-        // here result would be a download id(u64), as you can see in signature of do_stuff
+        // 达到上限后等待运行中的任务完成
+        // 等待 future（join_next().await）并获取执行结果
+        // 此处结果是下载 ID（u64），详见 do_stuff 的签名
         while set.len() >= args.zstd_concurrency || last_item {
             match set.join_next().await {
                 Some(res) => {
@@ -169,7 +169,7 @@ pub async fn gen_cli(args: GenArgs) {
         }
     }
     pb_main.finish_with_message("Compression finished");
-    // compress and copy installer
+    // 压缩并复制安装器
     if let Some(installer) = repometa.installer.as_ref() {
         let output_path = args.output_dir.join(installer.xxh.as_ref().unwrap());
         println!("Compressing installer to {output_path:?}");
@@ -192,7 +192,7 @@ pub async fn gen_cli(args: GenArgs) {
             .await
             .expect("failed to compress file");
     }
-    // check diffs
+    // 检查差异
     if let Some(diff_vers) = args.diff_vers {
         let mut metadata_with_installer = metadata.clone();
         if let Some(installer) = repometa.installer.as_ref() {
@@ -219,22 +219,22 @@ pub async fn gen_cli(args: GenArgs) {
             let ignore = ignore.build().unwrap();
             let mut diffs = Vec::new();
             let mut deletes = Vec::new();
-            // loop through diff_versions
+            // 遍历差异版本
             for diff_ver in diff_vers.iter() {
-                // loop through current metadata
+                // 遍历当前元数据
                 let multi_pg = MultiProgress::new();
 
-                // create a progress bar to track overall status
+                // 创建进度条跟踪总体状态
                 let pb_main = multi_pg.add(ProgressBar::new(metadata_with_installer.len() as u64));
                 pb_main.set_style(pb_style_total.clone());
                 pb_main.set_message(format!("DIFF TOTAL {diff_ver}"));
 
-                // Make the main progress bar render immediately rather than waiting for the
-                // first task to finish.
+                // 让主进度条立即渲染，不必等待
+                // 第一个任务完成。
                 pb_main.tick();
 
                 // tokio::task::JoinSet
-                // setup the JoinSet to manage the join handles for our futures
+                // 设置 JoinSet 管理 future 的 join 句柄
                 let mut set = JoinSet::new();
 
                 let mut last_item = false;
@@ -248,7 +248,7 @@ pub async fn gen_cli(args: GenArgs) {
                     let output_dir = args.output_dir.clone();
                     let diff_ver = diff_ver.clone();
 
-                    // spawns a background task immediatly no matter if the future is awaited
+                    // 无论是否等待 future，都立即创建后台任务
                     // https://docs.rs/tokio/latest/tokio/task/struct.JoinSet.html#method.spawn
                     let file = file.clone();
                     let ignore = ignore.clone();
@@ -260,28 +260,28 @@ pub async fn gen_cli(args: GenArgs) {
                             println!("File {:?} ignored", file.file_name);
                             return None;
                         }
-                        // file should > 1M
+                        // 文件应大于 1 MB
                         if file.size < 1024 * 1024 {
                             println!("File {:?} too small, skipped", file.file_name);
                             return None;
                         }
-                        // check if file exists in diff_ver
+                        // 检查文件是否存在于差异版本中
                         let diff_file = Path::new(&diff_ver).join(&file.file_name);
                         if !diff_file.exists() {
-                            // file not found in diff_ver, skip
+                            // 差异版本中未找到文件，跳过
                             println!("File {:?} not found in diff_ver, skipped", file.file_name);
                             return None;
                         }
-                        // file found, hash it
+                        // 找到文件，计算其哈希
                         let old_hash = run_hash("xxh", diff_file.to_str().unwrap())
                             .await
                             .expect("failed to hash diff file");
                         if old_hash == *file.xxh.as_ref().unwrap() {
-                            // hash same, skip
+                            // 哈希相同，跳过
                             println!("File {:?} hash same, skipped", file.file_name);
                             return None;
                         }
-                        // hash different, generate diff
+                        // 哈希不同，生成差异
                         let output_path = output_dir.join(format!(
                             "{}_{}.hdiff",
                             old_hash,
@@ -290,7 +290,7 @@ pub async fn gen_cli(args: GenArgs) {
                         let compressed_path =
                             output_dir.join(format!("{}_{}", old_hash, file.xxh.as_ref().unwrap()));
                         println!("Generating diff for {diff_file:?} to {output_path:?}");
-                        // read old_data and new_data to memory
+                        // 将旧数据和新数据读入内存
                         let old_data = tokio::fs::read(&diff_file)
                             .await
                             .expect("failed to read old data");
@@ -300,13 +300,13 @@ pub async fn gen_cli(args: GenArgs) {
                         let output_file = std::fs::File::create(&output_path)
                             .expect("failed to create output file");
                         tokio::task::spawn_blocking(move || {
-                            // create output file
+                            // 创建输出文件
                             safe_create_single_patch(&new_data, &old_data, output_file, 7)
                         })
                         .await
                         .expect("failed to create diff")
                         .expect("failed to create diff");
-                        // compress diff file
+                        // 压缩差异文件
                         let reader = tokio::fs::File::open(&output_path)
                             .await
                             .expect("failed to open diff file");
@@ -319,19 +319,19 @@ pub async fn gen_cli(args: GenArgs) {
                         tokio::io::copy(&mut encoder, &mut writer)
                             .await
                             .expect("failed to compress diff");
-                        // flush writer
+                        // 刷新写入器
                         writer.flush().await.expect("failed to flush writer");
-                        // close file
+                        // 关闭文件
                         drop(writer);
                         let diff_original_size = tokio::fs::metadata(&output_path)
                             .await
                             .expect("failed to get diff size")
                             .len();
-                        // delete uncompressed diff
+                        // 删除未压缩的差异文件
                         tokio::fs::remove_file(&output_path)
                             .await
                             .expect("failed to remove uncompressed diff");
-                        // if diff size is 50%+ of new file size, delete diff and skip
+                        // 如果差异文件大小达到新文件的 50% 以上，删除差异并跳过
                         let diff_size = tokio::fs::metadata(&compressed_path)
                             .await
                             .expect("failed to get diff size")
@@ -386,9 +386,9 @@ pub async fn gen_cli(args: GenArgs) {
                     .expect("failed to get diff_ver file list");
                 println!("Checking for deleted files in {diff_ver}...");
                 for file in diff_filelist.iter() {
-                    // check if file exists in current metadata
+                    // 检查文件是否存在于当前元数据中
                     if !metadata_with_installer.iter().any(|x| x.file_name == *file) {
-                        // file not found in current metadata, add to deletes
+                        // 当前元数据中未找到文件，将其加入删除列表
                         println!("File {file:?} not found in current metadata, added to deletes");
                         deletes.push(file.clone());
                     }
@@ -404,7 +404,7 @@ pub async fn gen_cli(args: GenArgs) {
             repometa.patches = Some(diffs);
             repometa.packing_info = Some(packing_info);
 
-            // write metadata again
+            // 再次写入元数据
             let metadata_str =
                 serde_json::to_string(&repometa).expect("failed to serialize metadata");
             tokio::fs::write(&args.output_metadata, metadata_str)
@@ -412,7 +412,7 @@ pub async fn gen_cli(args: GenArgs) {
                 .expect("failed to write metadata");
         }
     } else {
-        // 即使没有diff版本，如果指定了diff_vers参数，也生成基础的packing_info
+        // 即使没有差异版本，如果指定了diff_vers参数，也生成基础的packing_info
         println!("Generating packing info for first release...");
         let mut metadata_with_installer = metadata.clone();
         if let Some(installer) = repometa.installer.as_ref() {
@@ -436,7 +436,7 @@ pub async fn gen_cli(args: GenArgs) {
             generate_packing_info(&metadata_with_installer, &empty_diffs, &empty_diff_vers).await;
         repometa.packing_info = Some(packing_info);
 
-        // write metadata again
+        // 再次写入元数据
         let metadata_str = serde_json::to_string(&repometa).expect("failed to serialize metadata");
         tokio::fs::write(&args.output_metadata, metadata_str)
             .await
@@ -454,11 +454,11 @@ async fn generate_packing_info(
         Vec::new(), // [0] 大文件
         Vec::new(), // [1] 没有更新的小文件
         Vec::new(), // [2] 有变化或新增的小文件
-        Vec::new(), // [3] 小patch
-        Vec::new(), // [4] 大patch
+        Vec::new(), // [3] 小补丁
+        Vec::new(), // [4] 大补丁
     ];
 
-    // 收集变化文件的hash集合
+    // 收集变化文件的哈希集合
     let mut changed_hashes = HashSet::new();
     let mut new_hashes = HashSet::new();
 
@@ -492,7 +492,7 @@ async fn generate_packing_info(
             }
         }
     } else {
-        // 没有diff版本，所有文件都是新增
+        // 没有差异版本，所有文件都是新增
         for file in metadata_with_installer {
             new_hashes.insert(file.xxh.as_ref().unwrap().clone());
         }
@@ -511,7 +511,7 @@ async fn generate_packing_info(
         }
     }
 
-    // 分类patch文件
+    // 分类补丁文件
     for patch in patches {
         let patch_name = format!(
             "{}_{}",
@@ -519,9 +519,9 @@ async fn generate_packing_info(
             patch.to.xxh.as_ref().unwrap()
         );
         if patch.size > 1024 * 1024 {
-            packing_info[4].push(patch_name); // 大patch
+            packing_info[4].push(patch_name); // 大补丁
         } else {
-            packing_info[3].push(patch_name); // 小patch
+            packing_info[3].push(patch_name); // 小补丁
         }
     }
 

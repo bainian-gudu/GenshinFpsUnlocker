@@ -25,7 +25,7 @@ async function test() {
   );
   console.log(`Test directory: ${testDir}`);
 
-  // 获取v2更新器的hash用于验证
+  // 获取v2更新器的哈希用于验证
   const v2UpdaterHash = await getFileHash('./fixtures/test-app-v2/updater.exe');
   console.log(chalk.gray(`Expected v2 updater hash: ${v2UpdaterHash}`));
 
@@ -56,7 +56,7 @@ async function test() {
     }
 
     // 步骤2: 从服务器获取v2进行更新
-    // 删除日志文件 %temp%/KachinaInstaller.log
+    // 删除日志文件 %TEMP%/KachinaInstaller.日志
     const logFile = os.tmpdir() + '/KachinaInstaller.log';
     if (await fs.pathExists(logFile)) {
       await fs.remove(logFile);
@@ -76,7 +76,7 @@ async function test() {
       throw new Error(`Update to v2 failed with exit code ${result.exitCode}`);
     }
 
-    // check if fail in logs
+    // 检查日志中是否存在失败记录
     if (await fs.pathExists(logFile)) {
       const logs = await fs.readFile(logFile, 'utf-8');
       console.log(logs);
@@ -99,7 +99,7 @@ async function test() {
     console.log('Verifying v2 files...');
     const verification = await verifyFiles(testDir, expectedFiles);
 
-    // 验证更新器自我更新（通过hash比对）
+    // 验证更新器自我更新（通过哈希比对）
     console.log('Verifying updater self-patch...');
     const updaterCheck = await verifyUpdaterReplaced(testDir, v2UpdaterHash);
 

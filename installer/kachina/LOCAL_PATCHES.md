@@ -1,12 +1,30 @@
-# 本目录对上游 kachina-installer 的本地修改
+# kachina-installer 本地修改清单
+
+本文档记录 `installer/kachina` 相对上游快照的全部改动、原因和复核方式。它服务于两类
+场景：审查当前副本，以及升级上游后按顺序重新套用修改。代码行为以仓库中的实现和
+`tools/devcheck` 检查结果为准；本文档中的路径、配置键和命令均保持原样，便于搜索。
 
 上游快照：tag `0.5.1` / commit `ae461aa9ddd5a8f5e445459e14f5d611921f9938`（见 `UPSTREAM.md`）。
 
-本目录**不是纯净快照**：为了本项目的需求，在上游文件上做了最小化改动，另有 3 处新增
-（`src/utils/agreement.ts`、`vendor/rcedit-rs/`）与 1 处删除（`src-tauri/src/utils/sentry.rs`）。
-升级上游版本时必须按本清单重新套用。第 1～6 节都是「加字段 / 加分支 / 加样式覆盖」，
-不改动上游既有逻辑，冲突概率低；**第 7 节（遥测移除）是删除型改动**，上游几乎一定会
-带着 Sentry 回来，重套时要连两个 lock 一起重新生成。
+本目录**不是纯净快照**：本地修改包括新增协议渲染、临时文件安全处理、DFS 会话模块和
+`vendor/rcedit-rs/` 副本，以及删除 `src-tauri/src/utils/sentry.rs` 等遥测实现。
+升级时应逐项复核本清单，不能只覆盖上游源码。特别是第 7 节的遥测移除，需要同时检查
+源代码、依赖声明和两个锁文件。
+
+## 目录
+
+- [1. 卸载器注册表清理](#1-卸载器额外注册表清理-extrauninstallregistry)
+- [1b. 卸载器快捷方式清理](#1b-卸载器清理宿主自建改名的快捷方式-extrauninstalllnknames)
+- [2. 用户协议](#2-用户协议可配置--多格式--弹窗全文)
+- [3. 安全加固](#3-安全加固收敛卸载器的删除范围与提权面)
+- [4. rcedit 本地副本](#4-依赖rcedit-从-git-依赖改为仓库内副本)
+- [5. 弹窗布局](#5-弹窗布局footer-按钮回到文档流)
+- [6. 卸载残留清理](#6-卸载残留清理var-展开所有登录用户temp运行中的进程)
+- [7. 遥测移除](#7-遥测sentry-错误上报与使用统计已物理移除)
+- [8. 后续安全加固](#8-第二轮安全加固卸载收尾路径比较提权管道arp-卸载入口)
+- [9. 下载与提权链路加固](#9-第三轮安全加固把下载后执行和提权管道两条链路一次收干净)
+- [10. 前端模块拆分与注释中文化](#10-前端模块拆分与注释语言统一)
+- [升级上游时的套用顺序](#升级上游时的套用顺序)
 
 | # | 需求 | 涉及文件 |
 | --- | --- | --- |
@@ -14,10 +32,13 @@
 | 1b | 卸载时清理安装期由宿主自建/改名的快捷方式 | 同上 4 个文件 |
 | 2 | 用户协议可配置、多格式、点击弹窗看全文 | `src-tauri/src/builder/pack.rs`、`src/App.vue`、`src/types.ts`、`src/utils/agreement.ts`（新增） |
 | 3 | 安全加固：收敛卸载器的删除范围与提权面 | `src-tauri/src/installer/uninstall.rs`、`src/utils/agreement.ts`、`src/App.vue`（另有宿主侧 `src/Host/UninstallLauncher.cs`、`src/Host/RuntimePrerequisite.cs`，不属于本目录） |
-| 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增，vendored 依赖 + 1 行 C++ 修复） |
+| 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增的仓库内依赖 + 1 行 C++ 修复） |
 | 5 | 弹窗里的按钮不再遮住正文（协议全文能完整看到） | `src/Dialog.vue`、`src/App.vue` |
 | 6 | 卸载后不再残留文件（`%VAR%` 展开、所有登录用户、`%TEMP%`、先结束运行中的主程序） | `src-tauri/src/installer/uninstall.rs`、`src/App.vue` |
 | 7 | **移除全部遥测**：Sentry 错误上报 + `77.cocogoat.cn` 使用统计（连依赖一起删） | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/src/utils/sentry.rs`（删除）、`src-tauri/src/utils/mod.rs`、`src-tauri/src/utils/error.rs`、`src-tauri/src/main.rs`、`src-tauri/src/ipc/manager.rs`、`src-tauri/src/ipc/operation.rs`、`src-tauri/src/installer/config.rs`、`src/api/ipc.ts`、`src/App.vue`、`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml` |
+| 8 | 卸载收尾、路径比较、提权状态与静默卸载入口 | `src-tauri/src/installer/uninstall.rs`、`src-tauri/src/ipc/manager.rs`、`src-tauri/src/installer/registry.rs`、`src/App.vue` |
+| 9 | 下载文件验签、临时文件、提权管道及后续复查修复 | `src-tauri/src/utils/secure_temp.rs`、`src-tauri/src/utils/acl.rs` 及相关调用点，详见第 9 节 |
+| 10 | DFS 会话模块拆分与注释中文化 | `src/dfs.ts`、`src/dfs/session.ts`；注释调整覆盖本目录项目源码和仓库内副本的功能注释 |
 
 ---
 
@@ -253,12 +274,12 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
   —— 否则普通用户可以在可写目录里放一个同名 exe，借宿主的管理员令牌执行任意代码
   （典型 EoP），这种情况直接拒绝并提示改用「设置 → 应用」卸载。
   Web UI 的 `uninstall` 消息不接受任何参数，路径全部由宿主自己算，前端无法指定。
-- `RuntimePrerequisite.ResolveDotNetCli`：检测 .NET 桌面运行时不再用裸命令名 `dotnet`
+- `RuntimePrerequisite.ResolveDotNetCli`：检测 .NET 桌面运行时不再使用裸命令名 `dotnet`
   （那会按 PATH 搜索），优先 `%ProgramFiles%\dotnet\dotnet.exe`，避免提权进程被 PATH 劫持。
 
 ---
 
-## 4. 依赖：`rcedit` 从 git 依赖改为仓库内 vendored 副本
+## 4. 依赖：`rcedit` 从 Git 依赖改为仓库内副本
 
 上游 kachina 的 `src-tauri/Cargo.toml` 里写的是：
 
@@ -278,7 +299,7 @@ error: failed to run custom build command for `rcedit-sys v0.1.0 (https://github
 ```
 
 上游最新提交（2025-10-29）没修，等不来；本项目又要求 CI 只从仓库内构建，
-所以把 `rcedit-rs@1bfa3ee6` vendor 到 `vendor/rcedit-rs/` 并改掉那一行。
+所以将 `rcedit-rs@1bfa3ee6` 放入 `vendor/rcedit-rs/`，并改掉那一行。
 
 ### 本目录内的改动
 
@@ -293,7 +314,7 @@ error: failed to run custom build command for `rcedit-sys v0.1.0 (https://github
 - `pwsh tools/devcheck/devcheck.ps1 -Layer vendor`：副本 10 个文件齐全、`rescle.cc` 里没有
   `locale::empty(`、`rcedit` 依赖是 path 形式、`Cargo.lock` 里不再出现该 git 源。
 - `pwsh tools/devcheck/devcheck.ps1 -Layer native`：在有 `cl.exe` 的机器上（CI 的 windows job）
-  真编一遍 `rcedit-sys`，让这类「工具链 vs vendored C++」的破坏在**自动**工作流里就暴露，
+  真编一遍 `rcedit-sys`，让这类「工具链与仓库内 C++ 副本不兼容」的问题在**自动**工作流里就暴露，
   不必等手动触发 Build 跑 6 分钟。
 
 ---
@@ -453,12 +474,6 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
   「同时删除用户数据（配置、日志与界面缓存）」，并加 `title` 悬浮说明
   （删的是哪几样、其它账户的同名目录也会一并清、不勾选则保留便于重装）。
 
-### `src/App.vue`
-
-只改文案，不涉及逻辑：卸载勾选框从「同时删除用户数据」改为
-「同时删除用户数据（配置、日志与界面缓存）」，并加 `title` 悬浮说明
-（包含本机所有已登录用户的数据目录与安装期临时文件；不勾选则保留，便于重装后沿用设置）。
-
 ### 本项目配置（`installer/kachina.config.json`，不在本目录内）
 
 `userDataPath` 从 1 项扩到 3 项，覆盖历史版本可能用过的落盘位置：
@@ -557,7 +572,7 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 | 3 | 卸载器：路径比较 | 大小写或斜杠方向不同的同一个路径现在认得出来（`C:\Program Files` 与 `c:\program files`），「卸载器不在安装目录里就别把它移动走」这类保护不再误判 |
 | 4 | 提权管道 | 提权进程死掉后不会再被当成活的。原来会让界面无限转圈（既不报错也不结束，只能重启安装器），现在会复位，下次调用重新拉起 |
 | 5 | 运行时下载（.NET / VC++） | 见第 9 节 —— 那条链路和 WebView2 的两处一起统一处理了 |
-| 6 | ARP 卸载入口 + 凭据残留 | 「应用和功能」里的卸载命令加了引号（路径含空格时原来会被按空格截断成 `C:\Program`），并补上静默卸载入口；卸载时顺带清掉存在 Windows 凭据管理器里的 Mirror酱 CDK |
+| 6 | ARP 卸载入口 + 凭据残留 | 为“应用和功能”中的卸载命令加引号（路径含空格时原来会被截断成 `C:\Program`），并补上静默卸载入口；卸载时顺带清理 Windows 凭据管理器中的 Mirror酱 CDK |
 
 ### 静默卸载只能用短选项（踩过的坑）
 
@@ -627,8 +642,8 @@ AppContainer 进程、远程会话，并把完整性级别压到 Low。于是别
   同样只接受安装界面发来的参数：管道收紧后，能发操作的只有本用户自己的安装界面。
 - 运行时版本仍跟 `latest.version`、不锁版本号：锁版本会让 .NET 的补丁更新失效，而验签
   已经覆盖了「拿到的是不是微软的东西」这个真正的风险点。
-- `select_dir` 的目录可写性探测始终返回 `Unwritable`（上游缺陷）：`prefer-admin` 下
-  不影响流程，只是界面上的提示不准，属于功能问题不是安全问题。
+- `select_dir` 现在通过在目标目录创建随机临时文件来探测可写性；不会再把目录本身
+  当作普通文件打开，因此已有目录的权限提示与实际状态一致。
 - 卸载器把自己 `rename` 到 `%TEMP%\kachina.uninst.<时间戳>.exe` 再自删：时间戳可预测，
   但 `rename` 不跟随符号链接、随后的 `del` 删的也只是链接本身，最坏是让 rename 失败并
   回退到安装目录的父级（上游已有的分支）。
@@ -644,6 +659,25 @@ AppContainer 进程、远程会话，并把完整性级别压到 Low。于是别
      把 `utils/acl.rs` 里的 SDDL 改回上游那串即可回退；
   2. 验签的证书 Subject 布局 —— 不匹配时会 fail-closed（删文件 + 报错 + 引导手动下载），
      错误信息里带着实际的 status 与 subject，照着调 `is_trusted_microsoft_signature` 即可。
+
+### 9.7 本轮复查修复
+
+- `get_userprofile` 改用 `FOLDERID_Profile`。旧实现把空 token 句柄传给
+  `GetUserProfileDirectoryW`，Windows 会返回 `ERROR_INVALID_HANDLE`，使私有目录判断失效。
+- 安装文件、快捷方式和 Mirrorc ZIP 条目都拒绝绝对路径、`..`、系统目录和重解析点；ZIP
+  解包遍历完整条目数，不再无条件漏掉最后一项。
+- 创建卸载器时校验文件名和输出目录，避免提权进程跟随旧的 junction / symlink；自更新
+  比较改用 Windows 大小写不敏感的路径语义。
+- WebView2 安装成功后的对话框关闭逻辑不再提前清空句柄，避免成功安装后必然 panic；
+  下载尚未创建对话框时也能安全处理。
+
+## 10. 前端模块拆分与注释语言统一
+
+`src/dfs.ts` 中 DFS2 会话创建、挑战重试和会话清理已移到 `src/dfs/session.ts`，原文件
+通过导出保持现有 `App.vue` 调用接口不变；下载编排仍留在 `dfs.ts`，模块职责更清晰。
+本目录的 Rust、TypeScript、Vue、测试及仓库内 C/C++ 功能注释已统一为中文。
+许可证和版权声明保持原文；API 名称、协议字段、错误码、路径、命令及 URL 等技术标识
+保留原样，避免翻译改变其含义或影响复制使用。
 
 ---
 

@@ -27,6 +27,7 @@ internal sealed partial class UnlockService
                 if (!_config.MasterEnabled)
                 {
                     PushConfigToIpc();
+                    SetAttached(0);
                     SetStatus("总开关已关闭 — 后台待命（不注入）");
                     await Task.Delay(idlePoll, token);
                     continue;
@@ -34,6 +35,8 @@ internal sealed partial class UnlockService
 
                 if (!_config.AutoWatch)
                 {
+                    PushConfigToIpc();
+                    SetAttached(0);
                     SetStatus("自动监视已关闭 — 可在托盘重新开启");
                     await Task.Delay(idlePoll, token);
                     continue;
@@ -67,6 +70,23 @@ internal sealed partial class UnlockService
                 {
                     PushConfigToIpc();
                     var live = _ipc.Read();
+                    if (live.Status == IpcStatus.Error)
+                    {
+                        SetAttached(0);
+                        Volatile.Write(ref _injectAttemptedPid, 0);
+                        _injectFailStreak++;
+                        _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(Math.Min(90, 15 * _injectFailStreak));
+                        continue;
+                    }
+                    if (live.Status == IpcStatus.Exiting)
+                    {
+                        // 关闭开关时 Host 请求 Stub 结束当前会话；重新开启时让外层
+                        // 重新走注入/ResetForNewInject，而不是把 Exiting 当成附着状态。
+                        SetAttached(0);
+                        Volatile.Write(ref _injectAttemptedPid, 0);
+                        continue;
+                    }
+                    SetAttached(live.Status == IpcStatus.Ready && ShouldInject ? process.Id : 0);
                     SetStatus($"已附着 PID {process.Id} | Stub={live.Status} | 目标 {_config.TargetFps} FPS | 反馈 {live.CurrentFps}");
 
                     await Task.Delay(activePoll, token);
@@ -114,9 +134,9 @@ internal sealed partial class UnlockService
                     continue;
                 }
 
-                if (!_config.EffectiveUnlockEnabled)
+                if (!ShouldInject)
                 {
-                    SetStatus($"游戏运行中 PID {process.Id}，但帧率解锁已关闭");
+                    SetStatus($"游戏运行中 PID {process.Id}，当前没有启用需要注入的功能");
                     await Task.Delay(idlePoll, token);
                     continue;
                 }
@@ -132,9 +152,12 @@ internal sealed partial class UnlockService
 
                 // 注入前重置 Stub 状态字段，并推送最新 Host 配置（勿整块乱序写）
                 _config.Sanitize();
-                _ipc.ResetForNewInject(_config.TargetFps, _config.EffectiveUnlockEnabled, _config.AntiBlurPerspective, _config.AntiBlurDiveMosaic);
+                var activeUnlock = ShouldInject && _config.Enabled;
+                _ipc.ResetForNewInject(_config.TargetFps, activeUnlock,
+                    _config.MasterEnabled && _config.AutoWatch && _config.AntiBlurPerspective,
+                    _config.MasterEnabled && _config.AutoWatch && _config.AntiBlurDiveMosaic);
                 _lastPushedFps = _config.TargetFps;
-                _lastPushedEnabled = _config.EffectiveUnlockEnabled ? 1 : 0;
+                _lastPushedEnabled = activeUnlock ? 1 : 0;
                 _lastIpcPushUtc = DateTime.UtcNow;
 
                 SetStatus($"检测到游戏 PID {process.Id}，等待主窗口后注入…");
@@ -185,6 +208,9 @@ internal sealed partial class UnlockService
                         Volatile.Write(ref _injectAttemptedPid, 0);
                         SetAttached(0);
                         SetStatus($"Stub 报告错误 0x{st.LastError:X}（{backoff}s 后可重试注入）");
+                        // 不要进入下面的保活循环；否则同一 PID 会永远停在 Error，
+                        // 外层的退避重试逻辑永远没有机会执行。
+                        continue;
                     }
                     else
                     {
@@ -193,7 +219,7 @@ internal sealed partial class UnlockService
                 }
 
                 // 游戏运行期间保活（PushConfigToIpc 内部已节流）
-                while (!token.IsCancellationRequested)
+                while (!token.IsCancellationRequested && _config.MasterEnabled && _config.AutoWatch)
                 {
                     try
                     {
@@ -203,14 +229,23 @@ internal sealed partial class UnlockService
 
                     PushConfigToIpc();
                     var st = _ipc.Read();
+                    if (st.Status == IpcStatus.Error)
+                    {
+                        AppLog.Error($"stub entered Error while attached pid={process.Id} lastError=0x{st.LastError:X}");
+                        Volatile.Write(ref _injectAttemptedPid, 0);
+                        _injectFailStreak++;
+                        _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(Math.Min(90, 15 * _injectFailStreak));
+                        break;
+                    }
                     SetStatus($"运行中 PID {process.Id} | Stub={st.Status} | 目标 {_config.TargetFps} | 反馈 {st.CurrentFps}");
                     await Task.Delay(activePoll, token);
                 }
 
                 SetAttached(0);
-                Volatile.Write(ref _injectAttemptedPid, 0);
-                SetStatus("游戏已退出 — 继续后台等待下次启动");
-                await Task.Delay(1500, token);
+                // 暂停时保留已经加载的 DLL 连接；重新开启不应重置其 Ready 状态。
+                if (_config.MasterEnabled && _config.AutoWatch)
+                    Volatile.Write(ref _injectAttemptedPid, 0);
+                await Task.Delay(250, token);
             }
             catch (OperationCanceledException)
             {

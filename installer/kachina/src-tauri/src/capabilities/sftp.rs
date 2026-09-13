@@ -1,10 +1,10 @@
 // ====================================================================
-// SFTP download middleware
+// SFTP 下载中间件
 //
-// Intercepts `sftp://` URLs and serves file content as HTTP responses,
-// reusing the shared SSH connection pool from SshMiddleware.
+// 拦截 sftp:// URL，并将文件内容包装为 HTTP 响应，
+// 复用 SshMiddleware 的共享 SSH 连接池。
 //
-// URL format:
+// 相关实现：URL format:
 //   sftp://host:port/remote/path#user=xxx&pass=yyy&fingerprint=sha256hex
 // ====================================================================
 
@@ -27,7 +27,7 @@ use super::ssh::{
 };
 
 // ====================================================================
-// URL parsing
+// URL 解析
 // ====================================================================
 
 struct SftpUrlParts {
@@ -49,7 +49,7 @@ impl SftpUrlParts {
         }
     }
 
-    /// Build a `SshUrlParts` for reusing `SshMiddleware::get_session`.
+    /// 构造 `SshUrlParts`，以复用 `SshMiddleware::get_session`。
     fn as_ssh_url_parts(&self) -> SshUrlParts {
         SshUrlParts {
             ssh_user: self.user.clone(),
@@ -57,7 +57,7 @@ impl SftpUrlParts {
             ssh_host: self.host.clone(),
             ssh_port: self.port,
             fingerprint: self.fingerprint.clone(),
-            // Not used by get_session, but required by the struct
+            // get_session 不使用此字段，但结构体要求提供
             internal_host: String::new(),
             internal_port: 0,
             http_path_and_query: String::new(),
@@ -71,7 +71,7 @@ fn parse_sftp_url(url: &reqwest::Url) -> anyhow::Result<SftpUrlParts> {
     let host_raw = url
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("sftp URL missing host"))?;
-    // Strip IPv6 brackets: "[::1]" → "::1"
+    // 相关处理说明
     let host = host_raw
         .strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))
@@ -101,7 +101,7 @@ fn parse_sftp_url(url: &reqwest::Url) -> anyhow::Result<SftpUrlParts> {
         "sftp URL missing fingerprint= in fragment"
     );
 
-    // Percent-decode the remote path and validate
+    // 对远程路径进行百分号解码并校验
     let raw_path = url.path().to_string();
     let remote_path = percent_decode(&raw_path).unwrap_or(raw_path);
     anyhow::ensure!(
@@ -120,14 +120,14 @@ fn parse_sftp_url(url: &reqwest::Url) -> anyhow::Result<SftpUrlParts> {
 }
 
 // ====================================================================
-// SFTP session pool
+// SFTP 会话 连接池
 // ====================================================================
 
-/// SFTP sessions are cached per (PoolKey, SSH connection identity).
-/// This allows multiple SSH connections to the same host, each with its
-/// own SFTP session — leveraging multi-connection download parallelism
-/// while respecting MAX_STREAMS_PER_SESSION from the SSH pool.
-type SftpCacheKey = (PoolKey, usize); // usize = Arc::as_ptr() of SSH active_streams counter
+/// SFTP 会话按（PoolKey，SSH 连接标识）缓存。
+/// 因此同一主机可以建立多个 SSH 连接，每个连接都有
+/// 独立的 SFTP 会话，从而利用多连接并行下载，
+/// 同时遵守 SSH 连接池的 MAX_STREAMS_PER_SESSION 限制。
+type SftpCacheKey = (PoolKey, usize); // usize = Arc::as_ptr() 的 SSH active_streams 计数器
 
 struct SftpSessionEntry {
     session: Arc<SftpSession>,
@@ -135,10 +135,10 @@ struct SftpSessionEntry {
 }
 
 // ====================================================================
-// SFTP middleware
+// 相关实现：SFTP middleware
 // ====================================================================
 
-const SFTP_SESSION_TIMEOUT: u64 = 60; // seconds
+const SFTP_SESSION_TIMEOUT: u64 = 60; // 秒
 
 pub struct SftpMiddleware {
     ssh_pool: Arc<SshPoolInner>,
@@ -153,7 +153,7 @@ impl SftpMiddleware {
         }
     }
 
-    // ---- pool helpers -----------------------------------------------
+    // ---- 连接池 helpers -----------------------------------------------
 
     fn sweep_sftp_pool(&self, pool: &mut HashMap<SftpCacheKey, SftpSessionEntry>) {
         let now = Instant::now();
@@ -162,61 +162,61 @@ impl SftpMiddleware {
     }
 
     async fn evict_sftp(&self, key: &PoolKey) {
-        // Evict ALL SFTP sessions for this host (any SSH connection)
+        // 移除此主机的全部 SFTP 会话（涵盖所有 SSH 连接）
         self.sftp_pool
             .lock()
             .await
             .retain(|(k, _conn_id), _| k != key);
     }
 
-    /// Get or create an SFTP session.
+    /// 获取或创建 SFTP 会话。
     ///
-    /// Always calls `SshMiddleware::get_session` first, which:
-    /// - Respects `MAX_STREAMS_PER_SESSION` (rotates to new SSH connections)
-    /// - Returns the correct `ActiveStreamGuard` for the SSH connection
+    /// 始终先调用 `SshMiddleware::get_session`，该方法会：
+    /// - 遵守 `MAX_STREAMS_PER_SESSION` 限制，按需轮换到新的 SSH 连接
+    /// - 返回与该 SSH 连接对应的 `ActiveStreamGuard`
     ///
-    /// SFTP sessions are then cached per SSH connection identity, so:
-    /// - Concurrent downloads spread across multiple SSH connections
-    /// - Each SSH connection has at most one SFTP session (channel)
-    /// - The guard always matches the SSH connection the SFTP session lives on
+    /// 随后按 SSH 连接标识缓存 SFTP 会话，因此：
+    /// - 将并发下载分散到多个 SSH 连接
+    /// - 每个 SSH 连接至多拥有一个 SFTP 会话（通道）
+    /// - 守卫始终对应 SFTP 会话所使用的 SSH 连接
     async fn get_or_create_sftp_session(
         &self,
         parts: &SftpUrlParts,
     ) -> anyhow::Result<(Arc<SftpSession>, ActiveStreamGuard)> {
-        // Step 1: Always get SSH handle (respects MAX_STREAMS, may rotate connections)
+        // 步骤 1: Always 获取 SSH 处理 (respects MAX_STREAMS, 可能 rotate connections)
         let ssh_mw = SshMiddleware::with_pool(Arc::clone(&self.ssh_pool));
         let ssh_parts = parts.as_ssh_url_parts();
         let (ssh_handle, stream_guard) = ssh_mw.get_session(&ssh_parts).await?;
 
-        // Connection identity: unique pointer of this SSH connection's active_streams counter
+        // 连接标识：该 SSH 连接的 active_streams 计数器的唯一指针
         let conn_id = Arc::as_ptr(&stream_guard.counter) as usize;
         let cache_key = (parts.pool_key(), conn_id);
 
-        // Step 2: Check SFTP cache for this specific SSH connection
+        // 步骤 2：检查指定 SSH 连接的 SFTP 缓存
         {
             let mut sftp_sessions = self.sftp_pool.lock().await;
             self.sweep_sftp_pool(&mut sftp_sessions);
             if let Some(entry) = sftp_sessions.get_mut(&cache_key) {
                 entry.last_used = Instant::now();
-                // Guard from get_session already protects THIS SSH connection ✓
+                // get_session 已经保护此 SSH 连接 ✓
                 return Ok((Arc::clone(&entry.session), stream_guard));
             }
         }
-        // Lock released
+        // 已释放锁
 
-        // Step 3: Create SFTP session (no lock held)
+        // 步骤 3: 创建 SFTP 会话 (无 锁 held)
         let channel = ssh_handle.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
         let sftp = SftpSession::new(channel.into_stream()).await?;
-        // russh-sftp default timeout is 10s — too short for slow networks
+        // russh-sftp 默认超时为 10 秒，对慢速网络过短
         sftp.set_timeout(SFTP_SESSION_TIMEOUT).await;
         let sftp = Arc::new(sftp);
 
-        // Step 4: Race-safe insert
+        // 步骤 4: Race-安全 插入
         {
             let mut sftp_sessions = self.sftp_pool.lock().await;
             if let Some(entry) = sftp_sessions.get_mut(&cache_key) {
-                // Another task created a session for this connection — use theirs
+                // 其他任务已为此连接创建会话，复用该会话
                 entry.last_used = Instant::now();
                 return Ok((Arc::clone(&entry.session), stream_guard));
             }
@@ -232,20 +232,20 @@ impl SftpMiddleware {
         Ok((sftp, stream_guard))
     }
 
-    // ---- Range parsing ----------------------------------------------
+    // ---- 范围 parsing ----------------------------------------------
 
-    /// Parse a single-range `Range` header value.
-    /// Returns `Some((start, Option<end>))` on success.
-    /// Returns `None` for multi-range (comma), suffix-range (-N), or
-    /// any unparseable value — caller should respond with 416.
+    /// 解析仅包含单个范围的 `Range` 请求头。
+    /// 成功时返回 `Some((start, Option<end>))`。
+    /// 对于多范围（逗号分隔）、后缀范围（-N）或
+    /// 无法解析的值返回 `None`，调用方应返回 416 响应。
     fn parse_single_range(header_value: &str) -> Option<(u64, Option<u64>)> {
         let s = header_value.strip_prefix("bytes=")?;
-        // Reject multi-range
+        // 拒绝多范围请求
         if s.contains(',') {
             return None;
         }
         let (start_s, end_s) = s.split_once('-')?;
-        // Reject suffix-range like "-500"
+        // 拒绝“-500”这样的后缀范围
         if start_s.is_empty() {
             return None;
         }
@@ -258,7 +258,7 @@ impl SftpMiddleware {
         Some((start, end))
     }
 
-    /// Build a 416 Range Not Satisfiable response.
+    /// 构造 416“请求范围无法满足”响应。
     fn build_416_response(total_size: u64) -> anyhow::Result<reqwest::Response> {
         let http_resp = http::Response::builder()
             .status(416)
@@ -269,7 +269,7 @@ impl SftpMiddleware {
         Ok(reqwest::Response::from(http_resp))
     }
 
-    // ---- core SFTP download -----------------------------------------
+    // ---- core SFTP 下载 -----------------------------------------
 
     async fn sftp_request_once(
         sftp: &Arc<SftpSession>,
@@ -277,13 +277,13 @@ impl SftpMiddleware {
         remote_path: &str,
         range_header: Option<&str>,
     ) -> anyhow::Result<reqwest::Response> {
-        // stat for total size (needed for Content-Range and open-ended ranges)
+        // 通过 stat 获取总大小，供 Content-Range 和未指定结束位置的范围使用
         let metadata = sftp.metadata(remote_path).await?;
         let total_size = metadata
             .size
             .ok_or_else(|| anyhow::anyhow!("SFTP: server did not return file size"))?;
 
-        // Compute range — reject invalid/multi-range with 416
+        // 计算范围；对无效范围或多范围请求返回 416
         let (offset, limit_len, status) = if let Some(range_val) = range_header {
             match Self::parse_single_range(range_val) {
                 Some((start, end_opt)) => {
@@ -295,7 +295,7 @@ impl SftpMiddleware {
                     (start, clamped_end - start + 1, 206u16)
                 }
                 None => {
-                    // Unparseable, multi-range, or suffix-range → 416
+                    // 无法解析、多范围或后缀范围请求均返回 416
                     warn!(
                         range = range_val,
                         "SFTP: rejecting unsupported Range header"
@@ -307,7 +307,7 @@ impl SftpMiddleware {
             (0, total_size, 200)
         };
 
-        // Open + seek
+        // 打开 + 定位
         let mut file = sftp
             .open_with_flags(remote_path, russh_sftp::protocol::OpenFlags::READ)
             .await?;
@@ -317,12 +317,12 @@ impl SftpMiddleware {
 
         debug!(offset, limit_len, status, total_size, "SFTP: serving file");
 
-        // Streaming body — capture guards to keep SSH/SFTP alive
+        // 流式响应体：捕获的守卫用于保持 SSH/SFTP 存活
         let sftp_clone = Arc::clone(sftp);
         let body_stream = try_stream! {
-            let _guard = stream_guard;     // keep SSH pool entry alive
-            let _session = sftp_clone;     // keep SftpSession alive
-            let mut buf = vec![0u8; 256 * 1024]; // 256 KB chunks
+            let _guard = stream_guard;     // 保持 SSH 连接池 条目 存活
+            let _session = sftp_clone;     // 保持 SftpSession 存活
+            let mut buf = vec![0u8; 256 * 1024]; // 相关实现：256 KB chunks
             let mut remaining = limit_len;
             while remaining > 0 {
                 let to_read = (remaining as usize).min(buf.len());
@@ -344,7 +344,7 @@ impl SftpMiddleware {
             }
         };
 
-        // Build HTTP response
+        // 构建 HTTP 响应
         let mut builder = http::Response::builder()
             .status(status)
             .header(CONTENT_LENGTH, limit_len)
@@ -364,7 +364,7 @@ impl SftpMiddleware {
         Ok(reqwest::Response::from(http_resp))
     }
 
-    /// Top-level request handler: try once, retry on recoverable transport error.
+    /// 顶层请求处理器：先尝试一次，仅在可恢复的传输错误后重试。
     async fn sftp_request(
         &self,
         req: reqwest::Request,
@@ -379,7 +379,7 @@ impl SftpMiddleware {
             .and_then(|v| v.to_str().ok())
             .map(String::from);
 
-        // First attempt
+        // 第一次尝试
         match self.try_sftp(&parts, range_header.as_deref()).await {
             Ok(resp) => return Ok(resp),
             Err(e) if Self::is_recoverable_transport_error(&e) => {
@@ -390,7 +390,7 @@ impl SftpMiddleware {
             Err(e) => return Err(mw_err(format!("SFTP: {e:#}"))),
         }
 
-        // Retry
+        // 重试
         self.try_sftp(&parts, range_header.as_deref())
             .await
             .map_err(|e| mw_err(format!("SFTP retry: {e:#}")))
@@ -406,18 +406,18 @@ impl SftpMiddleware {
     }
 
     fn is_recoverable_transport_error(err: &anyhow::Error) -> bool {
-        // Check for russh transport errors
+        // 检查 用于 russh transport errors
         if let Some(ssh_err) = err.downcast_ref::<russh::Error>() {
             return is_recoverable_ssh_error(ssh_err);
         }
-        // Check for SFTP-level transport errors
+        // 检查 用于 SFTP-级别 transport errors
         if let Some(sftp_err) = err.downcast_ref::<russh_sftp::client::error::Error>() {
             return matches!(
                 sftp_err,
                 russh_sftp::client::error::Error::IO(_) | russh_sftp::client::error::Error::Timeout
             );
         }
-        // Check for I/O errors
+        // 检查 I/O 错误
         if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
             return matches!(
                 io_err.kind(),

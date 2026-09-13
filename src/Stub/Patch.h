@@ -6,7 +6,7 @@
 // 原始代码以 MIT 协议发布（Copyright (c) DGP Studio），见仓库 LICENSE.txt。
 //
 // 与上游的差异（本地加固）：
-//   - 构造时校验 VirtualProtect 是否成功，失败即标记为无效，绝不读写目标内存；
+//   - 构造时仅从可读的执行页备份原指令，不修改页保护；
 //   - 页保护只在真正写入的瞬间放开，写完立刻还原，不把代码页长期留成 RWX；
 //   - 写入按 8 字节对齐字做原子替换，避免与正在执行该指令的游戏线程「撕裂写」。
 // 详见 Patch.cpp 顶部注释。
@@ -18,13 +18,13 @@
 
 namespace PatchUtil
 {
+    /// <summary>整个补丁是否位于同一个对齐的 8 字节字内。</summary>
+    bool CanWriteAtomically(const void* dst, size_t n);
+
     /// <summary>
-    /// 以 8 字节为单位原子写入 n 字节（n 任意）。
-    /// 跨多个 8 字节字时，从最后一个字往第一个字写：含首字节的那个字最后落地，
-    /// 于是任何中间状态都不会让 CPU 把「半条新指令」当旧指令执行
-    /// （例如 call 的操作码已改、rel32 还是旧值 → 跳去错误地址）。
-    /// 页对齐是 8 的整数倍，所以向下对齐到 8 字节永远不会跨页。
-    /// 调用方需保证 [dst, dst+n) 所在页可读写。
+    /// 通过一次成功的 CAS 替换完整指令，保留同一字中的相邻字节。
+    /// 跨字或超过 8 字节时返回 false，且不会修改任何内存。
+    /// 调用方负责保证该字可读写，并在 Windows 下刷新指令缓存。
     /// </summary>
     bool AtomicWriteBytes(void* dst, const void* src, size_t n);
 }
@@ -41,7 +41,7 @@ public:
 
     bool IsPatched() const { return m_isPatched; }
 
-    /// <summary>构造是否成功（页保护可放开、原字节已备份）。false 时 Apply/Revert 都是空操作。</summary>
+    /// <summary>构造是否成功（目标位于可读执行页、原字节已备份）。false 时 Apply/Revert 都是空操作。</summary>
     bool IsValid() const { return m_valid; }
 
 private:
@@ -54,5 +54,4 @@ private:
     std::vector<char> m_originalBytes;
     bool              m_isPatched;
     bool              m_valid;
-    uint32_t          m_protect;   // 目标原始页保护（DWORD）
 };

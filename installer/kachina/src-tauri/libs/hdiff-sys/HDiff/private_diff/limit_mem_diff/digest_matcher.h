@@ -42,25 +42,25 @@ typedef uint64_t        adler_uint_t;
 typedef uint64_t        adler_hash_t;
 static inline adler_hash_t adler_to_hash(const uint64_t x){ return x; }
 
-//typedef adler128_t      adler_uint_t;
-//#define adler_start     fast_adler128_start
-//#define adler_roll      fast_adler128_roll
-//typedef uint64_t        adler_hash_t;
-//static inline adler_hash_t adler_to_hash(const adler128_t& x){ return x.adler^x.sum; }
-//static inline bool operator !=(const adler128_t& x,const adler128_t& y){
-//    return (x.adler!=y.adler)||(x.sum!=y.sum);}
-//static inline bool operator <(const adler128_t& x,const adler128_t& y){
-//    if (x.adler!=y.adler) return (x.adler<y.adler); else return (x.sum<y.sum); }
+//第三方实现细节。
+//#定义 adler_start     fast_adler128_start
+//#定义 adler_roll      fast_adler128_roll
+//第三方实现细节。
+//静态 inline adler_hash_t adler_to_hash(const adler128_t& x){ 返回 x.adler^x.sum; }
+//静态 inline bool operator !=(const adler128_t& x,const adler128_t& y){
+//    返回 (x.adler!=y.adler)||(x.sum!=y.sum);}
+//静态 inline bool operator <(const adler128_t& x,const adler128_t& y){
+//    如果 (x.adler!=y.adler) 返回 (x.adler<y.adler); 否则 返回 (x.sum<y.sum); }
 
-//typedef uint32_t        adler_uint_t;
-//#define adler_start     fast_adler32_start
-//#define adler_roll      fast_adler32_roll
-//typedef uint32_t        adler_hash_t;
-//static inline adler_hash_t adler_to_hash(const uint32_t x){ return x; }
+//第三方实现细节。
+//#定义 adler_start     fast_adler32_start
+//#定义 adler_roll      fast_adler32_roll
+//第三方实现细节。
+//静态 inline adler_hash_t adler_to_hash(const uint32_t x){ 返回 x; }
 
 class TDigestMatcher{
 public:
-    //throw std::runtime_error when data->read error or kMatchBlockSize error;
+    //throw std::runtime_error 当 数据->读取 错误 或 kMatchBlockSize 错误;
     TDigestMatcher(const hpatch_TStreamInput* oldData,const hpatch_TStreamInput* newData,
                    size_t kMatchBlockSize,const hdiff_TMTSets_s& mtsets);
     void search_cover(hpatch_TOutputCovers* out_covers);
@@ -89,9 +89,9 @@ private:
     void _search_cover(const hpatch_TStreamInput* newData,hpatch_StreamPos_t newOffset,
                        hpatch_TOutputCovers* out_covers,unsigned char* pmem,
                        void* dataLocker=0,void* newDataLocker=0);
-public: //private for multi-thread
+public: //私有 用于 multi-线程
     void _search_cover_thread(hpatch_TOutputCovers* out_covers,unsigned char* pmem,void* mt_data);
 };
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 #endif

@@ -1,6 +1,6 @@
 //adler_roll.h
-//support: adler32,adler64,roll,fast roll,combine
-//https://github.com/madler/zlib/blob/master/adler32.c not find roll
+//支持: adler32,adler64,roll,fast roll,combine
+//https://github.com/madler/zlib/blob/master/adler32.c 不 查找 roll
 //
 /*
  The MIT License (MIT)
@@ -30,7 +30,7 @@
 
 #ifndef adler_roll_h
 #define adler_roll_h
-#include <stddef.h> //for size_t
+#include <stddef.h> //用于 size_t
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,8 +39,8 @@ extern "C" {
 #   define adler_data_t unsigned char
 #endif
 
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 */)
-#   include <stdint.h> //for uint16_t,uint32_t,uint64_t
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#   include <stdint.h> //用于 uint16_t,uint32_t,uint64_t
 #else
 #   ifdef _MSC_VER
 #       if (_MSC_VER >= 1300)
@@ -65,7 +65,7 @@ extern "C" {
 #endif
 
 #ifndef ADLER_INITIAL
-#   define ADLER_INITIAL    1 //must 0 or 1
+#   define ADLER_INITIAL    1 //必须 0 或 1
 #endif
 
 #ifndef _IS_NEED_FAST_ADLER128

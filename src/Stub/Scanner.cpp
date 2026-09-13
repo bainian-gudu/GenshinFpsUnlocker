@@ -24,6 +24,7 @@ namespace Scanner
     {
         std::vector<int> pattern;
         pattern.reserve(signature.size() / 3 + 1);
+        bool invalid = false;
 
         size_t i = 0;
         while (i < signature.size())
@@ -64,14 +65,22 @@ namespace Scanner
             {
                 const int hi = HexNibble(signature[tokenStart]);
                 const int lo = HexNibble(signature[tokenStart + 1]);
-                pattern.push_back(hi < 0 || lo < 0 ? -1 : (hi << 4) | lo);
+                if (hi < 0 || lo < 0)
+                {
+                    invalid = true;
+                    break;
+                }
+                pattern.push_back((hi << 4) | lo);
             }
             else
             {
-                pattern.push_back(-1);  // 形状不对的 token 视为通配，与旧实现一致
+                // 签名拼写错误不能静默变成通配符，否则会把匹配范围扩大到
+                // 无关代码并诱发错误 Hook/Patch。
+                invalid = true;
+                break;
             }
         }
-        return pattern;
+        return invalid ? std::vector<int>{} : pattern;
     }
 
     /// <summary>
@@ -160,14 +169,19 @@ namespace Scanner
 
         const uintptr_t instrAddr = reinterpret_cast<uintptr_t>(instruction);
         MEMORY_BASIC_INFORMATION mbi{};
+        if (!VirtualQuery(reinterpret_cast<LPCVOID>(instrAddr), &mbi, sizeof(mbi)))
+            {
+                return nullptr;
+            }
+        if (mbi.State != MEM_COMMIT || (mbi.Protect & PAGE_GUARD) != 0 ||
+            !(mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
+            {
+                return nullptr;
+            }
+        if (offset == 1 && instrSize == 5 && *reinterpret_cast<const uint8_t*>(instrAddr) != 0xE8)
+            return nullptr;
         if (!VirtualQuery(reinterpret_cast<LPCVOID>(instrAddr + offset), &mbi, sizeof(mbi)))
-        {
             return nullptr;
-        }
-        if (mbi.State != MEM_COMMIT || (mbi.Protect & PAGE_GUARD) != 0)
-        {
-            return nullptr;
-        }
         // 要读的是 offset..offset+3 共 4 字节；跨区域边界就放弃，别赌下一页可读
         const uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
         if (instrAddr + static_cast<uintptr_t>(offset) + sizeof(int32_t) > regionEnd)

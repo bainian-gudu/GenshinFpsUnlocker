@@ -1,10 +1,11 @@
-# installer/ — 唯一的安装器打包目录
+# installer/ — 安装器与发布包
 
 本项目的安装 / 卸载 / 更新**只有 Kachina 一种实现**。宿主程序（`src/Host`）里已经
 没有任何自带的安装卸载路径（`--install`、`--uninstall`、`Uninstall.cmd` 垫片、
 自写 ARP 卸载注册表项、内置白名单删目录都已删除）。
 
-所有与「打包安装器」相关的代码都集中在本目录：
+面向使用者只需要下载根目录 `artifacts\` 中的安装包；本目录供开发者构建、配置和排查安装器。
+所有与打包安装器相关的代码都集中在这里：
 
 ```
 installer/
@@ -20,7 +21,9 @@ installer/
                             见该目录的 LOCAL_PATCHES.md）
 ```
 
-## 一条命令打包
+## 快速开始
+
+在仓库根目录执行：
 
 ```powershell
 # 仓库根目录：编译 UI + Stub + Host，再打包安装器
@@ -32,6 +35,18 @@ installer/
 # 只编译，不打包
 .\build.ps1 -SkipSetup
 ```
+
+首次构建需要 Rust nightly、`rust-src`、Node.js 20+、pnpm 10、PowerShell 7 和 Windows
+MSVC/VS Build Tools。依赖可以先安装在 WSL 用户目录；Windows 目标的 Tauri/C++ 编译阶段
+仍需 Windows MSVC 工具链。安装器前端依赖安装命令如下：
+
+```bash
+cd installer/kachina
+pnpm install --frozen-lockfile
+```
+
+网络较慢时，为 rustup、npm/pnpm 和 NuGet 配置可用镜像后再执行安装。构建脚本、配置文件和
+产物均保留在仓库或 WSL 文件系统内。
 
 首次执行会从源码构建 `kachina-builder.exe`（需要 Rust nightly + Node/pnpm + MSVC，
 详见 `kachina/UPSTREAM.md`）。之后 `installer\tools\kachina-builder.exe` 存在**且不比
@@ -60,7 +75,7 @@ installer/
 
 ## 打包步骤（`pack.ps1` 内部做的事）
 
-与上游 README 完全一致，三步：
+`pack.ps1` 按以下三步生成更新器、索引和离线安装器：
 
 ```powershell
 # 1) 更新器（也会被塞进便携包，用于在线升级）
@@ -79,6 +94,10 @@ kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d ha
 > 不要用 `build\`：Windows 路径大小写不敏感，会和历史上的 `Build\` 目录混淆。
 
 ## Kachina 负责什么 / 不负责什么
+
+Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序只负责启动卸载器，不直接
+删除安装目录或注册表。用户侧入口和数据保留规则请先看根目录 [`README.md`](../README.md)
+的「安装、更新与卸载」；本文件下面的内容主要用于维护配置和审查删除范围。
 
 **负责**：铺文件到 `Program Files\GenshinFpsUnlocker`、写「应用和功能」卸载项、
 生成 `uninst.exe` / `update.exe`、按 `runtimes` 装 .NET Desktop Runtime 9 与 VCRedist、

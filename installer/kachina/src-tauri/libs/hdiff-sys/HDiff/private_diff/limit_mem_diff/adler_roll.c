@@ -30,7 +30,7 @@
 
 #define MAX_DATA    255
 
-#   define _adler32_BASE                65521 //largest prime that is less than 2^32
+#   define _adler32_BASE                65521 //largest prime that 是 less than 2^32
 #   define _adler_mod(v,BASE)           ((v)%(BASE))
 #   define _adler_border1(v,BASE)       { (v)=((v)<(BASE))?(v):((v)-(BASE)); }
 #   define _adler_border2(v,BASE)       { _adler_border1(v,BASE); _adler_border1(v,BASE); }
@@ -59,7 +59,7 @@
 #endif
 
 
-//__fast_adler_table create by _gen_fast_adler_table() on MacOSX
+//__fast_adler_table 创建 通过 _gen_fast_adler_table() 在 MacOSX
 #if (_IS_NEED_FAST_ADLER128) || (_CPU_IS_LITTLE_ENDIAN)
 #   if _IS_NEED_FAST_ADLER128
 static const uint64_t __fast_adler_table[256]={
@@ -135,49 +135,49 @@ static const uint64_t __fast_adler_table[128]={
 };
 #endif
 /*
-#include <set>
-//gen table better than CRC32Table:{0,0x77073096,..,0x2D02EF8D} or CRC64Table
-static bool _gen_fast_adler_table(unsigned int rand_seed,bool isPrint=true){
-    std::set<uint32_t> check_set;
-    if (isPrint) printf("{\n");
-    for (int y=64-1; y>=0; --y) {
-        if (isPrint) printf("    ");
-        for (int x=8-1; x>=0; --x) {
-            uint32_t v=0;
-            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
-            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
-            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
-            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
-            {//check
-                if (check_set.find(v&0xFFFF)!=check_set.end()) return false;
-                check_set.insert(v&0xFFFF);
-                if (check_set.find(v>>16)!=check_set.end()) return false;
-                check_set.insert(v>>16);
+#包含 <set>
+//gen 表 better than CRC32Table:{0,0x77073096,..,0x2D02EF8D} 或 CRC64Table
+静态 bool _gen_fast_adler_table(unsigned int rand_seed,bool isPrint=真){
+    第三方实现细节。
+    如果 (isPrint) printf("{\n");
+    用于 (int y=64-1; y>=0; --y) {
+        如果 (isPrint) printf("    ");
+        用于 (int x=8-1; x>=0; --x) {
+            第三方实现细节。
+            第三方实现细节。
+            第三方实现细节。
+            第三方实现细节。
+            第三方实现细节。
+            {//检查
+                如果 (check_set.查找(v&0xFFFF)!=check_set.结束()) 返回 假;
+                第三方实现细节。
+                如果 (check_set.查找(v>>16)!=check_set.结束()) 返回 假;
+                第三方实现细节。
             }
-            if (isPrint){
-                if (x%2==1){
-                    printf("0x%08x",v);
-                }else{
-                    printf("%08xull",v);
-                    if (x>0) printf(",");
+            如果 (isPrint){
+                如果 (x%2==1){
+                    第三方实现细节。
+                }否则{
+                    第三方实现细节。
+                    如果 (x>0) printf(",");
                 }
             }
         }
-        if (isPrint) printf((y>0)?",\n":" };\n\n");
+        如果 (isPrint) printf((y>0)?",\n":" };\n\n");
     }
-    return true;
+    返回 真;
 }
-static bool _gen_fast_adler_table(){
-    bool result=false;
-    for (unsigned int i=0; i<1000000000;++i) {
-        if (!_gen_fast_adler_table(i,false)) continue;
-        printf("rand_seed: %u\n",i);
-        result=_gen_fast_adler_table(i,true);
+静态 bool _gen_fast_adler_table(){
+    bool 结果=假;
+    用于 (unsigned int i=0; i<1000000000;++i) {
+        如果 (!_gen_fast_adler_table(i,假)) continue;
+        第三方实现细节。
+        结果=_gen_fast_adler_table(i,真);
     }
-    assert(result);
-    return result;
+    assert(结果);
+    返回 结果;
 }
-static bool _null=_gen_fast_adler_table(10735);
+静态 bool _null=_gen_fast_adler_table(10735);
 */
 #if _CPU_IS_LITTLE_ENDIAN
 const uint16_t* _private_fast_adler32_table =(const uint16_t*)&__fast_adler_table[0];
@@ -273,10 +273,10 @@ const uint64_t* _private_fast_adler128_table =(const uint64_t*)&__fast_adler_tab
     adler_add2(_c_t,adler,sum,pdata);    \
 }
 
-//limit: 255*n*(n+1)/2 + (n+1)(65521-1) <= 2^32-1
-// => max(n)=5552
-//limit: 255*255*n*(n+1)/2 + (n+1)(0xFFFFFFFB-1) <= 2^64-1
-// => max(n) >>> 5552
+//第三方实现细节。
+// 第三方实现细节。
+//第三方实现细节。
+// 第三方实现细节。
 #define kFNBest 5552  // ==(8*2*347)
 #define _adler_append(uint_t,half_bit,BASE,mod,border1, adler,pdata,n){ \
     uint_t sum=adler>>half_bit;      \
@@ -294,7 +294,7 @@ _case8:        \
         case  0: {  sum  =mod(sum,BASE);          \
                     border1(adler,BASE);          \
                     return adler | (sum<<half_bit); } \
-        default: { /* continue */ } \
+        default: { 第三方实现细节。 } \
     } \
     while(n>=kFNBest){  \
         size_t fn;      \
@@ -331,7 +331,7 @@ _case8:  \
         case  2: { fast_adler_add1(_table,adler,sum,pdata); } \
         case  1: { fast_adler_add1(_table,adler,sum,pdata); } \
         case  0: {  return_SUMADLER(sum,adler); }             \
-        default:{ /* continue */} \
+        default:{ 第三方实现细节。} \
     }   \
     do{ \
         fast_adler_add2(_c_t,_table,adler,sum,pdata); \
@@ -347,10 +347,10 @@ _case8:  \
                      adler,blockSize,out_data,in_data){ \
     uint_t sum=adler>>half_bit;       \
     adler&=(((uint_t)1<<half_bit)-1); \
-    /*  [0..B-1] + [0..255] + B - [0..255]   =>  [0+0+B-255..B-1+255+B-0]*/ \
-    adler+=in_data+(uint_t)(BASE-out_data);  /* => [B-255..B*2-1+255] */    \
+    第三方实现细节。 \
+    adler+=in_data+(uint_t)(BASE-out_data);  第三方实现细节。    \
     border2(adler,BASE);  \
-    /* [0..B-1] + [0..B-1] + B-1 - [0..B-1] => [(B-1)-(B-1)..B-1+B-1+B-1]*/ \
+    第三方实现细节。 \
     blockSize=(blockSize<=kBestBlockSize)?blockSize:mod(blockSize,BASE);    \
     sum=sum+adler+(uint_t)((BASE-ADLER_INITIAL) - mod(blockSize*out_data,BASE)); \
     border2(sum,BASE);    \
@@ -387,9 +387,9 @@ _case8:  \
 }
 
 
-//limit: if all result in uint32_t
-//blockSize*255 <= 2^32-1
-// => max(blockSize)=(2^32-1)/255   ( =16843009 =(1<<24)+65793 )
+//limit: 如果 全部 结果 在 uint32_t
+//第三方实现细节。
+// 第三方实现细节。
 static const size_t   adler_roll_kBestBlockSize=((size_t)(~(size_t)0))/MAX_DATA;
 static const uint64_t adler64_roll_kBestBlockSize=((uint64_t)(~(uint64_t)0))/MAX_DATA;
 

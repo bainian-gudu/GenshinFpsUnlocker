@@ -1,17 +1,8 @@
 // 移植自 DGP Studio 的 Snap.Hutao.Remastered.UnlockerIsland（utils/Patch.cpp，MIT）。
 //
-// 本地加固（对应审查报告 P0-3）：
-//   1. VirtualProtect 的返回值必须检查。上游直接忽略，失败时后面的
-//      memcpy(m_originalBytes, address, count) 会在构造函数里就 AV。
-//   2. 页保护只在写入瞬间放开，写完立刻还原。上游把代码页永久改成
-//      PAGE_EXECUTE_READWRITE，既扩大安全面，也更容易被反作弊/AV 记账。
-//   3. 写入改成按 8 字节对齐字的原子 CAS。上游用 memcpy 写 5 字节：游戏渲染
-//      线程正在执行这条 call 时被改一半，就是撕裂指令 → 崩溃。
-//      跨字时从后往前写，保证中间状态永远是「旧操作码 + 任意操作数」这种无害组合。
-//   4. 写完 FlushInstructionCache（x86/x64 上其实不需要，但这是文档要求的做法，
-//      成本一次系统调用，只在开关切换时发生）。
-//
-// AtomicWriteBytes 不依赖 Windows API，可在非 Windows 上单测（见 tools 里的对照测试）。
+// 可执行指令补丁必须完整落在同一个对齐的 8 字节字中。
+// 多次 CAS 不能组成一个原子指令替换：旧 call 操作码加新 rel32 仍会跳错地址。
+// 无法满足边界时放弃该功能；页保护仅在写入期间临时放开。
 #include "Patch.h"
 
 #include <cstring>
@@ -65,58 +56,26 @@ namespace
 
 namespace PatchUtil
 {
+    bool CanWriteAtomically(const void* dst, size_t n)
+    {
+        if (!dst || n == 0 || n > sizeof(uint64_t)) return false;
+        return (reinterpret_cast<uintptr_t>(dst) & 7) + n <= sizeof(uint64_t);
+    }
+
     bool AtomicWriteBytes(void* dst, const void* src, size_t n)
     {
-        if (!dst || !src || n == 0)
+        if (!src || !CanWriteAtomically(dst, n)) return false;
+
+        const uintptr_t address = reinterpret_cast<uintptr_t>(dst);
+        auto* word = reinterpret_cast<uint64_t*>(address & kAlignMask);
+        const size_t offset = address & 7;
+        for (;;)
         {
-            return false;
+            const uint64_t current = AtomicLoad64(word);
+            uint64_t next = current;
+            std::memcpy(reinterpret_cast<uint8_t*>(&next) + offset, src, n);
+            if (AtomicCas64(word, current, next)) return true;
         }
-
-        auto* const d = static_cast<uint8_t*>(dst);
-        const auto* const s = static_cast<const uint8_t*>(src);
-        const uintptr_t dAddr = reinterpret_cast<uintptr_t>(d);
-        const uintptr_t firstWord = dAddr & kAlignMask;
-        const uintptr_t lastWord = (dAddr + n - 1) & kAlignMask;
-
-        // 从最后一个字倒着写到第一个字（含首字节的那个字最后落地）
-        for (uintptr_t word = lastWord;; word -= 8)
-        {
-            auto* const w = reinterpret_cast<uint64_t*>(word);
-            const auto* const wb = reinterpret_cast<const uint8_t*>(word);
-
-            // 该 8 字节字与 [d, d+n) 的交集
-            size_t begin = 0;
-            size_t end = 8;
-            if (d > wb)
-            {
-                begin = static_cast<size_t>(d - wb);
-            }
-            if (d + n < wb + 8)
-            {
-                end = static_cast<size_t>(d + n - wb);
-            }
-
-            // 交集内的首字节在 src 里的偏移
-            const size_t srcOffset = static_cast<size_t>(word + begin - dAddr);
-
-            for (;;)
-            {
-                const uint64_t current = AtomicLoad64(w);
-                uint64_t next = current;
-                std::memcpy(reinterpret_cast<uint8_t*>(&next) + begin, s + srcOffset, end - begin);
-                if (AtomicCas64(w, current, next))
-                {
-                    break;
-                }
-            }
-
-            if (word == firstWord)
-            {
-                break;
-            }
-        }
-
-        return true;
     }
 }
 
@@ -127,40 +86,22 @@ Patch::Patch(void* address, const char* patchBytes, size_t count)
     , m_originalBytes(count)
     , m_isPatched(false)
     , m_valid(false)
-    , m_protect(0)
 {
-    if (!address || !patchBytes || count == 0)
+    if (!patchBytes || !PatchUtil::CanWriteAtomically(address, count))
     {
         return;
     }
 
 #if defined(_WIN32)
-    DWORD oldProtect = 0;
-    if (!VirtualProtect(address, count, PAGE_EXECUTE_READWRITE, &oldProtect))
-    {
-        // 放不开页保护：不要读、不要写，标记无效让调用方放弃这个补丁
+    // 备份只需要读取，不为构造一个补丁对象而修改代码页保护。
+    MEMORY_BASIC_INFORMATION region{};
+    if (!VirtualQuery(address, &region, sizeof(region)) ||
+        region.State != MEM_COMMIT || (region.Protect & PAGE_GUARD) ||
+        !(region.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
         return;
-    }
-
-    std::memcpy(m_originalBytes.data(), address, count);
-
-    // 立刻还原原始保护；真正写入时再临时放开
-    DWORD tmp = 0;
-    if (!VirtualProtect(address, count, oldProtect, &tmp))
-    {
-        // 还原失败就把页留在可写状态（比留下错误的原字节更安全）
-        m_protect = 0;
-    }
-    else
-    {
-        m_protect = static_cast<uint32_t>(oldProtect);
-    }
-
-    m_valid = true;
-#else
-    std::memcpy(m_originalBytes.data(), address, count);
-    m_valid = true;
 #endif
+    std::memcpy(m_originalBytes.data(), address, count);
+    m_valid = true;
 }
 
 Patch::~Patch()
@@ -176,19 +117,24 @@ bool Patch::WriteBytes(const void* src)
     }
 
 #if defined(_WIN32)
-    DWORD tmp = 0;
-    if (!VirtualProtect(m_address, m_count, PAGE_EXECUTE_READWRITE, &tmp))
-    {
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(m_address, m_count, PAGE_EXECUTE_READWRITE, &oldProtect))
         return false;
-    }
 
     const bool ok = PatchUtil::AtomicWriteBytes(m_address, src, m_count);
-
-    DWORD restore = 0;
-    const DWORD target = m_protect ? static_cast<DWORD>(m_protect) : tmp;
-    VirtualProtect(m_address, m_count, target, &restore);
-    FlushInstructionCache(GetCurrentProcess(), m_address, m_count);
-    return ok;
+    DWORD ignored = 0;
+    if (!VirtualProtect(m_address, m_count, oldProtect, &ignored))
+    {
+        // 写入成功但恢复保护失败时，不能报告“未写入”而留下生效的补丁。
+        // 恢复原指令并停用这个补丁对象，再尝试恢复原保护。
+        PatchUtil::AtomicWriteBytes(m_address, m_originalBytes.data(), m_count);
+        m_isPatched = false;
+        m_valid = false;
+        VirtualProtect(m_address, m_count, oldProtect, &ignored);
+        FlushInstructionCache(GetCurrentProcess(), m_address, m_count);
+        return false;
+    }
+    return ok && FlushInstructionCache(GetCurrentProcess(), m_address, m_count);
 #else
     return PatchUtil::AtomicWriteBytes(m_address, src, m_count);
 #endif

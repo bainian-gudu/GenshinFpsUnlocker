@@ -48,6 +48,14 @@ internal sealed partial class UnlockService : IDisposable
     public int AntiBlurStateFeedback => _ipc.Read().AntiBlurState;
     public AppConfig Config => _config;
 
+    /// <summary>
+    /// 是否有任一功能需要把 Stub 注入到游戏。
+    /// 自动监视关闭时，同时停用已经附着的功能，避免 Stub 继续强制写入。
+    /// </summary>
+    private bool ShouldInject =>
+        _config.MasterEnabled && _config.AutoWatch &&
+        (_config.Enabled || _config.AntiBlurPerspective || _config.AntiBlurDiveMosaic);
+
     public UnlockService(AppConfig config)
     {
         _config = config;
@@ -84,7 +92,7 @@ internal sealed partial class UnlockService : IDisposable
     {
         _config.Sanitize();
         var fps = _config.TargetFps;
-        var en = _config.EffectiveUnlockEnabled ? 1 : 0;
+        var en = ShouldInject && _config.Enabled ? 1 : 0;
         var now = DateTime.UtcNow;
 
         // 跳过冗余写入
@@ -94,7 +102,17 @@ internal sealed partial class UnlockService : IDisposable
             return;
         }
 
-        _ipc.UpdateHostFields(fps, en != 0, _config.AntiBlurPerspective, _config.AntiBlurDiveMosaic);
+        var featuresActive = _config.MasterEnabled && _config.AutoWatch;
+        var stubShouldRun = ShouldInject;
+        if (!stubShouldRun)
+        {
+            var status = _ipc.Read().Status;
+            if (status is IpcStatus.Waiting or IpcStatus.Ready)
+                _ipc.RequestExit();
+        }
+        _ipc.UpdateHostFields(fps, en != 0,
+            featuresActive && _config.AntiBlurPerspective,
+            featuresActive && _config.AntiBlurDiveMosaic);
         _lastPushedFps = fps;
         _lastPushedEnabled = en;
         _lastIpcPushUtc = now;
@@ -139,6 +157,12 @@ internal sealed partial class UnlockService : IDisposable
     {
         _config.AutoWatch = enabled;
         _config.TrySave(out _);
+        // 关闭自动监视也必须立即停用已有 Stub；否则后台循环可能还在保活并强制写 FPS。
+        PushConfigToIpc(force: true);
+        if (!enabled)
+        {
+            SetAttached(0);
+        }
         Raise(forceUi: true);
     }
 

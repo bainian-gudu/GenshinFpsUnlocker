@@ -47,18 +47,18 @@
 #endif
 
 #define _hpatch_FALSE   hpatch_FALSE
-//hpatch_uint __hpatch_debug_check_false_x=0; //for debug
-//#define _hpatch_FALSE (1/__hpatch_debug_check_false_x)
+//hpatch_uint __hpatch_debug_check_false_x=0; //用于 debug
+//#定义 _hpatch_FALSE (1/__hpatch_debug_check_false_x)
 
 typedef unsigned char TByte;
 
 
 //变长正整数编码方案(x bit额外类型标志位,x<=7),从高位开始输出1--n byte:
-// x0*  7-x bit
-// x1* 0*  7+7-x bit
-// x1* 1* 0*  7+7+7-x bit
-// x1* 1* 1* 0*  7+7+7+7-x bit
-// x1* 1* 1* 1* 0*  7+7+7+7+7-x bit
+// 第三方实现细节。
+// 第三方实现细节。
+// 第三方实现细节。
+// 第三方实现细节。
+// 第三方实现细节。
 // ......
 hpatch_BOOL hpatch_packUIntWithTag(TByte** out_code,TByte* out_code_end,
                                    hpatch_StreamPos_t uValue,hpatch_uint highTag,
@@ -68,9 +68,9 @@ hpatch_BOOL hpatch_packUIntWithTag(TByte** out_code,TByte* out_code_end,
     TByte           codeBuf[hpatch_kMaxPackedUIntBytes];
     TByte*          codeEnd=codeBuf;
 #ifdef __RUN_MEM_SAFE_CHECK
-    //static const hpatch_uint kPackMaxTagBit=7;
-    //assert((0<=kTagBit)&&(kTagBit<=kPackMaxTagBit));
-    //assert((highTag>>kTagBit)==0);
+    //静态 const hpatch_uint kPackMaxTagBit=7;
+    //第三方实现细节。
+    //第三方实现细节。
 #endif
     while (uValue>kMaxValueWithTag) {
         *codeEnd=uValue&((1<<7)-1); ++codeEnd;
@@ -105,14 +105,14 @@ hpatch_uint hpatch_packUIntWithTag_size(hpatch_StreamPos_t uValue,const hpatch_u
 hpatch_BOOL hpatch_unpackUIntWithTag(const TByte** src_code,const TByte* src_code_end,
                                      hpatch_StreamPos_t* result,const hpatch_uint kTagBit){//读出整数并前进指针.
 #ifdef __RUN_MEM_SAFE_CHECK
-    //const hpatch_uint kPackMaxTagBit=7;
+    //第三方实现细节。
 #endif
     hpatch_StreamPos_t  value;
     TByte               code;
     const TByte*        pcode=*src_code;
     
 #ifdef __RUN_MEM_SAFE_CHECK
-    //assert(kTagBit<=kPackMaxTagBit);
+    //第三方实现细节。
     if (src_code_end<=pcode) return _hpatch_FALSE;
 #endif
     code=*pcode; ++pcode;
@@ -120,7 +120,7 @@ hpatch_BOOL hpatch_unpackUIntWithTag(const TByte** src_code,const TByte* src_cod
     if ((code&(1<<(7-kTagBit)))!=0){
         do {
 #ifdef __RUN_MEM_SAFE_CHECK
-            if ((value>>(sizeof(value)*8-7))!=0) return _hpatch_FALSE;//cannot save 7bit
+            if ((value>>(sizeof(value)*8-7))!=0) return _hpatch_FALSE;//不能 保存 7bit
             if (src_code_end==pcode) return _hpatch_FALSE;
 #endif
             code=*pcode; ++pcode;
@@ -192,7 +192,7 @@ hpatch_BOOL hpatch_deccompress_mem(hpatch_TDecompress* decompressPlugin,
 
 
 ////////
-//patch by memory
+//补丁 通过 内存
 
 static const hpatch_uint kSignTagBit=1;
 
@@ -263,7 +263,7 @@ hpatch_BOOL patch(TByte* out_newData,TByte* out_newData_end,
         code_newDataDiff_end=serializedDiff;
     }
 
-    //decode rle ; rle data begin==cur serializedDiff;
+    //decode rle ; rle 数据 开始==cur serializedDiff;
     _SAFE_CHECK_DO(_bytesRle_load(out_newData, out_newData_end, serializedDiff, serializedDiff_end));
 
     {   //patch
@@ -310,7 +310,7 @@ hpatch_BOOL patch(TByte* out_newData,TByte* out_newData_end,
 #endif
             memcpy(out_newData+newPosBack,code_newDataDiff,copyLength);
             code_newDataDiff+=copyLength;
-            //newPosBack=newDataSize;
+            //第三方实现细节。
         }
     }
 
@@ -383,7 +383,7 @@ static hpatch_BOOL _bytesRle_load(TByte* out_data,TByte* out_dataEnd,
 }
 
 //----------------------
-//patch by stream
+//补丁 通过 流
 
     static hpatch_BOOL _TStreamInputClip_read(const hpatch_TStreamInput* stream,
                                               hpatch_StreamPos_t readFromPos,
@@ -433,7 +433,7 @@ void TStreamOutputClip_init(TStreamOutputClip* self,const hpatch_TStreamOutput* 
 
 
 
-//assert(hpatch_kStreamCacheSize>=hpatch_kMaxPluginTypeLength+1);
+//第三方实现细节。
 struct __private_hpatch_check_kMaxCompressTypeLength {
     char _[(hpatch_kStreamCacheSize>=(hpatch_kMaxPluginTypeLength+1))?1:-1];};
 
@@ -445,7 +445,7 @@ hpatch_BOOL _TStreamCacheClip_readType_end(TStreamCacheClip* sclip,TByte endTag,
     if (readLen>_TStreamCacheClip_leaveSize(sclip))
         readLen=(hpatch_size_t)_TStreamCacheClip_leaveSize(sclip);
     type_begin=_TStreamCacheClip_accessData(sclip,readLen);
-    if (type_begin==0) return _hpatch_FALSE;//not found
+    if (type_begin==0) return _hpatch_FALSE;//不 found
     for (i=0; i<readLen; ++i) {
         if (type_begin[i]!=endTag)
             continue;
@@ -455,7 +455,7 @@ hpatch_BOOL _TStreamCacheClip_readType_end(TStreamCacheClip* sclip,TByte endTag,
             return hpatch_TRUE;
         }
     }
-    return _hpatch_FALSE;//not found
+    return _hpatch_FALSE;//不 found
 }
 
 hpatch_BOOL _TStreamCacheClip_updateCache(TStreamCacheClip* sclip){
@@ -471,7 +471,7 @@ hpatch_BOOL _TStreamCacheClip_updateCache(TStreamCacheClip* sclip){
     }
     if (!sclip->srcStream->read(sclip->srcStream,sclip->streamPos,
                                 buf0+(sclip->cacheEnd-readSize),buf0+sclip->cacheEnd))
-        return _hpatch_FALSE;//read error
+        return _hpatch_FALSE;//读取 错误
     sclip->cacheBegin-=readSize;
     sclip->streamPos+=readSize;
     return hpatch_TRUE;
@@ -492,7 +492,7 @@ hpatch_BOOL _TStreamCacheClip_skipData(TStreamCacheClip* sclip,hpatch_StreamPos_
     return hpatch_TRUE;
 }
 
-//assert(hpatch_kStreamCacheSize>=hpatch_kMaxPackedUIntBytes);
+//第三方实现细节。
 struct __private_hpatch_check_hpatch_kMaxPackedUIntBytes {
     char _[(hpatch_kStreamCacheSize>=hpatch_kMaxPackedUIntBytes)?1:-1]; };
 
@@ -680,21 +680,21 @@ hpatch_BOOL _TOutStreamCache_copyFromClip(_TOutStreamCache* self,TStreamCacheCli
 }
 
 hpatch_BOOL _TOutStreamCache_copyFromSelf(_TOutStreamCache* self,hpatch_StreamPos_t aheadLength,hpatch_StreamPos_t copyLength){
-    //      [          writed                 ]
-    //                                        [    cached buf    |        empty buf         ]
+    //      第三方实现细节。
+    //                                        [    cached buf    |        空 buf         ]
     const hpatch_TStreamInput* src=(const hpatch_TStreamInput*)self->dstStream;
     hpatch_StreamPos_t srcPos=self->writeToPos+self->cacheCur-aheadLength;
-    if (src->read==0) //can't read
+    if (src->read==0) //可以't 读取
         return _hpatch_FALSE;
     if ((aheadLength<1)|(aheadLength>self->writeToPos+self->cacheCur))
             return _hpatch_FALSE;
     
-    if (srcPos+copyLength<=self->writeToPos){//copy from stream
-        //    [        copyLength          ]
+    if (srcPos+copyLength<=self->writeToPos){//复制 从 流
+        //    第三方实现细节。
 __copy_in_stream:
         return _TOutStreamCache_copyFromStream(self,src,srcPos,copyLength);
-    }else if (srcPos>=self->writeToPos){ //copy in mem
-        //                                      [        copyLength        ]
+    }else if (srcPos>=self->writeToPos){ //复制 在 mem
+        //                                      第三方实现细节。
 __copy_in_mem:
         while (copyLength>0){
             hpatch_byte* dstBuf=self->cacheBuf+self->cacheCur;
@@ -718,12 +718,12 @@ __copy_in_mem:
         }
         return hpatch_TRUE;
     }else if (self->writeToPos+self->cacheCur<=srcPos+self->cacheEnd){ 
-        // small data in stream，can as copy in mem
+        // small 数据 在 流，可以 作为 复制 在 mem
         hpatch_byte* dstBuf=self->cacheBuf+self->cacheCur;
         hpatch_size_t runLen=(hpatch_size_t)(self->writeToPos-srcPos);
         if (!src->read(src,srcPos,dstBuf,dstBuf+runLen))
             return _hpatch_FALSE;
-        //srcPos+=runLen; //not used
+        //srcPos+=runLen; //不 已使用
         copyLength-=runLen;
         self->cacheCur+=runLen;
         if (self->cacheCur==self->cacheEnd){
@@ -734,7 +734,7 @@ __copy_in_mem:
                 }
                 if (copyLength>0){
                     runLen=(self->cacheEnd<=copyLength)?self->cacheEnd:(hpatch_size_t)copyLength;
-                    //srcPos+=runLen; //not used
+                    //srcPos+=runLen; //不 已使用
                     copyLength-=runLen;
                     self->cacheCur=runLen;
                 }else{
@@ -761,7 +761,7 @@ typedef struct _TBytesRle_load_stream{
 hpatch_inline
 static void _TBytesRle_load_stream_init(_TBytesRle_load_stream* loader){
     loader->memSetLength=0;
-    loader->memSetValue=0;//nil;
+    loader->memSetValue=0;//第三方实现细节。
     loader->memCopyLength=0;
     _TStreamCacheClip_init(&loader->ctrlClip,0,0,0,0,0);
     _TStreamCacheClip_init(&loader->rleCodeClip,0,0,0,0,0);
@@ -1141,7 +1141,7 @@ static hpatch_BOOL _patch_stream_with_cache(const hpatch_TStreamOutput* out_newD
         struct _TPackedCovers* packedCovers;
         if (!_packedCovers_open(&packedCovers,&diffHead,serializedDiff,temp_cache+cacheSize*(_kCachePatCount-3),
                                 temp_cache_end)) return _hpatch_FALSE;
-            pcovers=&packedCovers->base.ICovers; //not need close before return
+            pcovers=&packedCovers->base.ICovers; //返回前无需关闭
     }else{
         pcovers=cached_covers;
         if (!read_diff_head(&diffHead,serializedDiff)) return _hpatch_FALSE;
@@ -1156,7 +1156,7 @@ static hpatch_BOOL _patch_stream_with_cache(const hpatch_TStreamOutput* out_newD
     {//rle
         hpatch_StreamPos_t rleCtrlSize;
         hpatch_StreamPos_t rlePos0;
-        TStreamCacheClip*  rleHeadClip=&rle_loader.ctrlClip;//rename, share address
+        TStreamCacheClip*  rleHeadClip=&rle_loader.ctrlClip;//第三方实现细节。
 #ifdef __RUN_MEM_SAFE_CHECK
         if (cacheSize<hpatch_kMaxPackedUIntBytes) return _hpatch_FALSE;
 #endif
@@ -1192,13 +1192,13 @@ hpatch_BOOL read_diffz_head(hpatch_compressedDiffInfo* out_diffInfo,_THDiffzHead
     TByte             temp_cache[hpatch_kStreamCacheSize];
     _TStreamCacheClip_init(&_diffHeadClip,compressedDiff,0,compressedDiff->streamSize,
                            temp_cache,hpatch_kStreamCacheSize);
-    {//type
+    {//类型
         const char* kVersionType="HDIFF13";
         char* tempType=out_diffInfo->compressType;
         if (!_TStreamCacheClip_readType_end(diffHeadClip,'&',tempType)) return _hpatch_FALSE;
         if (0!=strcmp(tempType,kVersionType)) return _hpatch_FALSE;
     }
-    {//read compressType
+    {//读取 compressType
         if (!_TStreamCacheClip_readType_end(diffHeadClip,'\0',
                                             out_diffInfo->compressType)) return _hpatch_FALSE;
         out_head->typesEndPos=_TStreamCacheClip_readPosOfSrcStream(diffHeadClip);
@@ -1317,11 +1317,11 @@ hpatch_BOOL _patch_decompress_cache(const hpatch_TStreamOutput*  out_newData,
             pcovers=cached_covers;
         }else{
             _covers_init(&covers,coverCount,&coverClip,&coverClip,&coverClip,hpatch_TRUE);
-            pcovers=&covers.ICovers;  //not need close before return
+            pcovers=&covers.ICovers;  //返回前无需关闭
         }
         result=patchByClip(&outCache,oldData,pcovers,&code_newDataDiffClip,&rle_loader,
                            temp_cache,cacheSize);
-        //if ((pcovers!=cached_covers)&&(!pcovers->close(pcovers))) result=_hpatch_FALSE;
+        //如果 ((pcovers!=cached_covers)&&(!pcovers->关闭(pcovers))) 结果=_hpatch_FALSE;
     }
 clear:
     for (i=0;i<sizeof(decompressers)/sizeof(_TDecompressInputStream);++i) {
@@ -1405,7 +1405,7 @@ typedef struct hpatch_TCCover32{
     hpatch_uint32_t oldPos;
     hpatch_uint32_t newPos;
     hpatch_uint32_t length;
-    hpatch_uint32_t cachePos; //todo:放到临时内存中,用完释放?逻辑会比较复杂;
+    hpatch_uint32_t cachePos; //待办:放到临时内存中,用完释放?逻辑会比较复杂;
 } hpatch_TCCover32;
 
 typedef struct hpatch_TCCover64{
@@ -1568,7 +1568,7 @@ static hpatch_size_t _getMaxCachedLen(const _TArrayCovers* src_covers,
     _TArrayCovers cur_covers=*src_covers;
     hpatch_size_t cacheSize=temp_cache_end-temp_cache;
     hpatch_StreamPos_t memSize=arrayCovers_memSize(src_covers->coverCount,src_covers->is32);
-    _cache_alloc(cur_covers.pCCovers,void,memSize,temp_cache,temp_cache_end); //fail return 0
+    _cache_alloc(cur_covers.pCCovers,void,memSize,temp_cache,temp_cache_end); //失败时返回 0
     memcpy(cur_covers.pCCovers,src_covers->pCCovers,(hpatch_size_t)memSize);
     _arrayCovers_sort_by_len(&cur_covers);
     
@@ -1594,7 +1594,7 @@ static hpatch_size_t _set_cache_pos(_TArrayCovers* covers,hpatch_size_t maxCache
     hpatch_StreamPos_t oldPosBegin=hpatch_kNullStreamPos;
     hpatch_StreamPos_t oldPosEnd=0;
     hpatch_size_t cacheCoverCount=0;
-    hpatch_size_t sum=0;//result
+    hpatch_size_t sum=0;//结果
     hpatch_size_t i;
     for (i=0; i<coverCount;++i) {
         hpatch_StreamPos_t clen=_arrayCovers_get_len(covers,i);
@@ -1618,7 +1618,7 @@ static hpatch_size_t _set_cache_pos(_TArrayCovers* covers,hpatch_size_t maxCache
 
 //一个比较简单的缓存策略:
 //  1. 根据缓冲区大小限制，选择出最短的一批覆盖线来缓存;
-//  2. 顺序访问一次oldData文件，填充这些缓存;
+//  2. 顺序访问一次旧数据文件，填充这些缓存;
 //  3. 顺序访问时跳过中间过大的对缓存无用的区域;
 
 static hpatch_BOOL _cache_old_load(const hpatch_TStreamInput*oldData,
@@ -1649,7 +1649,7 @@ static hpatch_BOOL _cache_old_load(const hpatch_TStreamInput*oldData,
         hpatch_size_t readLen=(cache_buf_end-cache_buf);
         if (readLen>(oldPosAllEnd-oldPos)) readLen=(hpatch_size_t)(oldPosAllEnd-oldPos);
         if (!oldData->read(oldData,oldPos,cache_buf,
-                           cache_buf+readLen)) { result=_hpatch_FALSE; break; } //error
+                           cache_buf+readLen)) { result=_hpatch_FALSE; break; } //错误
         oldPosEnd=oldPos+readLen;
         for (i=cur_i;i<coverCount;++i){
             hpatch_StreamPos_t ioldPos,ioldPosEnd;
@@ -1662,39 +1662,39 @@ static hpatch_BOOL _cache_old_load(const hpatch_TStreamInput*oldData,
             ioldPos=_arrayCovers_get_oldPos(arrayCovers,i);
             ioldPosEnd=ioldPos+ilen;
             if (ioldPosEnd>oldPos){
-                //        [oldPos                  oldPosEnd]
+                //        第三方实现细节。
                 //                           ioldPosEnd]----or----]
-                if (ioldPos<oldPosEnd){//有交集,需要cache
-                //  [----or----[ioldPos      ioldPosEnd]----or----]
+                if (ioldPos<oldPosEnd){//有交集,需要缓存
+                //  [----或----[ioldPos      ioldPosEnd]----或----]
                     hpatch_StreamPos_t from;
                     hpatch_size_t      copyLen;
                     hpatch_StreamPos_t dstPos=_arrayCovers_get_cachePos(arrayCovers,i);
-                    //assert(dstPos<=(hpatch_size_t)(old_cache_end-old_cache));
+                    //第三方实现细节。
                     if (ioldPos>=oldPos){
-                //             [ioldPos      ioldPosEnd]----or----]
+                //             [ioldPos      ioldPosEnd]----或----]
                         from=ioldPos;
                     }else{
-                //  [ioldPos                 ioldPosEnd]----or----]
+                //  [ioldPos                 ioldPosEnd]----或----]
                         from=oldPos;
                         dstPos+=(oldPos-ioldPos);
                     }
                     copyLen=(hpatch_size_t)(((ioldPosEnd<=oldPosEnd)?ioldPosEnd:oldPosEnd)-from);
-                    //assert(dstPos+copyLen<=(hpatch_size_t)(old_cache_end-old_cache));
-                    //assert(sumCacheLen>=copyLen);
+                    //第三方实现细节。
+                    //第三方实现细节。
                     memcpy(old_cache+(hpatch_size_t)dstPos,cache_buf+(from-oldPos),copyLen);
                     sumCacheLen-=copyLen;
                     if ((i==cur_i)&(oldPosEnd>=ioldPosEnd))
                         ++cur_i;
                 }else{//后面覆盖线暂时都不会与当前数据有交集了,下一块数据;
-                //  [oldPos     oldPosEnd]
-                //                        [ioldPos      ioldPosEnd]
+                //  第三方实现细节。
+                //                        第三方实现细节。
                     if ((i==cur_i)&&(ioldPos-oldPosEnd>=kMinSpaceLen))
                         oldPosEnd=_hpatch_align_type_lower(hpatch_StreamPos_t,ioldPos,kAccessPageSize);
                     break;
                 }
             }else{//当前覆盖线已经落后于当前数据,下一个覆盖线;
-                //                        [oldPos     oldPosEnd]
-                // [ioldPos    ioldPosEnd]
+                //                        第三方实现细节。
+                // 第三方实现细节。
                 if (i==cur_i)
                     ++cur_i;
             }
@@ -1723,10 +1723,10 @@ static hpatch_BOOL _cache_old_StreamInput_read(const hpatch_TStreamInput* stream
     _cache_old_TStreamInput* self=(_cache_old_TStreamInput*)stream->streamImport;
     hpatch_StreamPos_t dataLen=(hpatch_size_t)(self->readFromPosEnd-self->readFromPos);
     hpatch_size_t readLen;
-    if (dataLen==0){//next cover
+    if (dataLen==0){//下一个覆盖块
         hpatch_StreamPos_t oldPos;
         hpatch_size_t i=self->arrayCovers.cur_index++;
-        if (i>=self->arrayCovers.coverCount) return _hpatch_FALSE;//error;
+        if (i>=self->arrayCovers.coverCount) return _hpatch_FALSE;//错误;
         oldPos=_arrayCovers_get_oldPos(&self->arrayCovers,i);
         dataLen=_arrayCovers_get_len(&self->arrayCovers,i);
         self->isInHitCache=(dataLen<=self->maxCachedLen);
@@ -1734,7 +1734,7 @@ static hpatch_BOOL _cache_old_StreamInput_read(const hpatch_TStreamInput* stream
         self->readFromPosEnd=oldPos+dataLen;
     }
     readLen=out_data_end-out_data;
-    if ((readLen>dataLen)||(self->readFromPos!=readFromPos)) return _hpatch_FALSE; //error
+    if ((readLen>dataLen)||(self->readFromPos!=readFromPos)) return _hpatch_FALSE; //错误
     self->readFromPos=readFromPos+readLen;
     if (self->isInHitCache){
         assert(readLen<=(hpatch_size_t)(self->cachesEnd-self->caches));
@@ -1810,7 +1810,7 @@ static hpatch_BOOL _patch_cache(hpatch_TCovers** out_covers,
     TByte* temp_cache_end=*ptemp_cache_end;
     *out_isReadError=hpatch_FALSE;
     if ((hpatch_size_t)(temp_cache_end-temp_cache)>=oldData->streamSize+kMinCacheSize
-        +sizeof(hpatch_TStreamInput)+sizeof(hpatch_StreamPos_t)){//load all oldData
+        +sizeof(hpatch_TStreamInput)+sizeof(hpatch_StreamPos_t)){//加载 全部 旧数据
         hpatch_TStreamInput* replace_oldData=0;
         _cache_alloc(replace_oldData,hpatch_TStreamInput,sizeof(hpatch_TStreamInput),
                      temp_cache,temp_cache_end);
@@ -1819,8 +1819,8 @@ static hpatch_BOOL _patch_cache(hpatch_TCovers** out_covers,
         
         mem_as_hStreamInput(replace_oldData,temp_cache_end-oldData->streamSize,temp_cache_end);
         temp_cache_end-=oldData->streamSize;
-        // [          patch cache            |       oldData cache     ]
-        // [ (cacheSize-oldData->streamSize) |  (oldData->streamSize)  ]
+        // [          补丁 缓存            |       旧数据 缓存     ]
+        // [ (cacheSize-旧数据->streamSize) |  (旧数据->streamSize)  ]
         *out_covers=0;
         *poldData=replace_oldData;
         *ptemp_cache=temp_cache;
@@ -1843,8 +1843,8 @@ static hpatch_BOOL _patch_cache(hpatch_TCovers** out_covers,
             if ((oldData->streamSize!=diffInfo.oldDataSize)||(newDataSize!=diffInfo.newDataSize))
                 { *out_isReadError=hpatch_TRUE; return _hpatch_FALSE; }
             temp_cache_end-=kBestACacheSize+sizeof(_TCompressedCovers);
-            // [                       ...                                 |   compressedCovers cache   ]
-            // [           (cacheSize-kBestACacheSize)                     |      (kBestACacheSize)     ]
+            // [                       ...                                 |   compressedCovers 缓存   ]
+            // 第三方实现细节。
             *out_covers=&compressedCovers->base.ICovers;
             isUsedCover32=(diffInfo.oldDataSize|diffInfo.newDataSize)<((hpatch_StreamPos_t)1<<32);
         }else{
@@ -1855,8 +1855,8 @@ static hpatch_BOOL _patch_cache(hpatch_TCovers** out_covers,
                                     temp_cache_end-kBestACacheSize*3-sizeof(_TPackedCovers),temp_cache_end))
                 { *out_isReadError=hpatch_TRUE; return _hpatch_FALSE; }
             temp_cache_end-=kBestACacheSize*3+sizeof(_TPackedCovers);
-            // [                       ...                                 |     packedCovers cache     ]
-            // [          (cacheSize-kBestACacheSize*3)                    |    (kBestACacheSize*3)     ]
+            // [                       ...                                 |     packedCovers 缓存     ]
+            // 第三方实现细节。
             *out_covers=&packedCovers->base.ICovers;
             isUsedCover32=(oldDataSize|newDataSize)<((hpatch_StreamPos_t)1<<32);
         }
@@ -1864,34 +1864,34 @@ static hpatch_BOOL _patch_cache(hpatch_TCovers** out_covers,
         if (!_arrayCovers_load(&arrayCovers,*out_covers,isUsedCover32,
                                out_isReadError,&temp_cache,temp_cache_end-kBestACacheSize)){
             if (*out_isReadError) return _hpatch_FALSE;
-            // [                    patch cache                            |       *edCovers cache      ]
-            // [           (cacheSize-kBestACacheSize*?)                   |     (kBestACacheSize*?)    ]
+            // [                    补丁 缓存                            |       *edCovers 缓存      ]
+            // 第三方实现细节。
             *ptemp_cache=temp_cache;
             *ptemp_cache_end=temp_cache_end;
             return hpatch_FALSE;
         }else{
-            // [         arrayCovers cache         |                         ...                        ]
-            // [((new temp_cache)-(old temp_cache))|          (cacheSize-(arrayCovers cache size))      ]
+            // [         arrayCovers 缓存         |                         ...                        ]
+            // [((新 temp_cache)-(旧 temp_cache))|          (cacheSize-(arrayCovers 缓存 大小))      ]
             TByte* old_cache_end;
             hpatch_TStreamInput* replace_oldData=0;
             assert(!(*out_isReadError));
             if (!((*out_covers)->close(*out_covers))) return _hpatch_FALSE;
             *out_covers=&arrayCovers->ICovers;
-            temp_cache_end=temp_cache_end_back; //free compressedCovers or packedCovers memory
+            temp_cache_end=temp_cache_end_back; //释放 compressedCovers 或 packedCovers 内存
             old_cache_end=temp_cache_end-kBestACacheSize*kCacheCount;
-            // [       arrayCovers cache           |        ...        |      patch reserve cache       ]
-            // [                                   |        ...        | (kBestACacheSize*kCacheCount) ]
+            // [       arrayCovers 缓存           |        ...        |      补丁 reserve 缓存       ]
+            // 第三方实现细节。
             if (((hpatch_size_t)(temp_cache_end-temp_cache)<=kBestACacheSize*kCacheCount)
                 ||(!_cache_old(&replace_oldData,oldData,arrayCovers,out_isReadError,
                                temp_cache,&old_cache_end,temp_cache_end))){
                 if (*out_isReadError) return _hpatch_FALSE;
-            // [         arrayCovers cache         |                   patch cache                      ]
+            // [         arrayCovers 缓存         |                   补丁 缓存                      ]
                 *ptemp_cache=temp_cache;
                 *ptemp_cache_end=temp_cache_end;
                 return hpatch_FALSE;
             }else{
-            // [         arrayCovers cache         | oldData cache |             patch cache            ]
-            // [                                   |               |(temp_cache_end-(new old_cache_end))]
+            // [         arrayCovers 缓存         | 旧数据 缓存 |             补丁 缓存            ]
+            // [                                   |               |(temp_cache_end-(新 old_cache_end))]
                 assert(!(*out_isReadError));
                 assert((hpatch_size_t)(temp_cache_end-old_cache_end)>=kBestACacheSize*kCacheCount);
                 temp_cache=old_cache_end;
@@ -1904,7 +1904,7 @@ static hpatch_BOOL _patch_cache(hpatch_TCovers** out_covers,
         }
     }
 #endif//_IS_NEED_CACHE_OLD_BY_COVERS
-    return hpatch_FALSE;//not cache oldData
+    return hpatch_FALSE;//不缓存旧数据
 }
 
 hpatch_BOOL patch_stream_with_cache(const struct hpatch_TStreamOutput* out_newData,
@@ -1912,14 +1912,14 @@ hpatch_BOOL patch_stream_with_cache(const struct hpatch_TStreamOutput* out_newDa
                                     const struct hpatch_TStreamInput*  serializedDiff,
                                     TByte*   temp_cache,TByte* temp_cache_end){
     hpatch_BOOL     result;
-    hpatch_TCovers* covers=0;//not need close before return
+    hpatch_TCovers* covers=0;//返回前无需关闭
     hpatch_BOOL    isReadError=hpatch_FALSE;
     _patch_cache(&covers,&oldData,out_newData->streamSize,serializedDiff,hpatch_FALSE,0,
                 _kCachePatCount,&temp_cache,&temp_cache_end,&isReadError);
     if (isReadError) return _hpatch_FALSE;
     result=_patch_stream_with_cache(out_newData,oldData,serializedDiff,covers,
                                     temp_cache,temp_cache_end);
-    //if ((covers!=0)&&(!covers->close(covers))) result=_hpatch_FALSE;
+    //如果 ((covers!=0)&&(!covers->关闭(covers))) 结果=_hpatch_FALSE;
     return result;
 }
 
@@ -1937,7 +1937,7 @@ hpatch_BOOL patch_decompress_with_cache(const hpatch_TStreamOutput* out_newData,
                                         hpatch_TDecompress* decompressPlugin,
                                         TByte* temp_cache,TByte* temp_cache_end){
     hpatch_BOOL     result;
-    hpatch_TCovers* covers=0; //need close before return
+    hpatch_TCovers* covers=0; //需要 关闭 之前 返回
     hpatch_BOOL    isReadError=hpatch_FALSE;
     _patch_cache(&covers,&oldData,out_newData->streamSize,compressedDiff,hpatch_TRUE,
                  decompressPlugin,_kCacheDecCount,&temp_cache,&temp_cache_end,&isReadError);
@@ -1992,7 +1992,7 @@ hpatch_BOOL hpatch_coverList_open_compressedDiff(hpatch_TCoverList* out_coverLis
 
 //
 
-#define     _kCacheSgCount  3
+#定义     _kCacheSgCount  3
 
 hpatch_BOOL patch_single_compressed_diff(const hpatch_TStreamOutput* out_newData,
                                          const hpatch_TStreamInput*  oldData,
@@ -2038,13 +2038,13 @@ hpatch_BOOL getSingleCompressedDiffInfo(hpatch_singleCompressedDiffInfo* out_dif
     TByte             temp_cache[hpatch_kStreamCacheSize];
     _TStreamCacheClip_init(&_diffHeadClip,singleCompressedDiff,diffInfo_pos,singleCompressedDiff->streamSize,
                            temp_cache,hpatch_kStreamCacheSize);
-    {//type
+    {//类型
         const char* kVersionType="HDIFFSF20";
         char* tempType=out_diffInfo->compressType;
         if (!_TStreamCacheClip_readType_end(diffHeadClip,'&',tempType)) return 1099;
         if (0!=strcmp(tempType,kVersionType)) return 1002;
     }
-    {//read compressType
+    {//读取 compressType
         if (!_TStreamCacheClip_readType_end(diffHeadClip,'\0',
                                             out_diffInfo->compressType)) return 1003;
     }
@@ -2211,7 +2211,7 @@ hpatch_BOOL patch_single_stream_diff(const hpatch_TStreamOutput*  out_newData,
     assert(diffData_posEnd<=uncompressedDiffData->streamSize);
     sspatch_covers_init(&covers);
     if (coversListener) assert(coversListener->onStepCovers);
-    {//cache
+    {//缓存
         if ((size_t)(temp_cache_end-temp_cache)<stepMemSize+hpatch_kStreamCacheSize*_kCacheSgCount) return _hpatch_FALSE;
         temp_cache+=stepMemSize;
         cache_size=(temp_cache_end-temp_cache)/_kCacheSgCount;
@@ -2220,9 +2220,9 @@ hpatch_BOOL patch_single_stream_diff(const hpatch_TStreamOutput*  out_newData,
         temp_cache+=cache_size;
         _TOutStreamCache_init(&outCache,out_newData,temp_cache+cache_size,cache_size);
     }
-    while (coverCount) {//step loop
+    while (coverCount) {//步骤循环
         rle0_decoder_t       rle0_decoder;
-        {//read step info
+        {//读取步骤信息
             unsigned char*      covers_cacheEnd;
             unsigned char*      bufRle_cache_end;
             {
@@ -2246,7 +2246,7 @@ hpatch_BOOL patch_single_stream_diff(const hpatch_TStreamOutput*  out_newData,
             sspatch_covers_setCoversCache(&covers,step_cache,covers_cacheEnd);
             _rle0_decoder_init(&rle0_decoder,covers_cacheEnd,bufRle_cache_end);
         }
-        while (sspatch_covers_isHaveNextCover(&covers)) {//cover loop
+        while (sspatch_covers_isHaveNextCover(&covers)) {//覆盖块循环
             if (!sspatch_covers_nextCover(&covers)) 
                 return _hpatch_FALSE;
             if (covers.cover.newPos>covers.lastNewEnd){
@@ -2281,9 +2281,9 @@ hpatch_BOOL patch_single_stream_diff(const hpatch_TStreamOutput*  out_newData,
 
 static hpatch_BOOL _TDiffToSingleStream_read(const struct hpatch_TStreamInput* stream,hpatch_StreamPos_t readFromPos,
                                            unsigned char* out_data,unsigned char* out_data_end){
-    //[                                                         |readedSize                  ]
-    //     [     |cachedBufBegin   _TDiffToSingleStream_kBufSize]
-    //                                 readFromPos[out_data       out_data_end]
+    //第三方实现细节。
+    //     第三方实现细节。
+    //                                 第三方实现细节。
     TDiffToSingleStream* self=(TDiffToSingleStream*)stream->streamImport;
     hpatch_StreamPos_t readedSize=self->readedSize;
     while (1){
@@ -2294,7 +2294,7 @@ static hpatch_BOOL _TDiffToSingleStream_read(const struct hpatch_TStreamInput* s
             if ((self->isInSingleStream)||(rLen>_TDiffToSingleStream_kBufSize)){
                 self->cachedBufBegin=_TDiffToSingleStream_kBufSize;
             }else{
-                //cache
+                //缓存
                 if (rLen>=_TDiffToSingleStream_kBufSize){
                     memcpy(self->buf,out_data_end-_TDiffToSingleStream_kBufSize,_TDiffToSingleStream_kBufSize);
                     self->cachedBufBegin = 0;

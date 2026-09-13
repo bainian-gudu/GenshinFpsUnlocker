@@ -148,7 +148,7 @@ impl std::error::Error for ClassifiedNetworkError {
     }
 }
 
-// 为了与现有的anyhow错误系统兼容，实现到io::Error的转换
+// 为了与现有的anyhow错误系统兼容，实现到io::错误的转换
 impl From<ClassifiedNetworkError> for std::io::Error {
     fn from(err: ClassifiedNetworkError) -> Self {
         let error_kind = match err.error_type {
@@ -171,14 +171,14 @@ pub struct NetworkInsightStream<S> {
     network_bytes: Arc<AtomicU64>,
     response_received_time: Instant,
     url: String,            // 新增：保存URL用于错误处理
-    range: Vec<(u32, u32)>, // 新增：保存Range用于错误处理
+    range: Vec<(u32, u32)>, // 新增：保存范围用于错误处理
 
-    // Download stall detection fields
-    content_length: Option<u64>,           // Total file size
-    last_stall_check: Instant,             // Last 5-second stall check time
-    last_stall_check_bytes: u64,           // Bytes at last 5-second check
-    slow_detection_start: Option<Instant>, // Start time for 30-second slow detection
-    slow_window_start_bytes: u64,          // Bytes at start of 30-second window
+    // 下载 stall detection fields
+    content_length: Option<u64>,           // 总计 文件 大小
+    last_stall_check: Instant,             // 最后 5-第二个 stall 检查 time
+    last_stall_check_bytes: u64,           // 字节 at 最后 5-第二个 检查
+    slow_detection_start: Option<Instant>, // 开始 time 用于 30-第二个 缓慢 detection
+    slow_window_start_bytes: u64,          // 字节 at 开始 的 30-第二个 窗口
 }
 
 // 为AsyncRead实现
@@ -207,9 +207,9 @@ impl<S: AsyncRead + Unpin> AsyncRead for NetworkInsightStream<S> {
                         insight.time = self.response_received_time.elapsed().as_millis() as u32;
                     }
 
-                    // Check download health
+                    // 检查 下载 健康状态
                     if let Err(classified_error) = self.check_download_health() {
-                        // Update insight with classified error
+                        // 更新 insight 使用 classified 错误
                         if let Ok(mut insight) = self.insight.try_lock() {
                             insight.error = Some(classified_error.context.clone());
                             insight.time = self.response_received_time.elapsed().as_millis() as u32;
@@ -258,7 +258,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for NetworkInsightStream<S> {
     }
 }
 
-// 为Stream实现
+// 为流实现
 impl<S, E> Stream for NetworkInsightStream<S>
 where
     S: Stream<Item = Result<Bytes, E>> + Unpin,
@@ -283,11 +283,11 @@ where
                     insight.time = self.response_received_time.elapsed().as_millis() as u32;
                 }
 
-                // Note: Download health check is mainly handled in AsyncRead implementation
-                // For streams, the check will happen when data is actually read
+                // 下载状态检查主要由 AsyncRead 实现负责
+                // 对于流，会在实际读取数据时进行检查
             }
             Poll::Ready(Some(Err(e))) => {
-                // Stream 实现中只更新 insight，因为泛型 E 的限制
+                // 流 实现中只更新 insight，因为泛型 E 的限制
                 // 实际的错误处理会在转换为 AsyncRead 时进行
                 let io_error = std::io::Error::other(e.to_string());
                 let error_type = ClassifiedNetworkError::classify_error(&io_error);
@@ -377,7 +377,7 @@ impl<S> NetworkInsightStream<S> {
             network_bytes: Arc::new(AtomicU64::new(0)),
             response_received_time,
             url: crate::utils::url::sanitize_url_for_logging(&url), // 保存URL
-            range,                                                  // 保存Range
+            range,                                                  // 保存范围
             content_length,
             last_stall_check: now,
             last_stall_check_bytes: 0,
@@ -386,17 +386,17 @@ impl<S> NetworkInsightStream<S> {
         }
     }
 
-    /// Check for download health issues
-    /// Returns ClassifiedNetworkError if download is stalled or too slow
+    /// 检查下载是否停滞或过慢。
+    /// 下载停滞或过慢时返回 ClassifiedNetworkError。
     fn check_download_health(&mut self) -> Result<(), ClassifiedNetworkError> {
         let current_bytes = self.network_bytes.load(Ordering::Relaxed);
         let now = Instant::now();
 
-        // 1. DOWNLOAD_STALLED detection (almost no progress in 5 seconds)
+        // 1. DOWNLOAD_STALLED detection (almost 无 进度 在 5 秒)
         if now.duration_since(self.last_stall_check) >= Duration::from_secs(5) {
             let progress = current_bytes - self.last_stall_check_bytes;
             if progress < 5 * 1024 {
-                // <5KB in 5 seconds
+                // <5KB 在 5 秒
                 let base_error =
                     std::io::Error::new(std::io::ErrorKind::TimedOut, DOWNLOAD_STALLED);
                 return Err(ClassifiedNetworkError::new(
@@ -410,25 +410,25 @@ impl<S> NetworkInsightStream<S> {
             self.last_stall_check_bytes = current_bytes;
         }
 
-        // 2. DOWNLOAD_TOO_SLOW detection (large file slow download)
+        // 2. DOWNLOAD_TOO_SLOW detection (large 文件 缓慢 下载)
         if let Some(total_size) = self.content_length {
             if total_size > 10 * 1024 * 1024 {
-                // >10MB
+                // 相关实现：>10MB
                 let progress_ratio = current_bytes as f64 / total_size as f64;
 
                 if progress_ratio < 0.5 {
-                    // Progress < 50%
+                    // 进度 < 50%
                     if self.slow_detection_start.is_none() {
-                        // Start slow detection
+                        // 开始 缓慢 detection
                         self.slow_detection_start = Some(now);
                         self.slow_window_start_bytes = current_bytes;
                     } else if let Some(start_time) = self.slow_detection_start {
                         if now.duration_since(start_time) >= Duration::from_secs(30) {
                             let window_progress = current_bytes - self.slow_window_start_bytes;
-                            let avg_speed = window_progress / 30; // bytes per second
+                            let avg_speed = window_progress / 30; // 字节 每 第二个
 
                             if avg_speed < 100 * 1024 {
-                                // <100KB/s
+                                // <100KB/的
                                 let base_error = std::io::Error::other(DOWNLOAD_TOO_SLOW);
                                 return Err(ClassifiedNetworkError::new(
                                     NetworkErrorType::DownloadTooSlow,
@@ -438,13 +438,13 @@ impl<S> NetworkInsightStream<S> {
                                 ));
                             }
 
-                            // Reset 30-second window
+                            // 重置 30-第二个 窗口
                             self.slow_detection_start = Some(now);
                             self.slow_window_start_bytes = current_bytes;
                         }
                     }
                 } else {
-                    // Progress > 50%, stop slow detection
+                    // 进度 > 50%, 停止 缓慢 detection
                     self.slow_detection_start = None;
                 }
             }
@@ -464,7 +464,7 @@ impl<S> NetworkInsightStream<S> {
         if let Ok(insight) = self.insight.lock() {
             insight.clone()
         } else {
-            // fallback
+            // 回退
             InsightItem {
                 url: "unknown".to_string(),
                 ttfb: 0,
@@ -528,7 +528,7 @@ pub async fn check_local_files(
             None => break,
         }
     }
-    // send first progress
+    // 发送初始进度
     notify(serde_json::json!((0, files.len())));
     let len = files.len();
     let mut joinset = tokio::task::JoinSet::new();
@@ -582,7 +582,7 @@ pub async fn is_dir_empty(path: String, exe_name: String) -> (bool, bool) {
     if entries.is_err() {
         return (true, false);
     }
-    // check if exe exists
+    // 检查 如果 exe 存在
     let exe_path = path.join(exe_name.clone());
     if !exe_name.is_empty() && exe_path.exists() {
         return (false, true);
@@ -834,16 +834,25 @@ pub async fn create_local_stream(
 
 pub async fn prepare_target(target: &str) -> Result<Option<PathBuf>, anyhow::Error> {
     let target = Path::new(&target);
+    if !target.is_absolute()
+        || target
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        || crate::installer::uninstall::has_reparse_point(target)
+        || !crate::installer::uninstall::is_safe_delete_target(target)
+    {
+        return Err(anyhow::anyhow!("Invalid or unsafe target path").context("INVALID_TARGET_ERR"));
+    }
     let exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
     let mut override_path = None;
 
-    // check if target is the same as exe path
-    if exe_path == target && exe_path.exists() {
-        // if same, rename the exe to exe.old
+    // 检查目标路径是否与当前 exe 路径相同
+    if crate::installer::uninstall::path_eq(&exe_path, target) && exe_path.exists() {
+        // 相同时将当前 exe 重命名为 exe.old
         let old_exe = exe_path.with_extension("instbak");
-        // delete old_exe if exists
+        // 删除 old_exe 如果 存在
         let _ = tokio::fs::remove_file(&old_exe).await;
-        // rename current exe to old_exe
+        // 将当前 exe 重命名为 old_exe
         tokio::fs::rename(&exe_path, &old_exe)
             .await
             .context("RENAME_EXE_ERR")?;
@@ -854,7 +863,7 @@ pub async fn prepare_target(target: &str) -> Result<Option<PathBuf>, anyhow::Err
             .replace(old_exe.to_string_lossy().to_string());
     }
 
-    // ensure dir
+    // 确保 目录
     let parent = target.parent().context("GET_PARENT_DIR_ERR")?;
     tokio::fs::create_dir_all(parent)
         .await
@@ -863,6 +872,16 @@ pub async fn prepare_target(target: &str) -> Result<Option<PathBuf>, anyhow::Err
 }
 
 pub async fn create_target_file(target: &str) -> Result<impl AsyncWrite, anyhow::Error> {
+    let target_path = Path::new(target);
+    if !target_path.is_absolute()
+        || target_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        || crate::installer::uninstall::has_reparse_point(target_path)
+        || !crate::installer::uninstall::is_safe_delete_target(target_path)
+    {
+        return Err(anyhow::anyhow!("Invalid or unsafe target path").context("INVALID_TARGET_ERR"));
+    }
     let target_file = tokio::fs::File::create(target)
         .await
         .context("CREATE_TARGET_FILE_ERR")?;
@@ -955,7 +974,7 @@ where
     };
     let target_ori = target.clone();
     let old_target_old = target_cl.with_extension("patchold");
-    // try remove old_target_old, do not throw error if failed
+    // 尝试 移除 old_target_old, do 不 throw 错误 如果 失败
     let _ = tokio::fs::remove_file(old_target_old).await;
     let new_target = target_cl.with_extension("patching");
     let target_size = target_cl.metadata().context("GET_TARGET_SIZE_ERR")?;
@@ -981,38 +1000,38 @@ where
     .await
     .context("RUN_HPATCH_ERR")?;
     if res == 1 {
-        // move target to target.old
+        // 将目标文件移动到 target.old
         let old_target = target_cl.with_extension("old");
         let exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
         let target_path_ori = PathBuf::from(target_ori);
-        // if old file is not self
+        // 如果 旧 文件 是 不 self
         if exe_path != target_cl && exe_path != target_path_ori {
-            // rename to .old
+            // 重命名为 .old
             tokio::fs::rename(target_cl, old_target.clone())
                 .await
                 .context("RENAME_TARGET_ERR")?;
-            // rename new file to original
+            // 将新文件重命名为原文件名
             tokio::fs::rename(new_target, target_cl)
                 .await
                 .context("RENAME_NEW_TARGET_ERR")?;
-            // delete old file
+            // 删除 旧 文件
             tokio::fs::remove_file(old_target)
                 .await
                 .context("REMOVE_OLD_TARGET_ERR")?;
         } else {
             if override_old_path.is_none() {
-                // rename to .old
+                // 重命名为 .old
                 tokio::fs::rename(target_cl, old_target.clone())
                     .await
                     .context("RENAME_TARGET_ERR")?;
             }
-            // self is already renamed and cannot be deleted, just replace the new file
+            // 当前程序已重命名且无法删除，只需用新文件替换
             tokio::fs::rename(new_target, target_path_ori)
                 .await
                 .context("RENAME_NEW_TARGET_ERR")?;
         }
     } else {
-        // delete new target
+        // 删除 新 目标
         tokio::fs::remove_file(new_target)
             .await
             .context("REMOVE_NEW_TARGET_ERR")?;

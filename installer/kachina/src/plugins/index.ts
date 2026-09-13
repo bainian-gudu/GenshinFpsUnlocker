@@ -20,11 +20,11 @@ export class PluginManager {
     const beforeProtocol = url.substring(0, protocolIndex);
     const afterProtocol = url.substring(protocolIndex);
     
-    // 检查是否有plugin-强制指定格式
+    // 检查是否有插件-强制指定格式
     const pluginMatch = beforeProtocol.match(/plugin-([^+]+)\+(.*)$/);
     if (pluginMatch) {
       const [, pluginName, remainingPrefix] = pluginMatch;
-      // 重新组装URL，移除plugin-xxx+部分
+      // 重新组装URL，移除插件-xxx+部分
       const cleanUrl = remainingPrefix ? `${remainingPrefix}${afterProtocol}` : `https${afterProtocol}`;
       return { cleanUrl, forcedPlugin: pluginName };
     }

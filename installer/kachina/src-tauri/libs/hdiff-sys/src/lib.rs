@@ -31,9 +31,9 @@ extern "C" fn write_seek_callback(
         println!("Error in read_seek: {:?}", err);
         return 0;
     }
-    // buffer: out_data to out_data_end
+    // 缓冲区: out_data 到 out_data_end
     let buffer = unsafe { std::slice::from_raw_parts(out_data, write_size as usize) };
-    // read exact, return 0 if failed
+    // 读取 exact, 返回 0 如果 失败
     let res = input_wrapper.stream.write_all(buffer);
     if let Err(err) = res {
         println!("Error in write_seq_callback: {:?}", err);

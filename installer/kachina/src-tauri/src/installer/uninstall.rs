@@ -230,7 +230,7 @@ pub fn has_reparse_point(path: &Path) -> bool {
     while let Some(p) = current {
         let md = match std::fs::symlink_metadata(p) {
             Ok(md) => md,
-            // 路径（或某个父级）压根不存在：没什么可删的，交给后面的 exists() 判断
+            // 路径（或某个父级）压根不存在：没什么可删的，交给后面的 存在() 判断
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,
             // 属性读不到就别动它
             Err(_) => return true,
@@ -333,7 +333,7 @@ fn normalize_path_for_compare(p: &Path) -> String {
 }
 
 /// 路径相等比较：归一化后按字符串比（大小写不敏感、`/` 与 `\\` 等价）。
-fn path_eq(a: &Path, b: &Path) -> bool {
+pub(crate) fn path_eq(a: &Path, b: &Path) -> bool {
     normalize_path_for_compare(a) == normalize_path_for_compare(b)
 }
 
@@ -343,7 +343,7 @@ fn path_eq(a: &Path, b: &Path) -> bool {
 /// `current_exe()` 的大小写完全可能不一致（`C:\\Program Files` vs `c:\\program files`），
 /// 一旦比不上就会把「自己的卸载器」误判成「外部卸载器」，转而去删正在运行的自己。
 /// 也不用裸字符串前缀：`C:\\Foo` 会「以 `C:\\F` 开头」，必须按分隔符边界比。
-fn path_starts_with(child: &Path, parent: &Path) -> bool {
+pub(crate) fn path_starts_with(child: &Path, parent: &Path) -> bool {
     let c = normalize_path_for_compare(child);
     let p = normalize_path_for_compare(parent);
     if p.is_empty() || c.len() <= p.len() {
@@ -364,7 +364,7 @@ fn path_starts_with(child: &Path, parent: &Path) -> bool {
 /// `f` 是绝对路径时 `join` 会把 `source` 整个丢掉，`f` 带 `..` 时能逃出安装目录 ——
 /// 「删自己装的文件」就变成了「删任意文件」。这里要求：相对路径、无盘符/根前缀、
 /// 无 `..` 与 `.`、拼完仍落在安装目录内。不通过的一律跳过并记日志。
-fn is_safe_relative_member(base: &Path, entry: &str) -> bool {
+pub(crate) fn is_safe_relative_member(base: &Path, entry: &str) -> bool {
     let bytes = entry.as_bytes();
     if bytes.is_empty() || entry.contains('\0') {
         return false;
@@ -406,7 +406,7 @@ fn is_safe_relative_member(base: &Path, entry: &str) -> bool {
 ///
 /// 允许删这些目录**下面**的产品子目录，但不允许删它们自己。
 fn is_protected_root(path: &Path) -> bool {
-    // 盘符根 / UNC 根：`C:\`、`C:`、`\\server\share`
+    // 盘符根 / UNC 根：`C:\`、`C:`、`\\服务器\share`
     if path.parent().is_none() {
         return true;
     }
@@ -456,7 +456,10 @@ fn is_protected_root(path: &Path) -> bool {
         ("APPDATA", &["Microsoft"]),
         ("APPDATA", &["Microsoft", "Windows"]),
         ("APPDATA", &["Microsoft", "Windows", "Start Menu"]),
-        ("APPDATA", &["Microsoft", "Windows", "Start Menu", "Programs"]),
+        (
+            "APPDATA",
+            &["Microsoft", "Windows", "Start Menu", "Programs"],
+        ),
         (
             "APPDATA",
             &["Microsoft", "Windows", "Start Menu", "Programs", "Startup"],
@@ -491,11 +494,11 @@ fn is_protected_root(path: &Path) -> bool {
 /// 还额外挡掉两类灾难性目标：
 /// - 盘符根，以及只有一级的目录（`C:\Foo`）
 /// - 任何受保护根目录本身（见 `is_protected_root`）
-fn is_safe_delete_target(path: &Path) -> bool {
+pub(crate) fn is_safe_delete_target(path: &Path) -> bool {
     if !path.is_absolute() {
         return false;
     }
-    // `..` 既按 components 判、也按文本判：`Path::components()` 的分隔符语义随宿主平台
+    // `..` 既按 组件 判、也按文本判：`Path::components()` 的分隔符语义随宿主平台
     // 变化（Linux 上 `..\..\x` 是一个普通文件名），而这套判定要在两个平台上都成立
     // —— devcheck 的 logic 层在 Linux 上跑，CI 两边都跑。
     if path
@@ -776,7 +779,7 @@ fn collect_all_users_cleanup_targets(paths: &[String]) -> Vec<PathBuf> {
 /// 多用户残留清理：尽力而为，删不掉只记日志，绝不让卸载失败。
 async fn clean_per_user_leftovers(paths: &[String]) {
     for target in collect_all_users_cleanup_targets(paths) {
-        // 别叫 display：tracing 的宏会把 `{display}` 当成 field::display 函数
+        // 别叫 display：tracing 的宏会把 `{display}` 当成 字段::display 函数
         let target_str = target.display().to_string();
         let res = if target.is_dir() {
             tokio::fs::remove_dir_all(&target)
@@ -952,18 +955,20 @@ pub async fn run_uninstall(
 ) -> TAResult<Vec<String>> {
     let exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
     let source_path: &Path = Path::new(source.as_str());
-    // check if exe_path is in source（大小写不敏感，见 path_starts_with）
-    if DELETE_SELF_ON_EXIT_PATH.read().unwrap().is_none() && path_starts_with(&exe_path, source_path) {
+    // 检查 exe_path 是否位于 source 中（大小写不敏感，见 path_starts_with）
+    if DELETE_SELF_ON_EXIT_PATH.read().unwrap().is_none()
+        && path_starts_with(&exe_path, source_path)
+    {
         let tmp_dir = std::env::temp_dir();
         let mut tmp_uninstaller_path = tmp_dir.join(format!(
             "kachina.uninst.{}.exe",
             chrono::Utc::now().timestamp()
         ));
-        // try to move current exe to tmp_uninstaller_path
+        // 尝试将当前 exe 移动到 tmp_uninstaller_path
         let res = tokio::fs::rename(&exe_path, &tmp_uninstaller_path).await;
         if res.is_err() {
-            // move fail, maybe exe and tempdir is not in the same partition
-            // try move to parent dir
+            // 移动失败，可能是 exe 与临时目录不在同一分区
+            // 尝试移动到父目录
             let source_parent = Path::new(&source).parent();
             if let Some(source_parent) = source_parent {
                 tmp_uninstaller_path = source_parent.join(format!(
@@ -980,7 +985,7 @@ pub async fn run_uninstall(
                 );
             }
         }
-        // write delete_on_exit value
+        // 写入 delete_on_exit 值
         DELETE_SELF_ON_EXIT_PATH
             .write()
             .unwrap()
@@ -999,7 +1004,7 @@ pub async fn run_uninstall(
         }
     }
     if !path_starts_with(&exe_path, source_path) {
-        // external uninstaller
+        // 外部卸载器
         if is_safe_relative_member(source_path, &uninstall_name) {
             delete_list.push(source_path.join(&uninstall_name));
         } else {
@@ -1025,13 +1030,13 @@ pub async fn run_uninstall(
     let extra_shortcuts = expand_path_list(&extra_uninstall_shortcuts);
     rm_best_effort(&extra_shortcuts, &allowed_names).await;
 
-    // delete user data
-    // merge user_data_path and extra_uninstall_path
+    // 删除用户数据
+    // 合并 user_data_path 与 extra_uninstall_path
     //
     // 配置里允许写 `%LOCALAPPDATA%/GenshinFpsUnlocker` 这种带环境变量的路径，而前端
     // 的 replacePathEnvirables 只展开 `${INSTALL_PATH}` / `${APP_NAME}`，不碰 `%VAR%`。
     // 不在这里展开的话，下面的安全阀会因为「不是绝对路径」把整条跳过 —— 结果就是
-    // 用户勾了「删除配置与日志」也一个字节都没删（config.json / logs / webview2 全留下）。
+    // 用户勾了「删除配置与日志」也一个字节都没删（配置.json / 日志 / webview2 全留下）。
     // 失败语义：这里的错误**不再提前返回**，只记进 `fatal`，等注册表清理跑完再抛。
     // 上游是直接 `?`：用户数据删失败（文件被占用等）时，安装目录的文件已经删了、
     // 卸载器副本也已移到 %TEMP% 且关窗即自删，ARP 项却还留着指向一个不存在的 exe，
@@ -1048,11 +1053,11 @@ pub async fn run_uninstall(
         if !path.exists() {
             continue;
         }
-        // check if is file or dir
+        // 检查是文件还是目录
         let rm = if path.is_file() {
-            tokio::fs::remove_file(path)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to remove user data file {}: {:?}", pathstr, e))
+            tokio::fs::remove_file(path).await.map_err(|e| {
+                anyhow::anyhow!("Failed to remove user data file {}: {:?}", pathstr, e)
+            })
         } else {
             tokio::fs::remove_dir_all(path).await.map_err(|e| {
                 anyhow::anyhow!("Failed to remove user data folder {}: {:?}", pathstr, e)
@@ -1075,7 +1080,7 @@ pub async fn run_uninstall(
     let self_tmp = DELETE_SELF_ON_EXIT_PATH.read().unwrap().clone();
     clean_installer_temp_files(self_tmp.as_deref()).await;
 
-    // recursively delete empty folders
+    // 递归删除空目录
     if let Err(e) = clear_empty_dirs(source.clone()).await {
         tracing::error!("清理空目录失败（继续清理注册表）: {e:#}");
         if fatal.is_none() {
@@ -1086,7 +1091,7 @@ pub async fn run_uninstall(
     // 清理安装期写入的注册表项（开机自启动等），见项目配置 extraUninstallRegistry
     clean_extra_registry(&extra_uninstall_registry);
 
-    // delete registry - try both HKLM and HKCU since installation could have used either
+    // 删除注册表——HKLM 与 HKCU 都尝试，因为安装可能使用任一项
     let reg_path = format!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{reg_name}");
     let _ = windows_registry::LOCAL_MACHINE.remove_tree(&reg_path);
     let _ = windows_registry::CURRENT_USER.remove_tree(&reg_path);
@@ -1103,22 +1108,19 @@ pub fn delete_self_on_exit() {
         return;
     }
     let path = path.as_ref().unwrap();
-    // run the cmd file with window hidden
+    // 隐藏窗口运行 cmd 文件
     #[allow(clippy::zombie_processes)]
-    let _ = std::process::Command::new("cmd")
-        .arg("/C")
-        .arg("ping")
-        .arg("127.0.0.1")
-        .arg("-n")
-        .arg("2")
-        .arg("&")
-        .arg("del")
-        .arg("/f")
-        .arg("/q")
-        .arg(path)
+    if let Err(e) = std::process::Command::new("cmd")
+        // 保持 Shell 命令固定：安装目录可能包含“&”
+        // 或“%”。展开带引号的环境变量，可避免
+        // 这些字符被当作命令语法解释。
+        .env("KACHINA_DELETE_SELF_TARGET", path)
+        .raw_arg("/C ping 127.0.0.1 -n 2 >NUL & del /f /q \"%KACHINA_DELETE_SELF_TARGET%\"")
         .creation_flags(CREATE_NO_WINDOW.0)
         .spawn()
-        .unwrap();
+    {
+        tracing::warn!("启动自删除Command失败: {e}");
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
@@ -1138,12 +1140,28 @@ pub async fn create_uninstaller(
     updater_name: String,
 ) -> TAResult<()> {
     let source = Path::new(&source);
+    if !source.is_absolute()
+        || !is_safe_relative_member(source, &uninstaller_name)
+        || !is_safe_relative_member(source, &updater_name)
+    {
+        return Err(anyhow::anyhow!("Invalid installer output path")
+            .context("CREATE_UNINSTALLER_ERR")
+            .into());
+    }
     let uninstaller_path = source.join(uninstaller_name);
     let updater_path = source.join(updater_name);
+    // 不跟随过期或遭篡改安装目录中的 junction 或符号链接，
+    // 否则 create() 和 copy() 都可能在提权后写入
+    // 安装 根目录 while running 提权.
+    if has_reparse_point(&uninstaller_path) || has_reparse_point(&updater_path) {
+        return Err(anyhow::anyhow!("Installer output path is a reparse point")
+            .context("CREATE_UNINSTALLER_ERR")
+            .into());
+    }
     let current_exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
-    let updater_is_self = current_exe_path == updater_path;
+    let updater_is_self = path_eq(&current_exe_path, &updater_path);
     if !updater_is_self {
-        // else, overwrite uninstaller and updater
+        // 否则覆盖卸载器和更新器
         let mut self_configured_mmap = crate::local::get_base_with_config().await?;
         let output_file = tokio::fs::File::create(&uninstaller_path)
             .await
@@ -1152,47 +1170,47 @@ pub async fn create_uninstaller(
         tokio::io::copy(&mut self_configured_mmap, &mut output)
             .await
             .context("CREATE_UNINSTALLER_ERR")?;
-        // flush
+        // 刷新
         output.flush().await.context("CREATE_UNINSTALLER_ERR")?;
-        // drop
+        // 释放
         drop(output);
-        // open again with rw
+        // 以读写模式再次打开
         clear_index_mark(&uninstaller_path).await?;
-        // find
+        // 查找
         tokio::fs::copy(&uninstaller_path, &updater_path)
             .await
             .context("CREATE_UPDATER_ERR")?;
     } else {
-        // try modify updater, if fail, silently ignore
+        // 尝试修改更新器，失败时静默忽略
         let _ = clear_index_mark(&updater_path).await;
     }
     Ok(())
 }
 pub async fn clear_index_mark(path: &PathBuf) -> anyhow::Result<()> {
-    // open again with rw
+    // 以读写模式再次打开
     let mut output_file = tokio::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .open(&path)
         .await
         .context("SELF_UPDATE_ERR")?;
-    // read first 256 bytes to buffer
+    // 读取前 256 个字节到缓冲区
     let mut buffer = [0u8; 256];
     output_file
         .read_exact(&mut buffer)
         .await
         .context("SELF_UPDATE_ERR")?;
 
-    // check ! and K
+    // 检查 ! 和 K
     let mark_pos = buffer.windows(2).position(|w| w == b"!K".as_ref());
     if let Some(mark_pos) = mark_pos {
-        // check if equals !KachinaInstaller!
+        // 检查是否等于 !KachinaInstaller!
         let mark_str = "!KachinaInstaller!";
         let mark_real = String::from_utf8_lossy(&buffer[mark_pos..mark_pos + mark_str.len()]);
         if mark_real == mark_str {
             let index_start = mark_pos + mark_str.len();
-            // PE header replaced with index. Remove it.
-            // write 5*4 bytes of 0 after index_start
+            // PE 头部已被索引替换，将其移除。
+            // 在 index_start 后写入 5*4 个零字节
             output_file
                 .seek(tokio::io::SeekFrom::Start(index_start as u64))
                 .await
@@ -1204,7 +1222,7 @@ pub async fn clear_index_mark(path: &PathBuf) -> anyhow::Result<()> {
                 .context("SELF_UPDATE_ERR")?;
         }
     }
-    // close file
+    // 关闭文件
     output_file.flush().await.context("SELF_UPDATE_ERR")?;
     output_file.sync_all().await.context("SELF_UPDATE_ERR")?;
     drop(output_file);

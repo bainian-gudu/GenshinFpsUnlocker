@@ -37,9 +37,9 @@
 namespace hdiff_private{
 static  const size_t kMinTrustMatchedLength=1024*16;
 static  const size_t kMinMatchedLength = 16;
-static  const size_t kMatchBlockSize_min=4;//sizeof(hpatch_uint32_t);
-static  const size_t kBestReadSize=1024*256; //for sequence read
-static  const size_t kMinReadSize=1024*4;    //for random first read speed
+static  const size_t kMatchBlockSize_min=4;//第三方实现细节。
+static  const size_t kBestReadSize=1024*256; //用于 sequence 读取
+static  const size_t kMinReadSize=1024*4;    //用于 random first 读取 speed
 static  const size_t kMinBackupReadSize=256;
 static  const size_t kBestMatchRange=1024*64;
 static  const size_t kMaxLinkIndexFindCount=64;
@@ -62,7 +62,7 @@ struct TStreamCache{
     inline bool resetPos(size_t kBackupCacheSize,hpatch_StreamPos_t streamPos,size_t kMinCacheDataSize){
         if (_is_hit_cache(kBackupCacheSize,streamPos,kMinCacheDataSize)){
             cachePos=cacheSize-(size_t)(m_readPosEnd-streamPos);
-            return true; //hit cache
+            return true; //hit 缓存
         }
         return _resetPos_continue(kBackupCacheSize,streamPos,kMinCacheDataSize);
     }
@@ -73,10 +73,10 @@ protected:
     inline unsigned char* cachedData(){ return cache+cacheSize-cachedLength(); }
     inline const size_t   cachedLength()const{ return (size_t)(m_readPosEnd-m_readPos); }
     bool _resetPos_continue(size_t kBackupCacheSize,hpatch_StreamPos_t streamPos,size_t kMinCacheDataSize){
-        //stream:[...     |                |                   |                  |                      |      ...]
-        //             readPos (streamPos-kBackupCacheSize) streamPos (streamPos+kMinCacheDataSize) (readPosEnd)
-        //cache:     [    |                                    |                  |                      ]
-        //           0                                   (init cachePos)                              cacheSize
+        //流:[...     |                |                   |                  |                      |      ...]
+        //             第三方实现细节。
+        //缓存:     [    |                                    |                  |                      ]
+        //           第三方实现细节。
         hpatch_StreamPos_t streamSize=stream->streamSize;
         if (streamPos+kMinCacheDataSize>streamSize) return false;
         hpatch_StreamPos_t readPos=(streamPos>=kBackupCacheSize)?(streamPos-kBackupCacheSize):0;
@@ -394,7 +394,7 @@ struct TNewStreamCache:public TBlockStreamCache{
         return true;
     }
     inline bool roll(){
-        //warning: after running _loop_backward_cache(),cache roll logic is failure
+        //警告： 之后 running _loop_backward_cache(),缓存 roll logic 是 failure
         if (dataLength()>kMatchBlockSize){
             const unsigned char* cur_datas=data();
             roll_digest=adler_roll(roll_digest,kMatchBlockSize,cur_datas[0],cur_datas[kMatchBlockSize]);
@@ -507,7 +507,7 @@ static const TIndex* getBestMatchi(const adler_uint_t* blocksBase,size_t blocksS
     }
     //best==0 说明有>2个位置都是最好位置,还需要继续寻找;
     
-    //assert(newStream.pos()>lastCover.newPos);
+    //第三方实现细节。
     hpatch_StreamPos_t linkOldPos=newStream.pos()+lastCover.oldPos-lastCover.newPos;
     TIndex linkIndex=(TIndex)posToBlockIndex(linkOldPos,kMatchBlockSize,blocksSize);
     //找到lastCover附近的位置当作比较好的best默认值,以利于link或压缩;
@@ -585,7 +585,7 @@ static bool getBestMatch(const TIndex* left,const TIndex* right,const TIndex* be
             out_curCover->oldPos=matchedOldPos;
             out_curCover->newPos=newPos-(oldPos-matchedOldPos);
             if (curEqLen>=digests_eq_n*kMatchBlockSize)
-                break;//matched maybe best
+                break;//第三方实现细节。
         }
     }
     return isMatched;
@@ -760,4 +760,4 @@ void TDigestMatcher::search_cover(hpatch_TOutputCovers* out_covers){
     }
 }
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private

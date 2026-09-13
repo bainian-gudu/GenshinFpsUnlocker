@@ -26,7 +26,7 @@ async function test() {
     // 等待服务器启动
     await waitForServer('http://localhost:8080/test-app-v1.exe');
 
-    // 删除日志文件 %temp%/KachinaInstaller.log
+    // 删除日志文件 %TEMP%/KachinaInstaller.日志
     const logFile = os.tmpdir() + '/KachinaInstaller.log';
     if (await fs.pathExists(logFile)) {
       await fs.remove(logFile);
@@ -50,7 +50,7 @@ async function test() {
       throw new Error(`Installation failed with exit code ${result.exitCode}`);
     }
     
-    // check if fail in logs
+    // 检查日志中是否存在失败记录
     if (await fs.pathExists(logFile)) {
       const logs = await fs.readFile(logFile, 'utf-8');
       console.log(logs);

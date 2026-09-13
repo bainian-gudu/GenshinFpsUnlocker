@@ -44,13 +44,13 @@ void bytesRLE_save(std::vector<unsigned char>& out_code,
                    const unsigned char* src,const unsigned char* src_end,
                    int rle_parameter=kRle_default);
 void bytesRLE_save(std::vector<unsigned char>& out_code,
-                   const hpatch_TStreamInput* src,//sequential read
+                   const hpatch_TStreamInput* src,//顺序读取
                    int rle_parameter=kRle_default);
 
 void bytesRLE_save(std::vector<unsigned char>& out_ctrlBuf,std::vector<unsigned char>& out_codeBuf,
                    const unsigned char* src,const unsigned char* src_end,int rle_parameter);
 void bytesRLE_save(std::vector<unsigned char>& out_ctrlBuf,std::vector<unsigned char>& out_codeBuf,
-                   const hpatch_TStreamInput* src,//sequential read
+                   const hpatch_TStreamInput* src,//顺序读取
                    int rle_parameter);
     
     struct TSingleStreamRLE0{
@@ -60,14 +60,14 @@ void bytesRLE_save(std::vector<unsigned char>& out_ctrlBuf,std::vector<unsigned 
         inline TSingleStreamRLE0():len0(0){}
         inline hpatch_StreamPos_t curCodeSize() const { return maxCodeSize(0,0); }
         hpatch_StreamPos_t maxCodeSize(const unsigned char* appendData,const unsigned char* appendData_end) const;
-        hpatch_StreamPos_t maxCodeSize(const hpatch_TStreamInput* appendData) const;//sequential read
+        hpatch_StreamPos_t maxCodeSize(const hpatch_TStreamInput* appendData) const;//顺序读取
         hpatch_StreamPos_t maxCodeSizeByZeroLen(hpatch_StreamPos_t appendZeroLen) const;
         void append(const unsigned char* appendData,const unsigned char* appendData_end);
-        void append(const hpatch_TStreamInput* appendData);//sequential read
+        void append(const hpatch_TStreamInput* appendData);//顺序读取
         void appendByZeroLen(hpatch_StreamPos_t appendZeroLen);
         void finishAppend();
         inline void clear() { fixed_code.clear(); uncompressData.clear(); len0=0; }
     };
     
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 #endif //__BYTES_RLE_H_

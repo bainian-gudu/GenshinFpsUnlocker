@@ -141,7 +141,7 @@ export class SingleFileTask implements DownloadTask {
         result.insight,
       );
     } catch (err) {
-      // 第一次失败后标记文件为失败状态，禁用patch模式
+      // 第一次失败后标记文件为失败状态，禁用补丁模式
       this.file.failed = true;
       // 错误路径：如果是 TAError 且包含 insight，使用该 insight
       const errorInsight = err instanceof TAError ? err.insight : undefined;
@@ -160,7 +160,7 @@ export class SingleFileTask implements DownloadTask {
   }
 }
 
-// Local文件释放任务（从内嵌数据释放）
+// 本地文件释放任务（从内嵌数据释放）
 export class LocalFileTask implements DownloadTask {
   constructor(
     private file: DfsUpdateTask,
@@ -175,7 +175,7 @@ export class LocalFileTask implements DownloadTask {
     return this.file.file_name;
   }
 
-  // 标识这是local任务
+  // 标识这是本地任务
   isLocalTask(): boolean {
     return true;
   }
@@ -194,13 +194,13 @@ export class LocalFileTask implements DownloadTask {
         this.context.elevate,
       );
 
-      // 成功：Local文件总是LOCAL模式，无网络 insight
+      // 成功：本地文件总是本地模式，无网络 insight
       logTaskResult(this.file, 'LOCAL', true, undefined, undefined);
     } catch (err) {
-      // 第一次失败后标记文件为失败状态，禁用patch模式
+      // 第一次失败后标记文件为失败状态，禁用补丁模式
       this.file.failed = true;
 
-      // 失败：Local文件记录错误，无网络 insight
+      // 失败：本地文件记录错误，无网络 insight
       logTaskResult(this.file, 'LOCAL', false, JSON.stringify(err), undefined);
       throw err;
     }
@@ -264,7 +264,7 @@ export class MergedGroupTask implements DownloadTask {
         return this.execute(); // 递归重试
       }
 
-      // 已经重试过了，fallback到单文件
+      // 已经重试过了，回退到单文件
       this.fallbackToSingleFiles();
     }
   }
@@ -280,7 +280,7 @@ export class MergedGroupTask implements DownloadTask {
 
   private fallbackToSingleFiles(): void {
     if (this.taskManager) {
-      // 重置fallback文件状态
+      // 重置回退文件状态
       this.virtualFile._fallbackFiles.forEach((f) => {
         f.running = false;
         f.downloaded = 0;
@@ -293,8 +293,8 @@ export class MergedGroupTask implements DownloadTask {
 
       fallbackTasks.forEach((task) => this.taskManager!.addTask(task));
 
-      // 不抛出错误，让 TaskManager 处理 fallback 任务
-      // 如果 fallback 任务失败，会在它们的 execute 中抛出错误
+      // 不抛出错误，让 TaskManager 处理 回退 任务
+      // 如果 回退 任务失败，会在它们的 execute 中抛出错误
     } else {
       // 如果没有taskManager，抛出错误让外层处理
       throw new Error(
@@ -356,17 +356,17 @@ export class MergedGroupTask implements DownloadTask {
 export class DownloadTaskManager {
   private largeTaskQueue: Array<DownloadTask> = [];
   private smallTaskQueue: Array<DownloadTask> = [];
-  private localTaskQueue: Array<DownloadTask> = []; // 新增：local文件独立队列
+  private localTaskQueue: Array<DownloadTask> = []; // 新增：本地文件独立队列
   private largeTaskRunning = 0;
   private smallTaskRunning = 0;
-  private localTaskRunning = 0; // 新增：local任务运行计数
+  private localTaskRunning = 0; // 新增：本地任务运行计数
   private allTasks = new Set<DownloadTask>();
   private completedTasks = new Set<DownloadTask>();
   private failedTasks = new Set<DownloadTask>();
 
   private readonly LARGE_CONCURRENT = 5;
   private readonly SMALL_CONCURRENT = 11;
-  private readonly LOCAL_CONCURRENT = 16; // 新增：local文件并发数
+  private readonly LOCAL_CONCURRENT = 16; // 新增：本地文件并发数
   private sizeThreshold: number;
 
   // 解析任务完成的Promise
@@ -417,7 +417,7 @@ export class DownloadTaskManager {
   addTask(task: DownloadTask): void {
     this.allTasks.add(task);
 
-    // 检查是否为local任务
+    // 检查是否为本地任务
     if (task.isLocalTask()) {
       this.localTaskQueue.push(task);
     } else if (task.getSize() >= this.sizeThreshold) {
@@ -434,7 +434,7 @@ export class DownloadTaskManager {
     // 如果已经有错误，不再启动新任务
     if (this.hasError) return;
 
-    // 启动local文件任务（最高并发度）
+    // 启动本地文件任务（最高并发度）
     while (
       this.localTaskRunning < this.LOCAL_CONCURRENT &&
       this.localTaskQueue.length > 0
@@ -492,7 +492,7 @@ export class DownloadTaskManager {
     type: 'large' | 'small' | 'local',
   ): Promise<void> {
     try {
-      // 对于MergedGroupTask，不使用外层重试，因为它有内部重试+fallback机制
+      // 对于MergedGroupTask，不使用外层重试，因为它有内部重试+回退机制
       if (task instanceof MergedGroupTask) {
         await task.execute();
         this.completedTasks.add(task);
@@ -507,7 +507,7 @@ export class DownloadTaskManager {
         try {
           await task.execute();
           this.completedTasks.add(task);
-          // 成功：统一日志格式将在task.execute()内部处理
+          // 成功：统一日志格式将在任务.execute()内部处理
           return; // 成功，退出重试循环
         } catch (error) {
           lastError = error;
@@ -515,7 +515,7 @@ export class DownloadTaskManager {
           if (attempt === maxRetries) {
             // 所有重试都失败了
             this.failedTasks.add(task);
-            // 失败：统一日志格式将在task.execute()内部处理
+            // 失败：统一日志格式将在任务.execute()内部处理
             // 停止安装流程，使用用户友好的错误格式
             throw new Error(
               `释放文件 ${task.getDisplayName()} 失败：\n${typeof lastError === 'string' ? lastError : friendlyError(lastError)}`,

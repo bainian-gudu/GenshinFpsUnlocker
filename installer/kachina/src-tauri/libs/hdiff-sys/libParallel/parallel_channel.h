@@ -31,7 +31,7 @@
 #if (_IS_USED_MULTITHREAD)
 #include <stdint.h> //uint32
 #include <assert.h>
-#include <stddef.h> //for size_t ptrdiff_t
+#include <stddef.h> //用于 size_t ptrdiff_t
 
 struct CHLocker{
     HLocker locker;
@@ -63,9 +63,9 @@ struct CHLocker{
         explicit CChannel(ptrdiff_t maxDataCount=-1);
         ~CChannel();
         void close();
-        bool is_can_fast_send(bool isWait); //mybe not need wait when send
-        bool send(TChanData data,bool isWait); //can't send null
-        TChanData accept(bool isWait); //result can null;
+        bool is_can_fast_send(bool isWait); //mybe 不 需要 wait 当 send
+        bool send(TChanData data,bool isWait); //可以't send null
+        TChanData accept(bool isWait); //结果 可以 null;
     private:
         _CChannel_import* _import;
     };
@@ -116,7 +116,7 @@ struct TMtByChannel {
     inline ~TMtByChannel() { closeAndClear(); wait_all_thread_end(); _end_chan.close(); while (_end_chan.accept(false)) {} }
     inline bool is_on_error()const{ CAutoLocker _auto_locker(_locker.locker); return _is_on_error; }
     
-    inline void finish(){ // wait all threads exit
+    inline void finish(){ // wait 全部 threads exit
         close();
         wait_all_thread_end();
     }

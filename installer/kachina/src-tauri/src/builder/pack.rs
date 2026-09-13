@@ -215,7 +215,7 @@ pub async fn pack_cli(args: PackArgs) {
                 }
             }
         } else {
-            // if no metadata set, just pack all files without '_'
+            // 未设置元数据时，直接打包不含“_”的所有文件
             let entries = tokio::fs::read_dir(data_dir).await;
             if entries.is_err() {
                 eprintln!("Failed to read data dir: {:?}", entries.err());
@@ -225,7 +225,7 @@ pub async fn pack_cli(args: PackArgs) {
             while let Some(entry) = entries.next_entry().await.unwrap() {
                 let path = entry.path();
                 let name = path.file_name().unwrap().to_str().unwrap().to_string();
-                // ignore if name includes '_'
+                // 名称包含“_”时忽略
                 if name.contains('_') {
                     continue;
                 }
@@ -263,14 +263,14 @@ pub async fn pack(
     mut config: PackConfig,
 ) {
     println!("Generating exe with version info...");
-    // write base to tmp file
+    // 将基础内容写入临时文件
     let tmppath = std::env::temp_dir().join("kachina_installer_tmp.exe");
     let mut tmpfile = tokio::fs::File::create(tmppath.clone()).await.unwrap();
     tokio::io::copy(&mut base, &mut tmpfile).await.unwrap();
-    // close tmp file
+    // 关闭临时文件
     tmpfile.shutdown().await.unwrap();
     drop(tmpfile);
-    // open resource file
+    // 打开资源文件
     let mut updater = rcedit::ResourceUpdater::new();
     updater.load(&tmppath).unwrap();
     let unwrapped_config = config.config.as_object().unwrap();
@@ -285,7 +285,7 @@ pub async fn pack(
         .unwrap();
     updater.set_version_string("ProductName", product).unwrap();
 
-    // Set icon if provided
+    // 如果提供了图标则设置
     if let Some(icon_path) = &config.icon_path {
         if icon_path.exists() {
             if let Err(e) = updater.set_icon(icon_path) {
@@ -302,13 +302,13 @@ pub async fn pack(
     drop(updater);
     println!("Reading base...");
     let mut base_data = vec![];
-    // read tmp file
+    // 读取临时文件
     let mut tmpfile = tokio::fs::File::open(tmppath.clone()).await.unwrap();
     tokio::io::copy(&mut tmpfile, &mut base_data).await.unwrap();
-    // close tmp file
+    // 关闭临时文件
     tmpfile.shutdown().await.unwrap();
     drop(tmpfile);
-    // remove tmp file
+    // 删除临时文件
     tokio::fs::remove_file(tmppath).await.unwrap();
 
     // 先克隆 packing_info 用于排序
@@ -332,9 +332,9 @@ pub async fn pack(
     config.config.sort_all_objects();
     let config_bytes = serde_json::to_string(&config.config).unwrap();
     let mut files = config.files;
-    // name size offset
+    // 名称、大小、偏移量
     let mut index: Vec<(String, u32, u32)> = vec![];
-    // insert config to index
+    // 将配置写入索引
     let mut current_offset = 0;
     index.push((
         "\0CONFIG".to_string(),
@@ -342,13 +342,13 @@ pub async fn pack(
         get_header_size("\0CONFIG") as u32,
     ));
     current_offset += config_bytes.len() + get_header_size("\0CONFIG");
-    // insert image to index
+    // 将图片写入索引
     if let Some(img) = config.image.as_ref() {
         let offset = current_offset + get_header_size(&img.name);
         index.push((img.name.clone(), img.size as u32, offset as u32));
         current_offset = offset + img.size;
     }
-    // insert metadata to index
+    // 将元数据写入索引
     if let Some(metadata_bytes) = metadata_bytes.as_ref() {
         let offset = current_offset + get_header_size("\0META");
         index.push((
@@ -377,15 +377,15 @@ pub async fn pack(
         current_offset = offset + size;
     }
     let index_len = index_to_bin(&index).len() + get_header_size("\0INDEX");
-    // add index_len to offset
+    // 将索引长度加到偏移量
     for (name, _size, offset) in index.iter_mut() {
-        // index is after config and image
+        // 索引位于配置和图片之后
         if name == "\0CONFIG" || name == "\0IMAGE" {
             continue;
         }
         *offset += index_len as u32;
     }
-    // write pre-index to pe header
+    // 将索引前信息写入 PE 头部
     let index_pre = if !files.is_empty() {
         gen_index_header(
             base_data.len() as u32,
@@ -405,20 +405,20 @@ pub async fn pack(
     } else {
         gen_index_header(0, 0, 0, 0, 0)
     };
-    // replace 'This program cannot be run in DOS mode' in pe header to index_pre
+    // 将 PE 头部中的 DOS 模式提示文本替换为 index_pre
     let pe_str_offset = base_data.iter().position(|x| *x == 0x54).unwrap();
     let pe_str = &mut base_data[pe_str_offset..pe_str_offset + index_pre.len()];
-    // check if pe_str is really 'This program cannot be run in DOS mode'
+    // 检查 pe_str 是否确实为 DOS 模式提示文本
     let pe_string = std::str::from_utf8_mut(pe_str).unwrap();
     if pe_string != "This program cannot be run in DOS mode" {
         eprintln!("Failed to find pe string: {pe_string:?}");
         return;
     }
     pe_str.copy_from_slice(&index_pre);
-    // copy base to output, not closing output file
+    // 将基础内容复制到输出，暂不关闭输出文件
     println!("Writing base...");
     output.write_all(&base_data).await.unwrap();
-    // write config
+    // 写入配置
     println!("Writing config...");
     let config_bytes = config_bytes.as_bytes();
     let res = write_header(&mut output, "\0CONFIG", config_bytes.len() as u32).await;
@@ -431,7 +431,7 @@ pub async fn pack(
         eprintln!("Failed to write config: {:?}", res.err());
         return;
     }
-    // if theme exists, write theme
+    // 存在主题时写入主题
     if let Some(image) = config.image.as_mut() {
         println!("Writing image...");
         let res = write_file(&mut output, image).await;
@@ -441,7 +441,7 @@ pub async fn pack(
         }
     }
     if !files.is_empty() {
-        // write index
+        // 写入索引
         println!("Writing index...");
         let index_bytes = index_to_bin(&index);
         write_header(&mut output, "\0INDEX", index_bytes.len() as u32)
@@ -450,7 +450,7 @@ pub async fn pack(
 
         output.write_all(&index_bytes).await.unwrap();
     }
-    // if metadata exists, write metadata
+    // 存在元数据时写入元数据
     if let Some(metadata_bytes) = metadata_bytes {
         let res = write_header(&mut output, "\0META", metadata_bytes.len() as u32).await;
         if res.is_err() {
@@ -463,7 +463,7 @@ pub async fn pack(
             return;
         }
     }
-    // write files
+    // 写入文件
     for file in files.iter_mut() {
         println!("Writing file: {}", file.name);
         let res = write_file(&mut output, file).await;
@@ -472,7 +472,7 @@ pub async fn pack(
             return;
         }
     }
-    // flush
+    // 刷新
     println!("Finalizing...");
     let res = output.flush().await;
     if res.is_err() {
@@ -505,7 +505,7 @@ pub fn get_header_size(name: &str) -> usize {
 
 pub fn index_to_bin(index: &[(String, u32, u32)]) -> Vec<u8> {
     let mut data = vec![];
-    // u8: name_len var: name u32: size u32: offset
+    // u8：名称长度；可变长度名称；u32：大小；u32：偏移量
     for (name, size, offset) in index.iter() {
         let name = name.as_bytes();
         let name_len = name.len() as u8;

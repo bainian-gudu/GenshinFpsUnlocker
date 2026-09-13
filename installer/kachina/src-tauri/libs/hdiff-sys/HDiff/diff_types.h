@@ -59,7 +59,7 @@ namespace hdiff_private{
     static const int kCoverMinMatchLen=5;
 
 
-    // TRefCovers: a tools for diff listener,read TCover array;
+    // TRefCovers: a tools 用于 差异 listener,读取 TCover 数组;
     struct TRefCovers{
         inline TRefCovers(const void* pcovers_,size_t coverCount_,bool isCover32_)
         :pcovers(pcovers_),coverCount(coverCount_),isCover32(isCover32_){}
@@ -89,21 +89,21 @@ extern "C"
 
     typedef hpatch_TStreamOutput hdiff_TStreamOutput;
     typedef hpatch_TStreamInput  hdiff_TStreamInput;
-    //compress plugin
+    //压缩插件
     typedef struct hdiff_TCompress{
-        //return type tag; strlen(result)<=hpatch_kMaxPluginTypeLength; (Note:result lifetime)
-        const char*             (*compressType)(void);//ascii cstring,cannot contain '&'
-        //return the max compressed size, if input dataSize data;
+        //返回 类型 tag; strlen(结果)<=hpatch_kMaxPluginTypeLength; (注意:结果 lifetime)
+        const char*             (*compressType)(void);//ascii cstring,不能 contain '&'
+        //返回 the max compressed 大小, 如果 输入 dataSize 数据;
         hpatch_StreamPos_t (*maxCompressedSize)(hpatch_StreamPos_t dataSize);
-        //return support threadNumber
+        //返回支持的线程数
         int          (*setParallelThreadNumber)(struct hdiff_TCompress* compressPlugin,int threadNum);
-        //compress data to out_code; return compressed size, if error or not need compress then return 0;
-        //if out_code->write() return hdiff_stream_kCancelCompress(error) then return 0;
-        //if memory I/O can use hdiff_compress_mem()
+        //压缩 数据 到 out_code; 返回 compressed 大小, 如果 错误 或 不 需要 压缩 然后 返回 0;
+        //如果 out_code->写入() 返回 hdiff_stream_kCancelCompress(错误) 然后 返回 0;
+        //如果 内存 I/O 可以 使用 hdiff_compress_mem()
         hpatch_StreamPos_t          (*compress)(const struct hdiff_TCompress* compressPlugin,
                                                 const hpatch_TStreamOutput*   out_code,
                                                 const hpatch_TStreamInput*    in_data);
-        const char*        (*compressTypeForDisplay)(void);//like compressType but just for display,can NULL
+        const char*        (*compressTypeForDisplay)(void);//like compressType but just 用于 显示,可以 NULL
     } hdiff_TCompress;
     
     static hpatch_inline
@@ -115,7 +115,7 @@ extern "C"
         mem_as_hStreamOutput(&codeStream,out_code,out_code_end);
         mem_as_hStreamInput(&dataStream,data,data_end);
         hpatch_StreamPos_t codeLen=compressPlugin->compress(compressPlugin,&codeStream,&dataStream);
-        if (codeLen!=(size_t)codeLen) return 0; //error
+        if (codeLen!=(size_t)codeLen) return 0; //错误
         return (size_t)codeLen;
     }
 
@@ -147,24 +147,24 @@ extern "C"
                              hpatch_StreamPos_t* newSize,hpatch_StreamPos_t* oldSize);
         void (*search_cover_finish)(ICoverLinesListener* listener,void* pcovers,size_t* pcoverCount,bool isCover32,
                                     hpatch_StreamPos_t* newSize,hpatch_StreamPos_t* oldSize);
-        int (*get_max_match_deep)(const ICoverLinesListener* listener); //if null, default kDefaultMaxMatchDeepForLimit
-        // *search_block* for multi-thread parallel match,can null
+        int (*get_max_match_deep)(const ICoverLinesListener* listener); //如果 null, 默认 kDefaultMaxMatchDeepForLimit
+        // *search_block* 用于 multi-线程 并行 匹配,可以 null
         void (*begin_search_block)(ICoverLinesListener* listener,hpatch_StreamPos_t newSize,
                                    size_t searchBlockSize,size_t kPartPepeatSize);
-        hpatch_BOOL (*next_search_block_MT)(ICoverLinesListener* listener,hdiff_TRange* out_newRange);//must thread safe
+        hpatch_BOOL (*next_search_block_MT)(ICoverLinesListener* listener,hdiff_TRange* out_newRange);//必须保证线程安全
     };
 
-    struct hdiff_TMTSets_s{ // used by $hdiff -s
+    struct hdiff_TMTSets_s{ // 已使用 通过 $hdiff -s
         size_t threadNum;
-        size_t threadNumForSearch; // NOTE: multi-thread search need frequent random disk read
+        size_t threadNumForSearch; // 注意: multi-线程 search 需要 frequent random disk 读取
         bool   newDataIsMTSafe;
         bool   oldDataIsMTSafe;
-        bool   newAndOldDataIsMTSameRes; //for dir diff
+        bool   newAndOldDataIsMTSameRes; //用于目录差异
     };
 
     static const hdiff_TMTSets_s hdiff_TMTSets_s_kEmpty={1,1,false,false,false};
     
-    //return whether x&y's datas are equal; if read stream fail,thorw std::runtime_error
+    //返回 whether x&y's datas 是 equal; 如果 读取 流 失败,thorw std::runtime_error
     hpatch_BOOL hdiff_streamDataIsEqual(const hpatch_TStreamInput* x,const hpatch_TStreamInput* y);
 
 #ifdef __cplusplus

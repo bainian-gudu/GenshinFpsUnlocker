@@ -9,7 +9,7 @@ if (process.env.NODE_ENV !== 'development') {
     e.preventDefault();
   });
   document.addEventListener('keydown', function (event) {
-    // Prevent F5 or Ctrl+R (Windows/Linux) and Command+R (Mac) from refreshing the page
+    // 禁止 F5、Ctrl+R（Windows/Linux）和 Command+R（Mac）刷新页面
     if (
       event.key === 'F5' ||
       (event.ctrlKey && event.key === 'r') ||

@@ -28,7 +28,7 @@
 
 #ifndef __mem_buf_h
 #define __mem_buf_h
-#include <stdlib.h> //malloc free
+#include <stdlib.h> //malloc 释放
 #include <string.h> //size_t
 #include <stdexcept>  //std::runtime_error
 #include <string>
@@ -68,5 +68,5 @@ namespace hdiff_private{
         unsigned char*  _capacity_end;
     };
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 #endif //__mem_buf_h

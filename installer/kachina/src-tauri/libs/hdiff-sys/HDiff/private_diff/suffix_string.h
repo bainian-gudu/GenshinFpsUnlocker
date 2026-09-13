@@ -30,7 +30,7 @@
 #ifndef __SUFFIX_STRING_H_
 #define __SUFFIX_STRING_H_
 #include <vector>
-#include <stddef.h> //for ptrdiff_t,size_t
+#include <stddef.h> //用于 ptrdiff_t,size_t
 #ifndef _SSTRING_FAST_MATCH
 #   define _SSTRING_FAST_MATCH 5
 #endif
@@ -42,8 +42,8 @@
 #   include "limit_mem_diff/adler_roll.h"
 #endif
 
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 */)
-#   include <stdint.h> //for int32_t
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#   include <stdint.h> //用于 int32_t
 namespace hdiff_private{
 #else
 namespace hdiff_private{
@@ -82,7 +82,7 @@ public:
     explicit TSuffixString(bool isUsedFastMatch=false);
     ~TSuffixString();
     
-    //throw std::runtime_error when create SA error
+    //throw std::runtime_error 当 创建 SA 错误
     TSuffixString(const TChar* src_begin,const TChar* src_end,bool isUsedFastMatch=false,size_t threadNum=1);
     void resetSuffixString(const TChar* src_begin,const TChar* src_end,size_t threadNum=1);
 
@@ -91,13 +91,13 @@ public:
     inline size_t SASize()const{ return (size_t)(m_src_end-m_src_begin); }
     void clear();
 
-    inline TInt SA(TInt i)const{//return m_SA[i];//排好序的后缀字符串数组.
+    inline TInt SA(TInt i)const{//返回 m_SA[i];//排好序的后缀字符串数组.
         if (isUseLargeSA())
             return m_SA_large[i];
         else
             return (TInt)m_SA_limit[i];
     }
-    TInt lower_bound(const TChar* str,const TChar* str_end)const;//return index in SA; must str_end-str>=2 !
+    TInt lower_bound(const TChar* str,const TChar* str_end)const;//返回 索引 在 SA; 必须 str_end-str>=2 !
 private:
     TSuffixString(const TSuffixString &); //empty
     TSuffixString &operator=(const TSuffixString &); //empty
@@ -111,10 +111,10 @@ private:
         return (sizeof(TInt)>sizeof(TInt32)) && (SASize()>kLimitSASize);
     }
 private:
-    // all cache for lower_bound speed
+    // 全部 缓存 用于 lower_bound speed
     const bool              m_isUsedFastMatch;
 #if (_SSTRING_FAST_MATCH>0)
-    TFastMatchForSString    m_fastMatch; //a big memory cache & build slow
+    TFastMatchForSString    m_fastMatch; //a big 内存 缓存 & build slow
 #endif
     const void*         m_cached_SA_begin;
     const void*         m_cached_SA_end;
@@ -129,5 +129,5 @@ private:
     void                clear_cache();
 };
 
-}//namespace hdiff_private
+}//命名空间 hdiff_private
 #endif //__SUFFIX_STRING_H_

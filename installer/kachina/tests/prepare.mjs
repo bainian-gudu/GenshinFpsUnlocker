@@ -53,7 +53,7 @@ async function createAppFiles() {
   ]);
   await fs.writeFile(path.join(V1_DIR, 'app.exe'), appExeV1);
 
-  // config.json - 应用配置
+  // 配置.json - 应用配置
   await fs.writeJSON(
     path.join(V1_DIR, 'config.json'),
     {
@@ -69,7 +69,7 @@ async function createAppFiles() {
     'Test Application v1.0.0\\n',
   );
 
-  // data/assets.dat - 数据文件
+  // 数据/assets.dat - 数据文件
   await fs.ensureDir(path.join(V1_DIR, 'data'));
   await fs.writeFile(
     path.join(V1_DIR, 'data/assets.dat'),
@@ -89,7 +89,7 @@ async function createAppFiles() {
   ]);
   await fs.writeFile(path.join(V2_DIR, 'app.exe'), appExeV2);
 
-  // config.json - 更新的配置
+  // 配置.json - 更新的配置
   await fs.writeJSON(
     path.join(V2_DIR, 'config.json'),
     {
@@ -105,14 +105,14 @@ async function createAppFiles() {
     crypto.randomBytes(1024 * 30),
   );
 
-  // data/assets.dat - 更新的数据文件
+  // 数据/assets.dat - 更新的数据文件
   await fs.ensureDir(path.join(V2_DIR, 'data'));
   await fs.writeFile(
     path.join(V2_DIR, 'data/assets.dat'),
     crypto.randomBytes(1024 * 15),
   );
 
-  // data/new-assets.dat - v2新增数据
+  // 数据/新-assets.dat - v2新增数据
   await fs.writeFile(
     path.join(V2_DIR, 'data/new-assets.dat'),
     crypto.randomBytes(1024 * 5),
@@ -166,7 +166,7 @@ async function createConfig() {
 
 async function buildCompletePackages() {
   if (dev) {
-    // merge kachina-builder.exe+kachina-installer.exe to kachina-builder-bundle.exe
+    // 合并 kachina-builder.exe 与 kachina-installer.exe，生成 kachina-builder-bundle.exe
     console.log(chalk.gray('  Merging kachina-builder for dev...'));
     const builderExe = path.join(
       '..',
@@ -212,7 +212,7 @@ async function buildCompletePackages() {
     dev ? 'kachina-builder-bundle.exe' : 'kachina-builder.exe',
   );
 
-  // 检查builder是否存在
+  // 检查构建器是否存在
   if (!(await fs.pathExists(builderPath))) {
     throw new Error(
       `kachina-builder not found at ${builderPath}. Please build it first.`,
@@ -227,7 +227,7 @@ async function buildCompletePackages() {
   await $`& ${builderPath} pack -c ${path.join(FIXTURES_DIR, 'kachina.config.json')} -o ${path.join(V1_DIR, 'updater.exe')}`;
 
   console.log(chalk.gray('  Generating v1 metadata...'));
-  // 步骤3: 生成v1 metadata
+  // 步骤3: 生成v1 元数据
   await $`& ${builderPath} gen -j 2 -i ${V1_DIR} -m ${path.join(FIXTURES_DIR, 'v1-metadata.json')} -o ${path.join(FIXTURES_DIR, 'v1-hashed')} -r TestApp -t 1.0.0 -u ${path.join(V1_DIR, 'updater.exe')}`;
 
   console.log(chalk.gray('  Building v1 offline package...'));
@@ -240,7 +240,7 @@ async function buildCompletePackages() {
   await $`& ${builderPath} pack -c ${path.join(FIXTURES_DIR, 'kachina.config.v2.json')} -o ${path.join(V2_DIR, 'updater.exe')}`;
 
   console.log(chalk.gray('  Generating v2 metadata...'));
-  // 步骤3: 生成v2 metadata
+  // 步骤3: 生成v2 元数据
   await $`& ${builderPath} gen -j 2 -i ${V2_DIR} -m ${path.join(FIXTURES_DIR, 'v2-metadata.json')} -d ${V1_DIR} -o ${path.join(FIXTURES_DIR, 'v2-hashed')} -r TestApp -t 2.0.0 -u ${path.join(V2_DIR, 'updater.exe')}`;
 
   console.log(chalk.gray('  Building v2 offline package...'));

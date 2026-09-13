@@ -14,7 +14,7 @@ use super::error::TAResult;
 #[tauri::command]
 pub fn wincred_write(target: &str, token: &str, comment: &str) -> TAResult<()> {
     let mut comment = comment.encode_utf16().collect::<Vec<u16>>();
-    comment.push(0); // Null-terminate the string
+    comment.push(0); // 为字符串添加空终止符
     let mut target_name = target.encode_utf16().collect::<Vec<u16>>();
     let token_utf16 = token.encode_utf16().collect::<Vec<u16>>();
     let token_bytes = token_utf16
@@ -24,7 +24,7 @@ pub fn wincred_write(target: &str, token: &str, comment: &str) -> TAResult<()> {
             [bytes[0], bytes[1]]
         })
         .collect::<Vec<u8>>();
-    target_name.push(0); // Null-terminate the string
+    target_name.push(0); // 为字符串添加空终止符
     let credential = CREDENTIALW {
         Flags: CRED_FLAGS(0),
         Type: CRED_TYPE_GENERIC,
@@ -51,7 +51,7 @@ pub fn wincred_write(target: &str, token: &str, comment: &str) -> TAResult<()> {
 #[tauri::command]
 pub fn wincred_read(target: &str) -> TAResult<String> {
     let mut target_name = target.encode_utf16().collect::<Vec<u16>>();
-    target_name.push(0); // Null-terminate the string
+    target_name.push(0); // 为字符串添加空终止符
     let mut credential_ptr: *mut CREDENTIALW = std::ptr::null_mut();
     unsafe {
         CredReadW(
@@ -84,7 +84,7 @@ pub fn wincred_read(target: &str) -> TAResult<String> {
 #[tauri::command]
 pub fn wincred_delete(target: &str) -> TAResult<()> {
     let mut target_name = target.encode_utf16().collect::<Vec<u16>>();
-    target_name.push(0); // Null-terminate the string
+    target_name.push(0); // 为字符串添加空终止符
     unsafe { CredDeleteW(PWSTR(target_name.as_mut_ptr()), CRED_TYPE_GENERIC, None) }
         .map_err(|e| anyhow::anyhow!(e))
         .context("DELETE_CRED_ERR")?;

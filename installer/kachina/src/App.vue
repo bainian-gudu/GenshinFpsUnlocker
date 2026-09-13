@@ -549,7 +549,7 @@
   height: 4px;
   background: var(--colorBrandForeground1);
   transition: width 0.1s;
-  transition-timing-function: cubic-bezier(0.33, 0, 0.67, 1); /* easeInOut */
+  transition-timing-function: cubic-bezier(0.33, 0, 0.67, 1); /* 相关实现：easeInOut */
   width: 30%;
 }
 
@@ -845,12 +845,12 @@ const progressInterval = ref<number>(0);
 
 const dialog = ref<'' | 'mirrorc' | 'source' | 'agreement'>('');
 
-// Dynamic image/CSS state
+// 动态图片/CSS 状态
 const imageSource = ref<string>('');
 const dynamicCss = ref<string>('');
 const useDynamicCss = ref<boolean>(false);
 
-// Hidden sources easter egg state
+// 隐藏来源彩蛋状态
 const commaCount = ref<number>(0);
 const showHiddenSources = ref<boolean>(false);
 const commaTimeout = ref<number>(0);
@@ -890,11 +890,11 @@ watch(
   },
 );
 
-// Watch dialog state changes to reset hidden sources state
+// 监听对话框状态变化，以重置隐藏来源状态
 watch(
   () => dialog.value,
   (newValue, oldValue) => {
-    // Reset hidden sources state when leaving the source dialog
+    // 离开来源对话框时重置隐藏来源状态
     if (oldValue === 'source' && newValue !== 'source') {
       resetHiddenSourcesState();
     }
@@ -943,7 +943,7 @@ const INSTALLER_CONFIG: InstallerConfig = reactive({
 
 // 用户协议：正文在打包时由配置项 agreementFile 内联进 embedded_config
 // （见 src-tauri/src/builder/pack.rs 的 resolve_agreement），支持
-// text / markdown / html 三种格式，点击链接弹窗展示全文。
+// 文本 / markdown / html 三种格式，点击链接弹窗展示全文。
 const agreementTitle = computed<string>(
   () => PROJECT_CONFIG.agreement?.title?.trim() || '用户协议',
 );
@@ -972,7 +972,7 @@ function closeAgreement(accepted: boolean) {
  * 拦截协议正文里的所有链接点击。
  *
  * 安装器窗口一旦被导航走，安装/卸载流程就直接断了；因此这里 preventDefault，
- * 只把 http(s) 外链交给系统浏览器（与上游「获取 CDK」用的同一个 launch 命令），
+ * 只把 http(s) 外链交给系统浏览器（与上游「获取 CDK」使用同一个启动命令），
  * 其余（页内锚点、以及万一漏网的 javascript: 之类）什么都不做。
  */
 function onAgreementClick(event: MouseEvent) {
@@ -986,7 +986,7 @@ function onAgreementClick(event: MouseEvent) {
   if (!/^https?:\/\//i.test(href)) {
     return;
   }
-  // 与上游「获取 CDK」同一个命令；失败只记日志，不打断安装流程
+  // 与上游「获取 CDK」同一个Command；失败只记日志，不打断安装流程
   invoke('launch', { path: href }).catch((e) => warn('打开协议链接失败:', e));
 }
 
@@ -1300,7 +1300,7 @@ async function runInstall(): Promise<void> {
   }
   console.log('Files to install:', diff_files);
 
-  // Create DFS2 session if using DFS2 source
+  // 使用 DFS2 来源时创建 DFS2 会话
   if (selectedSource.value.startsWith('dfs2+')) {
     current.value = '创建下载会话……';
     try {
@@ -1314,14 +1314,14 @@ async function runInstall(): Promise<void> {
       if (ranges.length > 0) {
         const apiUrl = selectedSource.value.replace(/^dfs2\+packed\+/, '');
 
-        // Get resource version from cache
+        // 从缓存获取资源版本
         const cache = dfsIndexCache.get(selectedSource.value);
         const resourceVersion = cache?.resource_version;
 
         const sessionId = await createDfs2Session(
           apiUrl,
           ranges,
-          resourceVersion, // Use specific version from metadata
+          resourceVersion, // 使用元数据中的指定版本
           INSTALLER_CONFIG.args.dfs_extras || undefined,
         );
 
@@ -1513,7 +1513,7 @@ async function runInstall(): Promise<void> {
       if (mode === 'local') {
         task = new LocalFileTask(file, downloadContext);
       } else {
-        // hybridpatch, patch, direct 都使用 SingleFileTask
+        // hybridpatch, 补丁, 直接 都使用 SingleFileTask
         task = new SingleFileTask(file, downloadContext, taskManager);
       }
     }
@@ -1527,13 +1527,13 @@ async function runInstall(): Promise<void> {
   log('All tasks completed successfully:', stats);
   clearInterval(progressInterval.value);
 
-  // Create snapshot of networkInsights before any cleanup to ensure consistent reporting
+  // 在清理前创建 networkInsights 快照，确保统计一致
   const serversSnapshot = [...networkInsights];
 
-  // Clean up DFS2 sessions immediately after download completion, before post-processing
+  // 下载完成后、后处理前立即清理 DFS2 会话
   await cleanupAllDfs2Sessions(serversSnapshot);
 
-  // Clean up plugin sessions
+  // 清理插件会话
   if (plugin?.endSession) {
     try {
       const cleanUrl = pluginManager.getCleanUrl(selectedSource.value);
@@ -1746,7 +1746,7 @@ async function getLnkPath() {
  * `GenshinFpsUnlocker.lnk` 规范成中文显示名 `原神帧率解锁.lnk`），不在 Kachina
  * 默认的清理范围里，卸载后会在桌面留下指向已删除 exe 的死图标。
  *
- * 配置项 `extraUninstallLnkNames` 只给**文件名**；这里用 shell API 把四个真实
+ * 配置项 `extraUninstallLnkNames` 只给**文件名**；这里用 Shell API 把四个真实
  * 目录都解析出来再拼完整路径：
  * - 公共桌面 / 用户桌面（宿主按可写性二选一，且桌面可能被 OneDrive 重定向，
  *   所以不能用 `%USERPROFILE%\Desktop` 之类的拼法）
@@ -1864,9 +1864,9 @@ async function install(): Promise<void> {
     log('安装失败:', logErrStr);
     await dialog_error(errstr);
 
-    // Clean up DFS2 sessions on error (only for DFS mode)
+    // 发生错误时清理 DFS2 会话（仅 DFS 模式）
     if (installMode.value === 'default') {
-      // Create snapshot of networkInsights before any cleanup to ensure consistent reporting
+      // 在清理前创建 networkInsights 快照，确保统计一致
       const serversSnapshot = [...networkInsights];
 
       await cleanupAllDfs2Sessions(serversSnapshot);
@@ -1896,38 +1896,38 @@ async function install(): Promise<void> {
 
 function processEmbeddedImage(base64Data: string | null) {
   if (!base64Data) {
-    // No embedded image, use default
+    // 没有内嵌图片，使用默认值
     imageSource.value = new URL('./left.webp', import.meta.url).href;
     return;
   }
 
   try {
-    // Decode base64 to check first 16 bytes
+    // 解码 base64 以检查前 16 个字节
     const binaryString = atob(base64Data);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
 
-    // Check if first 16 bytes are all printable ASCII (0x20-0x7E)
+    // 检查前 16 个字节是否全部为可打印 ASCII（0x20-0x7E）
     const first16Bytes = bytes.slice(0, Math.min(16, bytes.length));
     const isAscii = first16Bytes.every((byte) => byte >= 0x20 && byte <= 0x7e);
 
     if (isAscii) {
-      // It's CSS - decode and inject
+      // 这是 CSS，解码并注入
       const cssContent = new TextDecoder().decode(bytes);
       dynamicCss.value = cssContent;
       useDynamicCss.value = true;
       log('Loaded embedded CSS stylesheet');
     } else {
-      // It's an image - use as data URI
+      // 这是图片，作为数据 URI 使用
       imageSource.value = `data:image/webp;base64,${base64Data}`;
       useDynamicCss.value = false;
       log('Loaded embedded image');
     }
   } catch (e) {
     error('Failed to process embedded image:', e);
-    // Fallback to default
+    // 回退到默认值
     imageSource.value = new URL('./left.webp', import.meta.url).href;
   }
 }
@@ -1965,11 +1965,11 @@ onMounted(async () => {
       Object.assign(PROJECT_CONFIG, INSTALLER_CONFIG.embedded_config);
       // 打包时内联了用户协议：要求用户主动勾选「我已阅读并同意」才放开安装按钮。
       // 没有内联协议时保持上游默认（视为已同意），不额外增加交互；
-      // 静默 / 非交互安装走 onMounted 末尾的 install()，不受这个勾选影响。
+      // 静默 / 非交互安装走 onMounted 末尾的 安装()，不受这个勾选影响。
       if (hasAgreementContent(PROJECT_CONFIG.agreement)) {
         acceptEula.value = false;
       }
-      // Process embedded image/CSS
+      // 处理内嵌图片/CSS
       processEmbeddedImage(INSTALLER_CONFIG.embedded_image);
 
       if (process.env.NODE_ENV === 'development') {
@@ -2056,7 +2056,7 @@ onMounted(async () => {
       }
     }
     init.value = 1;
-    // Apply window borderless setting
+    // 应用无边框窗口设置
     if (PROJECT_CONFIG.windowBorderless === true) {
       try {
         await getCurrentWindow().setDecorations(false);
@@ -2094,7 +2094,7 @@ onMounted(async () => {
   }
 });
 
-// Cleanup on component unmount
+// 组件卸载时清理
 onUnmounted(() => {
   resetHiddenSourcesState();
 });
@@ -2329,7 +2329,7 @@ async function uninstall() {
       needElevate.value,
     );
     // Mirror酱 CDK 存在 Windows 凭据管理器里，卸载器不管这块（不是注册表也不是文件），
-    // 自己清掉；没有这条凭据时命令会报错，忽略即可。
+    // 自己清掉；没有这条凭据时Command会报错，忽略即可。
     await invoke('wincred_delete', {
       target: `KachinaInstaller_MirrorChyanCDK_${PROJECT_CONFIG.appName}`,
     }).catch((e) => warn('删除 Mirror酱 CDK 凭据失败:', e));
@@ -2386,9 +2386,9 @@ function openMirrorc() {
   });
 }
 
-// Hidden sources easter egg functionality
+// 隐藏来源彩蛋功能
 function handleKeyDown(event: KeyboardEvent) {
-  // Only handle comma key when source dialog is open
+  // 仅在来源对话框打开时处理逗号键
   if (
     dialog.value !== 'source' ||
     (event.key !== ',' && event.code !== 'Comma')
@@ -2398,22 +2398,22 @@ function handleKeyDown(event: KeyboardEvent) {
 
   event.preventDefault();
 
-  // Clear existing timeout
+  // 清除现有计时器
   if (commaTimeout.value) {
     clearTimeout(commaTimeout.value);
   }
 
-  // Increment comma count
+  // 增加逗号计数
   commaCount.value++;
 
-  // Check if we've reached 5 consecutive comma presses
+  // 检查是否已连续按下 5 次逗号
   if (commaCount.value >= 5) {
     showHiddenSources.value = true;
-    commaCount.value = 0; // Reset counter
+    commaCount.value = 0; // 重置计数器
     return;
   }
 
-  // Set timeout to reset counter after 2 seconds
+  // 设置计时器，在 2 秒后重置计数器
   commaTimeout.value = setTimeout(() => {
     commaCount.value = 0;
     commaTimeout.value = 0;

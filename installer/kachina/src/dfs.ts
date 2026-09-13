@@ -1,13 +1,12 @@
 import { hybridPatch, InstallFile } from './api/installFile';
 import { ipc, log, warn, addInsightWithMode } from './api/ipc';
 import { invoke } from './tauri';
-import { clearNetworkInsights } from './networkInsights';
 import { KachinaInstallSource, pluginManager } from './plugins';
 import { registerAllPlugins } from './plugins/registry';
+import { getDfs2Session } from './dfs/session';
 import {
   Dfs2BatchChunkResponse,
   Dfs2Metadata,
-  Dfs2SessionResponse,
   DfsMetadataHashType,
   DfsUpdateTask,
   Embedded,
@@ -29,7 +28,7 @@ export const dfsIndexCache = new Map<
     index: Map<string, Embedded>;
     metadata: InvokeGetDfsMetadataRes;
     installer_end: number;
-    resource_version?: string; // DFS2 resource version
+    resource_version?: string; // DFS2 资源版本
   }
 >();
 
@@ -144,7 +143,7 @@ export const getDfsMetadata = async (
   }
 
   if (remote === 'dfs2') {
-    // DFS2: Use server-parsed metadata
+    // DFS2：使用服务器解析的元数据
     if (dfsIndexCache.has(source)) {
       return dfsIndexCache.get(source)?.metadata as InvokeGetDfsMetadataRes;
     }
@@ -159,7 +158,7 @@ export const getDfsMetadata = async (
       );
     }
 
-    // Convert DFS2 format to existing format
+    // 将 DFS2 格式转换为现有格式
     const convertedIndex = new Map<string, Embedded>();
     Object.entries(dfs2Metadata.data.index).forEach(([name, info]) => {
       convertedIndex.set(name, {
@@ -170,19 +169,19 @@ export const getDfsMetadata = async (
       });
     });
 
-    // Cache the converted data with resource version
+    // 缓存转换后的数据和资源版本
     dfsIndexCache.set(source, {
       index: convertedIndex,
       metadata: dfs2Metadata.data.metadata as InvokeGetDfsMetadataRes,
       installer_end: dfs2Metadata.data.installer_end,
-      resource_version: dfs2Metadata.resource_version, // Store version for session creation
+      resource_version: dfs2Metadata.resource_version, // 保存创建会话所用的资源版本
     });
 
     return dfs2Metadata.data.metadata as InvokeGetDfsMetadataRes;
   } else {
-    // DFS1: Use existing client-side parsing logic
+    // DFS1：使用现有的客户端解析逻辑
     if (storage === 'hashed') {
-      // Existing hashed logic would go here
+      // 现有的 hashed 逻辑应放在这里
       throw new Error('Hashed storage not implemented');
     } else {
       if (dfsIndexCache.has(source)) {
@@ -252,7 +251,7 @@ export async function refreshDfsIndex(
     }
     log('found segment', offset);
     try {
-      // 4byte magic, 2byte name_len, dyn name, 4byte size, dyn data
+      // 4 字节 magic、2 字节 name_len、动态名称、4 字节 大小、动态数据
       offset += 4;
       const name_len = index_view.getUint16(offset, false);
       log('name_len', name_len);
@@ -355,7 +354,7 @@ export const getDfsUrl = async (
   const { remote, storage, url, plugin } = getDfsSourceType(source);
 
   if (remote === 'dfs2') {
-    // DFS2: Use session-based download
+    // DFS2：使用基于会话的下载
     const cache = dfsIndexCache.get(source);
     if (!cache) {
       throw new Error('DFS2 metadata not loaded');
@@ -364,7 +363,7 @@ export const getDfsUrl = async (
     const file = cache.index.get(hash);
     if (!file) {
       if (installer) {
-        // For installer, get the installer portion
+        // 对安装器获取安装器部分
         const range = `0-${cache.installer_end - 1}`;
         const cdnUrl = await getDfs2Url(url, range);
         return {
@@ -377,7 +376,7 @@ export const getDfsUrl = async (
       throw new Error('No file in DFS2 index');
     }
 
-    // Get specific file range
+    // 获取指定文件范围
     const range = `${file.offset}-${file.offset + file.size - 1}`;
     const cdnUrl = await getDfs2Url(url, range);
     return {
@@ -386,7 +385,7 @@ export const getDfsUrl = async (
       size: file.size,
     };
   } else {
-    // DFS1: Use existing logic
+    // DFS1：使用现有逻辑
     if (storage === 'hashed') {
       const full_file_url =
         remote === 'direct'
@@ -435,7 +434,7 @@ export const getDfsUrl = async (
 };
 
 export const dfsJsonUrlToHashed = (jsonUrl: string, hash: string): string => {
-  // path/to/.metadata.json -> path/to/hashed/${hash}
+  // 路径示例：path/to/.metadata.json -> path/to/hashed/${hash}
   const url = new URL(jsonUrl);
   const path = url.pathname;
   const lastSlash = path.lastIndexOf('/');
@@ -498,259 +497,14 @@ export const getDfsFileUrl = async (
   return url;
 };
 
-// Helper function to check if error is a network error that should be retried
-const isNetworkError = (error: unknown): boolean => {
-  const errorStr = JSON.stringify(error);
+export {
+  cleanupAllDfs2Sessions,
+  cleanupDfs2Session,
+  createDfs2Session,
+  storeDfs2Session,
+} from './dfs/session';
 
-  // 检查是否为HTTP状态码错误（4xx/5xx），这些不应该重试
-  if (errorStr.includes('Session creation failed:')) {
-    return false; // HTTP状态错误，不重试
-  }
-
-  // 检查 reqwest/hyper 网络库错误结构（这些需要重试）
-  if (
-    errorStr.includes('Failed to send request:') &&
-    (errorStr.includes('reqwest::Error') ||
-      errorStr.includes('hyper::Error') ||
-      errorStr.includes('hyper_util::client::legacy::Error'))
-  ) {
-    return true;
-  }
-
-  // 检查连接相关的 kind 字段（英文，不会本地化）
-  if (
-    errorStr.includes('kind: ConnectionReset') ||
-    errorStr.includes('kind: Timeout') ||
-    errorStr.includes('kind: ConnectionRefused') ||
-    errorStr.includes('kind: NotFound')
-  ) {
-    return true;
-  }
-
-  // 检查常见的网络相关错误码
-  if (/code: (10054|10060|10061)/.test(errorStr)) {
-    return true;
-  }
-
-  return false;
-};
-
-// DFS2 Session Management Functions
-export const createDfs2Session = async (
-  apiUrl: string,
-  chunks?: string[],
-  version?: string,
-  extras?: string,
-): Promise<string> => {
-  // Parse extras string to JSON object if provided
-  let extrasObject: unknown = undefined;
-  if (extras && extras.trim() !== '') {
-    try {
-      extrasObject = JSON.parse(extras);
-    } catch (e) {
-      throw new Error(`Invalid extras JSON format: ${e}`);
-    }
-  }
-
-  // Main retry loop with network error handling (max 3 retries)
-  const retryIntervals = [200, 600, 1000]; // 0.2s, 0.6s, 1s
-
-  for (let retryAttempt = 0; retryAttempt < 3; retryAttempt++) {
-    let challengeResponse: string | undefined = undefined;
-    let sessionId: string | undefined = undefined;
-
-    try {
-      // Challenge handling loop (max 3 challenge attempts per retry)
-      for (
-        let challengeAttempts = 0;
-        challengeAttempts < 3;
-        challengeAttempts++
-      ) {
-        const sessionResponse: Dfs2SessionResponse =
-          await invoke<Dfs2SessionResponse>('create_dfs2_session', {
-            apiUrl: apiUrl,
-            chunks: chunks || undefined,
-            version: version || undefined,
-            challengeResponse: challengeResponse,
-            sessionId: sessionId,
-            extras: extrasObject,
-          });
-
-        // Success - session created
-        if (sessionResponse.sid && !sessionResponse.challenge) {
-          // Store session for cleanup
-          storeDfs2Session(apiUrl, sessionResponse.sid);
-          return sessionResponse.sid;
-        }
-
-        // Challenge received
-        if (
-          sessionResponse.challenge &&
-          sessionResponse.data &&
-          sessionResponse.sid
-        ) {
-          console.log(`DFS2 challenge received: ${sessionResponse.challenge}`);
-
-          try {
-            if (sessionResponse.challenge === 'web') {
-              // Handle web challenges - failure should exit immediately
-              challengeResponse = await handleWebChallenge(
-                sessionResponse.data,
-              );
-            } else {
-              // Handle computational challenges (MD5, SHA256)
-              challengeResponse = await invoke<string>('solve_dfs2_challenge', {
-                challengeType: sessionResponse.challenge,
-                data: sessionResponse.data,
-              });
-            }
-
-            sessionId = sessionResponse.sid;
-            console.log('Challenge solved, retrying session creation...');
-            continue; // Continue challenge handling loop
-          } catch (error) {
-            if (sessionResponse.challenge === 'web') {
-              // Web challenge failure should exit immediately
-              throw new Error(`Web challenge failed: ${error}`);
-            } else {
-              // Non-web challenge failure should retry challenge
-              console.warn(
-                `Challenge ${sessionResponse.challenge} failed, retrying...`,
-              );
-              // Reset challenge data for retry
-              challengeResponse = undefined;
-              sessionId = undefined;
-              continue; // Continue challenge handling loop for retry
-            }
-          }
-        }
-
-        // Unexpected response
-        throw new Error('Invalid session response format');
-      }
-
-      // If we get here, challenge attempts exceeded
-      throw new Error('Failed to create session after 3 challenge attempts');
-    } catch (error) {
-      // Check if this is a network error and we have retries left
-      if (isNetworkError(error) && retryAttempt < 2) {
-        console.warn(
-          `Network error on attempt ${retryAttempt + 1}, retrying in ${retryIntervals[retryAttempt]}ms...`,
-          error,
-        );
-        // Add delay before retry
-        await new Promise((resolve) =>
-          setTimeout(resolve, retryIntervals[retryAttempt]),
-        );
-        continue; // Continue main retry loop
-      }
-
-      // Web challenge failures or non-network errors should not retry
-      if (
-        error instanceof Error &&
-        error.message.includes('Web challenge failed')
-      ) {
-        throw error;
-      }
-
-      // If not a network error or out of retries, throw the error
-      if (retryAttempt === 2) {
-        throw new Error(
-          `Failed to create DFS2 session after ${retryAttempt + 1} attempts: ${error}`,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  // This should never be reached, but just in case
-  throw new Error('Failed to create session: unexpected exit from retry loop');
-};
-
-// Web Challenge Handler
-const handleWebChallenge = async (challengeData: string): Promise<string> => {
-  // TODO: Implement web challenge handling
-  // This could involve:
-  // - Opening a popup window
-  // - Handling captcha
-  // - User authentication
-  // - Redirect flows
-  //
-  // For now, throw an error to indicate it needs implementation
-  throw new Error(
-    'Web challenges not implemented yet. Challenge data: ' + challengeData,
-  );
-};
-
-// DFS2 session cache - now only stores sessions created in runInstall
-const dfs2Sessions = new Map<
-  string,
-  { sessionId: string; baseUrl: string; resId: string }
->();
-
-// Store DFS2 session info after creation in runInstall
-export const storeDfs2Session = (apiUrl: string, sessionId: string): void => {
-  const url = new URL(apiUrl);
-  const baseUrl = `${url.protocol}//${url.host}`;
-  const resId = url.pathname.split('/').pop() || '';
-
-  dfs2Sessions.set(apiUrl, {
-    sessionId,
-    baseUrl,
-    resId,
-  });
-};
-
-// Clean up specific DFS2 session
-export const cleanupDfs2Session = async (
-  apiUrl: string,
-  serversSnapshot?: InsightItem[],
-): Promise<void> => {
-  const sessionInfo = dfs2Sessions.get(apiUrl);
-  if (sessionInfo) {
-    try {
-      log('Ending DFS2 session:', sessionInfo.sessionId);
-      const sessionApiUrl = `${sessionInfo.baseUrl}/session/${sessionInfo.sessionId}/${sessionInfo.resId}`;
-
-      // 使用快照上报数据，防止被并发修改
-      // 始终结束 session，如有快照则带上 insights
-      await invoke('end_dfs2_session', {
-        sessionApiUrl: sessionApiUrl,
-        insights: serversSnapshot ? { servers: serversSnapshot } : undefined,
-      });
-      log('DFS2 session ended successfully:', sessionInfo.sessionId);
-    } catch (error) {
-      warn('Failed to end DFS2 session:', sessionInfo.sessionId, error);
-    }
-    dfs2Sessions.delete(apiUrl);
-  }
-};
-
-// Clean up all DFS2 sessions (call at end of installation)
-export const cleanupAllDfs2Sessions = async (
-  serversSnapshot?: InsightItem[],
-): Promise<void> => {
-  const cleanupPromises: Promise<void>[] = [];
-
-  for (const apiUrl of dfs2Sessions.keys()) {
-    cleanupPromises.push(cleanupDfs2Session(apiUrl, serversSnapshot));
-  }
-
-  // 等待所有session清理完成
-  await Promise.allSettled(cleanupPromises);
-
-  // 清空统计数据（在所有上报完成后）
-  // 只有提供快照时才清空（表示是正常的安装结束流程）
-  if (serversSnapshot) {
-    clearNetworkInsights();
-  }
-
-  // 清理session缓存
-  dfs2Sessions.clear();
-};
-
-// Chunk URL request aggregator for batch processing
+// 分块 URL 批量请求聚合器
 interface PendingRequest {
   resolve: (url: string) => void;
   reject: (error: Error) => void;
@@ -758,7 +512,7 @@ interface PendingRequest {
 
 class ChunkUrlAggregator {
   private static instance: ChunkUrlAggregator;
-  private pendingRequests = new Map<string, PendingRequest[]>(); // range -> requests[]
+  private pendingRequests = new Map<string, PendingRequest[]>(); // 范围 -> 请求列表
   private aggregationTimer: ReturnType<typeof setTimeout> | null = null;
   private currentSessionUrl: string | null = null;
   private readonly AGGREGATION_WINDOW_MS = 50;
@@ -827,7 +581,7 @@ class ChunkUrlAggregator {
         const result = response.urls[range];
 
         if (result?.url) {
-          // 成功：通知所有等待该range的请求
+          // 成功：通知所有等待该范围的请求
           pendingRequests.forEach((req) => req.resolve(result.url!));
         } else {
           // 失败：通知错误
@@ -844,12 +598,12 @@ class ChunkUrlAggregator {
   }
 }
 
-// DFS2-specific URL getter using pre-created session
+// 使用预创建会话获取 DFS2 专用 URL
 export const getDfs2Url = async (
   apiUrl: string,
   range: string,
 ): Promise<string> => {
-  const sessionInfo = dfs2Sessions.get(apiUrl);
+  const sessionInfo = getDfs2Session(apiUrl);
   if (!sessionInfo) {
     throw new Error(
       'DFS2 session not found - session must be created in runInstall',
@@ -863,7 +617,7 @@ export const getDfs2Url = async (
   return await aggregator.requestChunkUrl(sessionApiUrl, range);
 };
 
-// Collect ranges needed for DFS2 session creation
+// 收集创建 DFS2 会话所需的范围
 export const collectDfs2Ranges = (
   diffFiles: DfsUpdateTask[],
   localFiles: Embedded[],
@@ -892,11 +646,11 @@ export const collectDfs2Ranges = (
 
   processedFiles.forEach((item) => {
     if ((item as VirtualMergedFile)._isMergedGroup) {
-      // 合并组：添加合并后的range
+      // 合并组：添加合并后的范围
       const virtualFile = item as VirtualMergedFile;
       ranges.add(virtualFile._mergedInfo.mergedRange);
 
-      // 同时添加原始文件的ranges作为fallback
+      // 同时添加原始文件的ranges作为回退
       virtualFile._mergedInfo.files.forEach((originalFile) => {
         const hasLocalFile = localFiles.find(
           (l) => l.name === originalFile[hashKey],
@@ -906,12 +660,12 @@ export const collectDfs2Ranges = (
           localFiles.find((l) => l.name === originalFile.lpatch?.from[hashKey]);
 
         if (hasLocalFile) {
-          // Skip: has local file, no need to download
+          // 跳过：已有本地文件，无需下载
           return;
         }
 
         if (originalFile.lpatch && hasLpatchFile) {
-          // Lpatch mode: need both lpatch file and original file ranges
+          // Lpatch 模式：需要 lpatch 文件和原始文件范围
           const lpatchHash = `${originalFile.lpatch.from[hashKey]}_${originalFile.lpatch.to[hashKey]}`;
           const lpatchFile = cache.index.get(lpatchHash);
           if (lpatchFile) {
@@ -928,7 +682,7 @@ export const collectDfs2Ranges = (
             );
           }
         } else if (originalFile.patch) {
-          // Patch mode: need both patch file and original file ranges
+          // 补丁 模式：需要 补丁 文件和原始文件范围
           const patchHash = `${originalFile.patch.from[hashKey]}_${originalFile.patch.to[hashKey]}`;
           const patchFile = cache.index.get(patchHash);
           if (patchFile) {
@@ -945,14 +699,14 @@ export const collectDfs2Ranges = (
             );
           }
         } else {
-          // Normal download: only need the file itself
+          // 普通下载：只需要文件本身
           const file = cache.index.get(originalFile[hashKey] as string);
           if (file) {
             ranges.add(`${file.offset}-${file.offset + file.size - 1}`);
           }
         }
 
-        // Handle installer files
+        // 处理安装器文件
         if (originalFile.installer && cache.installer_end > 0) {
           ranges.add(`0-${cache.installer_end - 1}`);
         }
@@ -966,12 +720,12 @@ export const collectDfs2Ranges = (
         localFiles.find((l) => l.name === dfsFile.lpatch?.from[hashKey]);
 
       if (hasLocalFile) {
-        // Skip: has local file, no need to download
+        // 跳过：已有本地文件，无需下载
         return;
       }
 
       if (dfsFile.lpatch && hasLpatchFile) {
-        // Lpatch mode: need both lpatch file and original file ranges
+        // Lpatch 模式：需要 lpatch 文件和原始文件范围
         const lpatchHash = `${dfsFile.lpatch.from[hashKey]}_${dfsFile.lpatch.to[hashKey]}`;
         const lpatchFile = cache.index.get(lpatchHash);
         if (lpatchFile) {
@@ -986,7 +740,7 @@ export const collectDfs2Ranges = (
           );
         }
       } else if (dfsFile.patch) {
-        // Patch mode: need both patch file and original file ranges
+        // 补丁 模式：需要 补丁 文件和原始文件范围
         const patchHash = `${dfsFile.patch.from[hashKey]}_${dfsFile.patch.to[hashKey]}`;
         const patchFile = cache.index.get(patchHash);
         if (patchFile) {
@@ -1001,14 +755,14 @@ export const collectDfs2Ranges = (
           );
         }
       } else {
-        // Normal download: only need the file itself
+        // 普通下载：只需要文件本身
         const file = cache.index.get(dfsFile[hashKey] as string);
         if (file) {
           ranges.add(`${file.offset}-${file.offset + file.size - 1}`);
         }
       }
 
-      // Handle installer files
+      // 处理安装器文件
       if (dfsFile.installer && cache.installer_end > 0) {
         ranges.add(`0-${cache.installer_end - 1}`);
       }
@@ -1052,12 +806,12 @@ export const runDfsDownload = async (
     (l) => l.name === item.lpatch?.from[hashKey],
   );
 
-  // Track insight for return
+  // 记录要返回的网络信息
   let collectedInsight: InsightItem | undefined = undefined;
 
   try {
     if (hasLocalFile && !disable_local) {
-      // Local files don't involve network downloads, so no insight collection
+      // 本地文件不涉及网络下载，因此不收集网络信息
       await ipc(
         InstallFile(
           hasLocalFile,
@@ -1072,14 +826,14 @@ export const runDfsDownload = async (
         elevate,
         onProgress,
       );
-      // Local: no insight
+      // 本地模式：没有网络信息
     } else if (
       hasLpatchFile &&
       item.lpatch &&
       !disable_patch &&
       !disable_local
     ) {
-      // HybridPatch: collect insights with 'hybridpatch' mode
+      // HybridPatch：以 hybridpatch 模式收集网络信息
       const hash = `${item.lpatch.from[hashKey]}_${item.lpatch.to[hashKey]}`;
       const url = await getDfsUrl(dfsSource, hash);
       url.size = url.size || (item.lpatch?.size as number);
@@ -1098,7 +852,7 @@ export const runDfsDownload = async (
         collectedInsight = result.insight;
       }
     } else if (item.patch && !disable_patch) {
-      // Patch: collect insights with 'patch' mode
+      // 补丁：以 补丁 模式收集网络信息
       const hash = `${item.patch.from[hashKey]}_${item.patch.to[hashKey]}`;
       const url = await getDfsUrl(dfsSource, hash);
       const result: {
@@ -1122,7 +876,7 @@ export const runDfsDownload = async (
         collectedInsight = result.insight;
       }
     } else {
-      // Direct: collect insights with 'direct' mode
+      // 直接：以 直接 模式收集网络信息
       const hash = item[hashKey] as string;
       const url = await getDfsUrl(dfsSource, hash, extras, item.installer);
       const result: {
@@ -1149,11 +903,11 @@ export const runDfsDownload = async (
   } catch (e) {
     item.downloaded = 0;
 
-    // Handle error insights for network operations
+    // 处理网络操作的错误信息
     if (e instanceof TAError && e.insight) {
       let mode: string | undefined;
       if (hasLocalFile && !disable_local) {
-        // Local files don't collect insights
+        // 本地文件不收集网络信息
         mode = undefined;
       } else if (
         hasLpatchFile &&
@@ -1171,7 +925,7 @@ export const runDfsDownload = async (
       if (mode) {
         addInsightWithMode(e.insight, mode);
       }
-      // Capture error insight for return (will be thrown, but caller can catch)
+      // 保存要返回的错误信息（最终会抛出，由调用方捕获）
       collectedInsight = e.insight;
     }
 
@@ -1343,14 +1097,14 @@ export const mergeSmallFilesIntoGroups = (
   return groups;
 };
 
-// Helper function to identify file install mode
+// 判断文件安装模式的辅助函数
 export const getFileInstallMode = (
   file: DfsUpdateTask,
   local: Embedded[],
   hashKey: DfsMetadataHashType,
 ): 'local' | 'hybridpatch' | 'patch' | 'direct' => {
   if (file.failed) {
-    return 'direct'; // Failed files should always be retried as direct downloads
+    return 'direct'; // 失败文件始终应按普通下载重试
   }
   const hasLocalFile = local.find((l) => l.name === file[hashKey]);
   const hasLpatchFile = local.find(
@@ -1363,7 +1117,7 @@ export const getFileInstallMode = (
   return 'direct';
 };
 
-// Helper function to determine merged group mode
+// 判断合并组模式的辅助函数
 export const getMergedGroupMode = (
   files: DfsUpdateTask[],
   local: Embedded[],
@@ -1379,8 +1133,8 @@ export const getMergedGroupMode = (
     } else if (mode === 'patch') {
       hasPatchFiles = true;
     }
-    // Note: merged groups should not contain 'local' or 'hybridpatch' files
-    // as they are filtered out during preprocessing
+    // 注意：合并组不应包含 本地 或 hybridpatch 文件
+    // 这些文件会在预处理阶段被过滤
   }
 
   if (hasDirectFiles && hasPatchFiles) {
@@ -1401,7 +1155,7 @@ export const preprocessFiles = (
   processedFiles: (DfsUpdateTask | VirtualMergedFile)[];
   mergedGroups: Map<string, MergedGroupInfo>;
 } => {
-  // 按模式分离文件：只有 direct 和 patch 模式可以合并
+  // 按模式分离文件：只有 直接 和 补丁 模式可以合并
   const mergeableFiles: DfsUpdateTask[] = [];
   const nonMergeableFiles: DfsUpdateTask[] = [];
 
@@ -1410,7 +1164,7 @@ export const preprocessFiles = (
     if (mode === 'direct' || mode === 'patch') {
       mergeableFiles.push(file);
     } else {
-      // local 和 hybridpatch 文件不参与合并
+      // 本地 和 hybridpatch 文件不参与合并
       nonMergeableFiles.push(file);
     }
   });
@@ -1436,7 +1190,7 @@ export const preprocessFiles = (
         size: group.totalDownloadSize,
         _isMergedGroup: true,
         _mergedInfo: group,
-        _fallbackFiles: [...group.files], // 保存原始文件用于fallback
+        _fallbackFiles: [...group.files], // 保存原始文件用于回退
         downloaded: 0,
         running: false,
         failed: undefined,
@@ -1466,7 +1220,7 @@ export const preprocessFiles = (
     mergedIndex < virtualMergedFiles.length ||
     nonMergeableIndex < nonMergeableFiles.length
   ) {
-    // 优先分配不可合并文件（local/hybridpatch）
+    // 优先分配不可合并文件（本地/hybridpatch）
     if (nonMergeableIndex < nonMergeableFiles.length) {
       processedFiles.push(nonMergeableFiles[nonMergeableIndex]);
       nonMergeableIndex++;
@@ -1488,9 +1242,9 @@ export const preprocessFiles = (
   log('File preprocessing result:', {
     originalFiles: files.length,
     processedFiles: processedFiles.length,
-    nonMergeableFiles: nonMergeableFiles.length, // local/hybridpatch
-    mergeableSingleFiles: singleFiles.length, // direct/patch 单文件
-    virtualMergedFiles: virtualMergedFiles.length, // direct/patch 合并组
+    nonMergeableFiles: nonMergeableFiles.length, // 本地/hybridpatch 文件
+    mergeableSingleFiles: singleFiles.length, // 直接/补丁 单文件
+    virtualMergedFiles: virtualMergedFiles.length, // 直接/补丁 合并组
     totalMergedFiles: Array.from(mergedGroups.values()).reduce(
       (sum, g) => sum + g.files.length,
       0,
@@ -1525,11 +1279,11 @@ export const runMergedGroupDownload = async (
     f.downloaded = 0;
   });
 
-  // Track insight for return
+  // 记录要返回的网络信息
   let collectedInsight: InsightItem | undefined = undefined;
 
   try {
-    // 从DFS source中提取API URL
+    // 从DFS 来源中提取API URL
     const { url: apiUrl, remote } = getDfsSourceType(dfsSource);
     // 获取合并后的CDN URL
     const [rangeStart, rangeEnd] = groupInfo.mergedRange.split('-').map(Number);
@@ -1627,7 +1381,7 @@ export const runMergedGroupDownload = async (
       let hasError = false;
 
       if (res && typeof res === 'object') {
-        // 处理TAResult格式：{Ok: value} 或 {Err: error}
+        // 处理TAResult格式：{Ok: 值} 或 {Err: 错误}
         if ('Err' in res) {
           hasError = true;
           // 错误信息暂存，将在后面统一处理日志
@@ -1638,7 +1392,7 @@ export const runMergedGroupDownload = async (
           file.downloaded = file.size; // 标记完成
           // 成功的单个文件日志将在最后统一处理
         }
-        // 兼容旧格式：直接包含error字段
+        // 兼容旧格式：直接包含错误字段
         else if (res.error) {
           hasError = true;
           file.errorMessage = res.error;
@@ -1656,9 +1410,9 @@ export const runMergedGroupDownload = async (
       }
     });
 
-    // 如果有文件失败，只对失败的文件进行fallback
+    // 如果有文件失败，只对失败的文件进行回退
     if (failedFiles.length > 0) {
-      // 只下载失败的文件进行fallback
+      // 只下载失败的文件进行回退
       await fallbackToIndividualDownload(
         failedFiles,
         dfsSource,
@@ -1716,8 +1470,8 @@ export const fallbackToIndividualDownload = async (
         source,
         hashKey,
         file,
-        false, // disable_patch
-        false, // disable_local
+        false, // 禁用 补丁
+        false, // 禁用本地文件
         elevate,
       );
     } catch (e) {
@@ -1725,5 +1479,5 @@ export const fallbackToIndividualDownload = async (
       throw e; // 继续向上抛出错误
     }
   }
-  // Fallback 文件的日志将由对应的 SingleFileTask 处理
+  // 回退 文件的日志将由对应的 SingleFileTask 处理
 };

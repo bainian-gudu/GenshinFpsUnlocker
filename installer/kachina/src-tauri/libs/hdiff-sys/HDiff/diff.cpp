@@ -27,9 +27,9 @@
 */
 
 #include "diff.h"
-#include <string.h> //strlen memcmp
+#include <string.h> //第三方实现细节。
 #include <stdio.h>  //fprintf
-#include <algorithm> //std::max std::sort
+#include <algorithm> //std::max std::排序
 #include <vector>
 #include "private_diff/suffix_string.h"
 #include "private_diff/bytes_rle.h"
@@ -43,7 +43,7 @@
 #include "private_diff/limit_mem_diff/stream_serialize.h"
 #include "../libParallel/parallel_import.h"
 #if (_IS_USED_MULTITHREAD)
-#include <thread>   //if used vc++, need >= vc2012
+#include <thread>   //使用 VC++ 时需要 VC2012 或更高版本
 #include <atomic>
 #endif
 using namespace hdiff_private;
@@ -308,15 +308,15 @@ static void _search_cover(std::vector<TOldCover>& covers,const TDiffData& diff,
         if (matchEqLength-getCoverCtrlCost(matchCover,lastCover)<kMinMatchScore){
             ++newPos;//下一个需要匹配的字符串(逐位置匹配速度会比较慢).
             continue;
-        }//else matched
+        }//否则 matched
         
         if (isCanExtendCover){
-            if (tryLinkExtend(lastCover,matchCover,diff,diffLimit)){//use link
+            if (tryLinkExtend(lastCover,matchCover,diff,diffLimit)){//使用 link
                 if (covers.size()==cover_begin)
                     covers.push_back(lastCover);
                 else
                     covers.back()=lastCover;
-            }else{ //use match
+            }else{ //使用 匹配
                 if (covers.size()>cover_begin)//尝试共线;
                     tryCollinear(covers.back(),matchCover,diff,diffLimit);
                 covers.push_back(matchCover);
@@ -436,7 +436,7 @@ static void select_cover(std::vector<TOldCover>& covers,size_t cover_begin,const
             if (diff.oldData[oldPos]==diff.newData[newPos]){
                 ++curSameCount;
                 
-                if (curSameCount>= kLimitSameCount) break; //for curSameCount*kFixedFloatSmooth_base
+                if (curSameCount>= kLimitSameCount) break; //用于 curSameCount*kFixedFloatSmooth_base
                 const TFixedFloatSmooth curSameRatio= (curSameCount*kFixedFloatSmooth_base)
                                                       /(length+kSmoothLength);
                 if (curSameRatio>=curBestSameRatio){
@@ -532,7 +532,7 @@ static void extend_cover(std::vector<TOldCover>& covers,size_t cover_begin,const
         assert_covers_safe(_covers,newSize,oldSize);
     }
 
-//diff结果序列化输出.
+//差异结果序列化输出.
 static void serialize_diff(const TDiffData& diff,const std::vector<TOldCover>& covers,std::vector<TByte>& out_diff){
     const TUInt coverCount=(TUInt)covers.size();
     std::vector<TByte> length_buf;
@@ -544,11 +544,11 @@ static void serialize_diff(const TDiffData& diff,const std::vector<TOldCover>& c
         for (TUInt i=0; i<coverCount; ++i) {
             packUInt(length_buf, (TUInt)covers[i].length);
             assert(covers[i].newPos>=lastNewEnd);
-            packUInt(inc_newPos_buf,(TUInt)(covers[i].newPos-lastNewEnd)); //save inc_newPos
-            if (covers[i].oldPos>=oldPosBack){ //save inc_oldPos
+            packUInt(inc_newPos_buf,(TUInt)(covers[i].newPos-lastNewEnd)); //保存 inc_newPos
+            if (covers[i].oldPos>=oldPosBack){ //保存 inc_oldPos
                 packUIntWithTag(inc_oldPos_buf,(TUInt)(covers[i].oldPos-oldPosBack), 0, 1);
             }else{
-                packUIntWithTag(inc_oldPos_buf,(TUInt)(oldPosBack-covers[i].oldPos), 1, 1);//sub safe
+                packUIntWithTag(inc_oldPos_buf,(TUInt)(oldPosBack-covers[i].oldPos), 1, 1);//减法安全检查
             }
             oldPosBack=covers[i].oldPos;
             lastNewEnd=covers[i].newPos+covers[i].length;
@@ -595,7 +595,7 @@ static void serialize_diff(const TDiffData& diff,const std::vector<TOldCover>& c
     
     template<class T>
     static void _outType(std::vector<TByte>& out_data,T* compressPlugin,const char* versionType=kHDiffVersionType){
-        //type version
+        //类型版本
         pushCStr(out_data,versionType);
         pushCStr(out_data,"&");
         {//compressType
@@ -607,7 +607,7 @@ static void serialize_diff(const TDiffData& diff,const std::vector<TOldCover>& c
             check(0==strchr(compressType,'&'));
             pushCStr(out_data,compressType);
         }
-        const TByte _cstrEndTag='\0';//c string end tag
+        const TByte _cstrEndTag='\0';//C 字符串结束标记
         pushBack(out_data,&_cstrEndTag,(&_cstrEndTag)+1);
     }
     
@@ -619,15 +619,15 @@ static void serialize_compressed_diff(const TDiffData& diff,std::vector<TOldCove
         TInt lastOldEnd=0;
         TInt lastNewEnd=0;
         for (TUInt i=0; i<coverCount; ++i) {
-            if (covers[i].oldPos>=lastOldEnd){ //save inc_oldPos
+            if (covers[i].oldPos>=lastOldEnd){ //保存 inc_oldPos
                 packUIntWithTag(cover_buf,(TUInt)(covers[i].oldPos-lastOldEnd), 0, 1);
             }else{
-                packUIntWithTag(cover_buf,(TUInt)(lastOldEnd-covers[i].oldPos), 1, 1);//sub safe
+                packUIntWithTag(cover_buf,(TUInt)(lastOldEnd-covers[i].oldPos), 1, 1);//减法安全检查
             }
             assert(covers[i].newPos>=lastNewEnd);
-            packUInt(cover_buf,(TUInt)(covers[i].newPos-lastNewEnd)); //save inc_newPos
+            packUInt(cover_buf,(TUInt)(covers[i].newPos-lastNewEnd)); //保存 inc_newPos
             packUInt(cover_buf,(TUInt)covers[i].length);
-            lastOldEnd=covers[i].oldPos+covers[i].length;//! +length
+            lastOldEnd=covers[i].oldPos+covers[i].length;//! +长度
             lastNewEnd=covers[i].newPos+covers[i].length;
         }
     }
@@ -973,7 +973,7 @@ static void get_diff(const TByte* newData,const TByte* newData_end,
     }
 }
     
-}//end namespace
+}//命名空间结束
 
 
 void create_diff(const TByte* newData,const TByte* newData_end,
@@ -1022,7 +1022,7 @@ static void serialize_single_compressed_diff(const hpatch_TStreamInput* newStrea
     TStepStream stepStream(newStream,oldStream,isZeroSubDiff,covers,patchStepMemSize);
     
     TDiffStream outDiff(out_diff);
-    {//type
+    {//类型
         std::vector<TByte> out_type;
         _outType(out_type,compressPlugin,kHDiffSFVersionType);
         outDiff.pushBack(out_type.data(),out_type.size());
@@ -1188,7 +1188,7 @@ bool check_single_compressed_diff(const hpatch_TStreamInput* newData,
 }
 
 
-//for test
+//用于测试
 void __hdiff_private__create_compressed_diff(const TByte* newData,const TByte* newData_end,
                                              const TByte* oldData,const TByte* oldData_end,
                                              std::vector<TByte>& out_diff,
@@ -1209,7 +1209,7 @@ void get_match_covers_by_block(const hpatch_TStreamInput* newData,const hpatch_T
     assert(out_covers->push_cover!=0);
     TDigestMatcher matcher(oldData,newData,kMatchBlockSize,mtsets?*mtsets:hdiff_TMTSets_s_kEmpty);
     matcher.search_cover(out_covers);
-    //todo: + extend_cover_stream ?
+    //待办: + extend_cover_stream ?
 }
 void get_match_covers_by_block(const unsigned char* newData,const unsigned char* newData_end,
                                const unsigned char* oldData,const unsigned char* oldData_end,
@@ -1267,14 +1267,14 @@ static void stream_serialize_compressed_diff(const hpatch_TStreamInput*  newData
     
     std::vector<TByte> rle_ctrlBuf;
     std::vector<TByte> rle_codeBuf;
-    {//empty rle //todo: suport rle data
+    {//空 rle //待办: suport rle 数据
         if (newData->streamSize>0)
           packUIntWithTag(rle_ctrlBuf,newData->streamSize-1,kByteRleType_rle0,kByteRleType_bit);
         assert(rle_codeBuf.empty());
     }
     
     TDiffStream outDiff(out_diff);
-    {//type
+    {//类型
         std::vector<TByte> out_type;
         _outType(out_type,compressPlugin);
         outDiff.pushBack(out_type.data(),out_type.size());
@@ -1285,18 +1285,18 @@ static void stream_serialize_compressed_diff(const hpatch_TStreamInput*  newData
     const hpatch_StreamPos_t cover_buf_size=TCoversStream::getDataSize(covers);
     outDiff.packUInt(cover_buf_size);
     TPlaceholder compress_cover_buf_sizePos=
-        outDiff.packUInt_pos(compressPlugin?cover_buf_size:0); //compress_cover_buf size
-    outDiff.packUInt(rle_ctrlBuf.size());//rle_ctrlBuf size
-    outDiff.packUInt(0);//compress_rle_ctrlBuf size
-    outDiff.packUInt(rle_codeBuf.size());//rle_codeBuf size
-    outDiff.packUInt(0);//compress_rle_codeBuf size
+        outDiff.packUInt_pos(compressPlugin?cover_buf_size:0); //compress_cover_buf 大小
+    outDiff.packUInt(rle_ctrlBuf.size());//rle_ctrlBuf 大小
+    outDiff.packUInt(0);//compress_rle_ctrlBuf 大小
+    outDiff.packUInt(rle_codeBuf.size());//rle_codeBuf 大小
+    outDiff.packUInt(0);//compress_rle_codeBuf 大小
     const hpatch_StreamPos_t newDataDiff_size=
                                 TNewDataDiffStream::getDataSize(covers,newData->streamSize);
     outDiff.packUInt(newDataDiff_size);
     TPlaceholder compress_newDataDiff_sizePos=
-        outDiff.packUInt_pos(compressPlugin?newDataDiff_size:0); //compress_newDataDiff size
+        outDiff.packUInt_pos(compressPlugin?newDataDiff_size:0); //compress_newDataDiff 大小
     
-    {//save covers
+    {//保存覆盖块
         TCoversStream cover_buf(covers,cover_buf_size);
         outDiff.pushStream(&cover_buf,compressPlugin,compress_cover_buf_sizePos);
     }
@@ -1304,7 +1304,7 @@ static void stream_serialize_compressed_diff(const hpatch_TStreamInput*  newData
         outDiff.pushBack(rle_ctrlBuf.data(),rle_ctrlBuf.size());
         outDiff.pushBack(rle_codeBuf.data(),rle_codeBuf.size());
     }
-    {//save newDataDiff
+    {//保存 newDataDiff
         TNewDataDiffStream newDataDiff(covers,newData,newDataDiff_size);
         outDiff.pushStream(&newDataDiff,compressPlugin,compress_newDataDiff_sizePos);
     }
@@ -1333,7 +1333,7 @@ void resave_compressed_diff(const hpatch_TStreamInput*  in_diff,
     assert(out_diff!=0);
     assert(out_diff->write!=0);
     
-    {//read head
+    {//读取头部
         checki(read_diffz_head(&diffInfo,&head,in_diff),
                "resave_compressed_diff() read_diffz_head() error!");
         checki((decompressPlugin!=0)||(diffInfo.compressedCount<=0),
@@ -1345,35 +1345,35 @@ void resave_compressed_diff(const hpatch_TStreamInput*  in_diff,
     }
     
     TDiffStream outDiff(out_diff,out_diff_curPos);
-    {//type
+    {//类型
         std::vector<TByte> out_type;
         _outType(out_type,compressPlugin);
         outDiff.pushBack(out_type.data(),out_type.size());
     }
-    {//copy other
+    {//复制其他内容
         TStreamClip clip(in_diff,head.typesEndPos,head.compressSizeBeginPos);
         outDiff.pushStream(&clip);
     }
     outDiff.packUInt(head.cover_buf_size);
     TPlaceholder compress_cover_buf_sizePos=
-        outDiff.packUInt_pos(compressPlugin?head.cover_buf_size:0);//compress_cover_buf size
-    outDiff.packUInt(head.rle_ctrlBuf_size);//rle_ctrlBuf size
+        outDiff.packUInt_pos(compressPlugin?head.cover_buf_size:0);//compress_cover_buf 大小
+    outDiff.packUInt(head.rle_ctrlBuf_size);//rle_ctrlBuf 大小
     TPlaceholder compress_rle_ctrlBuf_sizePos=
-        outDiff.packUInt_pos(compressPlugin?head.rle_ctrlBuf_size:0);//compress_rle_ctrlBuf size
-    outDiff.packUInt(head.rle_codeBuf_size);//rle_codeBuf size
+        outDiff.packUInt_pos(compressPlugin?head.rle_ctrlBuf_size:0);//compress_rle_ctrlBuf 大小
+    outDiff.packUInt(head.rle_codeBuf_size);//rle_codeBuf 大小
     TPlaceholder compress_rle_codeBuf_sizePos=
-        outDiff.packUInt_pos(compressPlugin?head.rle_codeBuf_size:0);//compress_rle_codeBuf size
+        outDiff.packUInt_pos(compressPlugin?head.rle_codeBuf_size:0);//compress_rle_codeBuf 大小
     outDiff.packUInt(head.newDataDiff_size);
     TPlaceholder compress_newDataDiff_sizePos=
-        outDiff.packUInt_pos(compressPlugin?head.newDataDiff_size:0);//compress_newDataDiff size
+        outDiff.packUInt_pos(compressPlugin?head.newDataDiff_size:0);//compress_newDataDiff 大小
     
-    {//save covers
+    {//保存覆盖块
         TStreamClip clip(in_diff,head.headEndPos,head.coverEndPos,
                          (head.compress_cover_buf_size>0)?decompressPlugin:0,head.cover_buf_size);
         outDiff.pushStream(&clip,compressPlugin,compress_cover_buf_sizePos);
     }
     hpatch_StreamPos_t diffPos0=head.coverEndPos;
-    {//save rle ctrl
+    {//保存 RLE 控制信息
         bool isCompressed=(head.compress_rle_ctrlBuf_size>0);
         hpatch_StreamPos_t bufSize=isCompressed?head.compress_rle_ctrlBuf_size:head.rle_ctrlBuf_size;
         TStreamClip clip(in_diff,diffPos0,diffPos0+bufSize,
@@ -1381,7 +1381,7 @@ void resave_compressed_diff(const hpatch_TStreamInput*  in_diff,
         outDiff.pushStream(&clip,compressPlugin,compress_rle_ctrlBuf_sizePos);
         diffPos0+=bufSize;
     }
-    {//save rle code
+    {//保存 RLE 编码
         bool isCompressed=(head.compress_rle_codeBuf_size>0);
         hpatch_StreamPos_t bufSize=isCompressed?head.compress_rle_codeBuf_size:head.rle_codeBuf_size;
         TStreamClip clip(in_diff,diffPos0,diffPos0+bufSize,
@@ -1389,7 +1389,7 @@ void resave_compressed_diff(const hpatch_TStreamInput*  in_diff,
         outDiff.pushStream(&clip,compressPlugin,compress_rle_codeBuf_sizePos);
         diffPos0+=bufSize;
     }
-    {//save newDataDiff
+    {//保存 newDataDiff
         bool isCompressed=(head.compress_newDataDiff_size>0);
         hpatch_StreamPos_t bufSize=isCompressed?head.compress_newDataDiff_size:head.newDataDiff_size;
         TStreamClip clip(in_diff,diffPos0,diffPos0+bufSize,
@@ -1415,7 +1415,7 @@ hpatch_StreamPos_t
         diffInfo=&_diffInfo;
     }
     const bool isCompressed=(diffInfo->compressedSize>0);
-    if (isCompressed){ //check
+    if (isCompressed){ //检查
         checki(diffInfo->compressedSize+(in_diff_curPos+diffInfo->diffDataPos)==in_diff->streamSize,
                "resave_single_compressed_diff() diffInfo error!");
         checki((decompressPlugin!=0)&&(decompressPlugin->is_can_open(diffInfo->compressType)),
@@ -1423,7 +1423,7 @@ hpatch_StreamPos_t
     }
 
     TDiffStream outDiff(out_diff,out_diff_curPos);
-    {//type & head
+    {//类型 & head
         std::vector<TByte> outBuf;
         _outType(outBuf, compressPlugin,kHDiffSFVersionType);
         packUInt(outBuf, diffInfo->newDataSize);
@@ -1432,9 +1432,9 @@ hpatch_StreamPos_t
         packUInt(outBuf, diffInfo->stepMemSize);
         packUInt(outBuf, diffInfo->uncompressedSize);
         outDiff.pushBack(outBuf.data(),outBuf.size());
-        //no compressedSize
+        //没有压缩大小
     }
-    {//save single stream data
+    {//保存 单个 流 数据
         TStreamClip clip(in_diff,diffInfo->diffDataPos+in_diff_curPos,in_diff->streamSize,
                          isCompressed?decompressPlugin:0,diffInfo->uncompressedSize);
         TPlaceholder compressedSize_pos=outDiff.packUInt_pos(compressPlugin?diffInfo->uncompressedSize:0);

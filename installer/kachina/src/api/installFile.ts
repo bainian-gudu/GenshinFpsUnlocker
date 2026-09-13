@@ -21,9 +21,9 @@ interface InstallFileArgs {
 }
 
 /**
- * @param source - 文件来源（Url 字符串或 Local 对象）
+ * @param source - 文件来源（URL 字符串或 本地 对象）
  * @param target - 目标路径
- * @param diff_size - Patch 模式需要的 diff_size
+ * @param diff_size - 补丁 模式需要的 diff_size
  */
 export function InstallFile(
   source: InstallFileSource & { skip_hash?: boolean },
@@ -118,9 +118,9 @@ export function getRangeParams(chunks: InstallFileArgs[]): {
 }
 
 /**
- * 安装多部分流文件 - 用于处理服务器支持 multipart/byteranges 的情况
+ * 安装多部分流文件 - 用于处理服务器支持 多部分/byteranges 的情况
  * @param url - 文件 URL
- * @param range - HTTP Range 范围，如 "100-200,300-400,500-600"
+ * @param range - HTTP 范围 范围，如 "100-200,300-400,500-600"
  * @param chunks - 要安装的文件块列表
  */
 export function InstallMultipartStream(
@@ -137,9 +137,9 @@ export function InstallMultipartStream(
 }
 
 /**
- * 安装多块流文件 - 用于处理非连续块的单一 HTTP Range 请求
+ * 安装多块流文件 - 用于处理非连续块的单一 HTTP 范围 请求
  * @param url - 文件 URL
- * @param range - 总的 HTTP Range 范围，如 "0-1024"
+ * @param range - 总的 HTTP 范围 范围，如 "0-1024"
  * @param chunks - 要安装的文件块列表，每个块的 offset 字段指定在流中的位置
  */
 export function InstallMultichunkStream(

@@ -27,7 +27,7 @@ pub struct HttpGetResponse {
     pub final_url: String,
 }
 
-// DFS2 data structures
+// DFS2 数据结构
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Dfs2Metadata {
     pub resource_version: String,
@@ -107,7 +107,7 @@ pub struct InsightItem {
     pub size: u32, // 实际下载字节数
     pub error: Option<String>,
     #[serde(default)]
-    pub range: Vec<(u32, u32)>, // HTTP Range请求范围
+    pub range: Vec<(u32, u32)>, // HTTP 范围请求范围
     #[serde(default)]
     pub mode: Option<String>, // 安装模式
 }
@@ -146,11 +146,11 @@ pub async fn get_dfs(
         .await
         .with_http_context("get_dfs", &url_with_range_in_query)
         .map_err(|e| e.to_string())?;
-    // check status code if is not 200 or 401
+    // 检查 status code 如果 是 不 200 或 401
     if res.status() != reqwest::StatusCode::OK && res.status() != reqwest::StatusCode::UNAUTHORIZED
     {
         let status = res.status();
-        // check if body exists
+        // 检查是否存在响应体
         let body = res.text().await;
         if body.is_err() {
             return Err(format!("{status}"));
@@ -172,12 +172,12 @@ pub async fn get_dfs(
         ));
     }
     let json = json.unwrap();
-    // directly return if not challenge
+    // 直接 返回 如果 不 challenge
     if json.challenge.is_none() {
         return Ok(json);
     }
     let challenge = json.challenge.unwrap();
-    // split challenge into "hash/source"
+    // 拆分 challenge 到 "哈希/来源"
     let challenge: Vec<&str> = challenge.split('/').collect();
     if challenge.len() != 2 {
         return Err("Invalid challenge".to_string());
@@ -185,9 +185,9 @@ pub async fn get_dfs(
     let hash = challenge[0];
     let source = challenge[1];
     let mut solve = "".to_string();
-    // loop 1 to 256
+    // 循环 1 到 256
     for i in 0..=255 {
-        // suffix i in source as hex 2 digits
+        // 将 i 编码为两位十六进制数并追加到来源 URL
         let new_src = format!("{source}{i:02x}");
         let new_hash = chksum_md5::hash(new_src.as_bytes()).to_hex_lowercase();
         if hash == new_hash {
@@ -206,7 +206,7 @@ pub async fn get_dfs(
         .await
         .with_http_context("get_dfs", &url)
         .map_err(|e| e.to_string())?;
-    // check status code if is not 200 or 401
+    // 检查 status code 如果 是 不 200 或 401
     if res.status() != reqwest::StatusCode::OK && res.status() != reqwest::StatusCode::UNAUTHORIZED
     {
         let status = res.status();
@@ -237,7 +237,7 @@ pub async fn get_dfs(
     Ok(json)
 }
 
-// DFS2 API commands
+// 相关实现：DFS2 API commands
 #[tauri::command]
 pub async fn get_dfs2_metadata(api_url: String) -> Result<Dfs2Metadata, String> {
     let url_with_metadata = if api_url.contains('?') {
@@ -308,7 +308,7 @@ pub async fn create_dfs2_session(
     let response: Dfs2SessionResponse = serde_json::from_str(&body_text)
         .map_err(|e| format!("Failed to parse JSON ({}): {}", e, body_text))?;
 
-    // Return response directly - let frontend handle challenges
+    // 返回 响应 直接 - let frontend 处理 challenges
     if !status.is_success() && status != reqwest::StatusCode::PAYMENT_REQUIRED {
         return Err(format!("Session creation failed: {}", status));
     }
@@ -408,7 +408,7 @@ pub async fn end_dfs2_session(
 pub async fn solve_dfs2_challenge(challenge_type: String, data: String) -> Result<String, String> {
     match challenge_type.as_str() {
         "md5" => {
-            // Split data into "hash/source"
+            // 拆分 数据 到 "哈希/来源"
             let parts: Vec<&str> = data.split('/').collect();
             if parts.len() != 2 {
                 return Err("Invalid challenge data format".to_string());
@@ -417,7 +417,7 @@ pub async fn solve_dfs2_challenge(challenge_type: String, data: String) -> Resul
             let target_hash = parts[0];
             let source = parts[1];
 
-            // Try to find the solution by appending hex values
+            // 通过追加十六进制值尝试求解
             for i in 0..=255 {
                 let candidate = format!("{}{:02x}", source, i);
                 let hash = chksum_md5::hash(candidate.as_bytes()).to_hex_lowercase();
@@ -429,7 +429,7 @@ pub async fn solve_dfs2_challenge(challenge_type: String, data: String) -> Resul
             Err("Failed to solve MD5 challenge".to_string())
         }
         "sha256" => {
-            // Split data into "hash/source"
+            // 拆分 数据 到 "哈希/来源"
             let parts: Vec<&str> = data.split('/').collect();
             if parts.len() != 2 {
                 return Err("Invalid challenge data format".to_string());
@@ -438,11 +438,11 @@ pub async fn solve_dfs2_challenge(challenge_type: String, data: String) -> Resul
             let target_hash = parts[0].to_string();
             let source = parts[1].to_string();
 
-            // Use spawn_blocking for CPU-intensive SHA256 computation
+            // 使用 spawn_blocking 用于 CPU-intensive SHA256 computation
             let result = tokio::task::spawn_blocking(move || -> Result<String, String> {
                 use sha2::{Digest, Sha256};
 
-                // Try different suffix lengths - start with reasonable range
+                // 尝试 不同 suffix lengths - 开始 使用 reasonable 范围
                 for suffix_len in 1..=8u32 {
                     let max_val = 16_u64.pow(suffix_len);
 
@@ -468,8 +468,8 @@ pub async fn solve_dfs2_challenge(challenge_type: String, data: String) -> Resul
             result
         }
         "web" => {
-            // TODO: Web challenges need to be handled by the frontend
-            // as they may require user interaction (captcha, browser popup, etc.)
+            // 待实现：网页挑战需要由前端处理
+            // 因为可能需要用户交互（验证码、浏览器弹窗等）
             Err("Web challenges must be handled by the frontend".to_string())
         }
         _ => Err(format!("Unsupported challenge type: {}", challenge_type)),
@@ -503,7 +503,7 @@ pub async fn http_get_request(
     headers: Option<HashMap<String, String>>,
     timeout_ms: Option<u64>,
 ) -> Result<HttpGetResponse, String> {
-    // Send request — use a one-off raw client when redirect policy differs
+    // 发送请求；重定向策略不同时使用一次性的原始客户端
     let response = if ignore_redirects.unwrap_or(false) {
         let client = reqwest::ClientBuilder::new()
             .user_agent(crate::capabilities::ua_string())
@@ -540,17 +540,17 @@ pub async fn http_get_request(
             .map_err(|e| e.to_string())?
     };
 
-    // Get final URL (after redirects)
+    // 获取 final URL (之后 redirects)
     let final_url = if let Some(redirected_url) = response.headers().get("Location") {
         redirected_url.to_str().unwrap_or("").to_string()
     } else {
         response.url().to_string()
     };
 
-    // Get status code
+    // 获取 status code
     let status_code = response.status().as_u16();
 
-    // Extract headers
+    // 提取 headers
     let mut response_headers = HashMap::new();
     for (name, value) in response.headers() {
         if let Ok(value_str) = value.to_str() {
@@ -558,7 +558,7 @@ pub async fn http_get_request(
         }
     }
 
-    // Get response body
+    // 获取响应体
     let body = response
         .text()
         .await

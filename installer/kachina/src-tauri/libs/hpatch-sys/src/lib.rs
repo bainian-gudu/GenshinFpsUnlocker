@@ -75,9 +75,9 @@ extern "C" fn read_seek_callback(
         println!("Error in read_seek: {:?}", err);
         return 0;
     }
-    // buffer: out_data to out_data_end
+    // 缓冲区: out_data 到 out_data_end
     let buffer = unsafe { std::slice::from_raw_parts_mut(out_data, read_size as usize) };
-    // read exact, return 0 if failed
+    // 读取 exact, 返回 0 如果 失败
     let res = input_wrapper.stream.read_exact(buffer);
     if let Err(err) = res {
         println!("Error in read_seek_callback: {:?}", err);
@@ -94,9 +94,9 @@ extern "C" fn read_seq_callback(
     let read_size = unsafe { out_data_end.offset_from(out_data) };
     let stream = unsafe { &*stream };
     let input_wrapper = unsafe { &mut *(stream.streamImport as *mut ReadStreamWrapper) };
-    // buffer: out_data to out_data_end
+    // 缓冲区: out_data 到 out_data_end
     let buffer = unsafe { std::slice::from_raw_parts_mut(out_data, read_size as usize) };
-    // read exact, return 0 if failed
+    // 读取 exact, 返回 0 如果 失败
     let res = input_wrapper.stream.read_exact(buffer);
     if let Err(err) = res {
         println!("Error in read_seq_callback: {:?}", err);
@@ -113,9 +113,9 @@ extern "C" fn write_seq_callback(
     let write_size = unsafe { out_data_end.offset_from(out_data) };
     let stream: &hpatch_TStreamOutput = unsafe { &*stream };
     let input_wrapper = unsafe { &mut *(stream.streamImport as *mut WriteStreamWrapper) };
-    // buffer: out_data to out_data_end
+    // 缓冲区: out_data 到 out_data_end
     let buffer = unsafe { std::slice::from_raw_parts(out_data, write_size as usize) };
-    // read exact, return 0 if failed
+    // 读取 exact, 返回 0 如果 失败
     let res = input_wrapper.stream.write_all(buffer);
     if let Err(err) = res {
         println!("Error in write_seq_callback: {:?}", err);
@@ -131,7 +131,7 @@ pub fn safe_patch_single_stream(
     mut input: impl std::io::Read + std::io::Seek,
     input_size: usize,
 ) -> i32 {
-    // 10k buffer
+    // 10k 缓冲区
     let mut buffer_info = BufferInfo {
         buffer: None,
         buffer_size: 0,

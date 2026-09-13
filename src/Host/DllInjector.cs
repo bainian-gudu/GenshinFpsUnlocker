@@ -27,6 +27,11 @@ internal static class DllInjector
             return false;
         }
 
+        // 已加载的 Stub 通过共享内存的 None 请求重新初始化。
+        // 重复 LoadLibrary 只会增加引用计数，不会再次执行 DllMain。
+        if (IsModuleLoaded(process.Id, fullDll, Path.GetFileName(fullDll)))
+            return true;
+
         // LoadLibraryW 需要目标进程能打开的路径；\\?\ 前缀对远程 LoadLibrary 不友好，尽量去掉
         var injectPath = fullDll;
         if (injectPath.StartsWith(@"\\?\", StringComparison.Ordinal))

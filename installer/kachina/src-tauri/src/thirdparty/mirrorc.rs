@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use crate::{
     fs::{create_http_stream, create_target_file, prepare_target, progressed_copy},
-    installer::uninstall::DELETE_SELF_ON_EXIT_PATH,
+    installer::uninstall::{is_safe_relative_member, path_eq, DELETE_SELF_ON_EXIT_PATH},
     utils::{
         error::{return_ta_result, IntoTAResult, TAResult},
         metadata::RepoMetadata,
@@ -40,7 +40,14 @@ pub fn run_mirrorc_install_sync(
 ) -> TAResult<(Option<RepoMetadata>, Option<MirrorcChangeset>)> {
     let file = std::fs::File::open(zip_path).into_ta_result()?;
     let mut archive = zip::ZipArchive::new(file).into_ta_result()?;
-    let total_len = archive.len() - 1;
+    let total_len = archive.len();
+    let target_root = std::path::Path::new(target_path);
+    if !target_root.is_absolute() || crate::installer::uninstall::has_reparse_point(target_root) {
+        return crate::utils::error::return_ta_result(
+            "Invalid or unsafe mirrorc target path".to_string(),
+            "MIRRORC_TARGET_ERR",
+        );
+    }
 
     let file_lists = archive
         .file_names()
@@ -48,7 +55,7 @@ pub fn run_mirrorc_install_sync(
         .filter(|s| s != "changes.json" && s != ".metadata.json")
         .collect::<Vec<String>>();
     let prefix = longest_common_prefix(file_lists);
-    // split last '/', get the prefix
+    // 拆分最后一个“/”，获取前缀
     let mut prefix = prefix.split('/').collect::<Vec<&str>>();
     prefix.pop();
     let mut prefix = prefix.join("/");
@@ -68,7 +75,7 @@ pub fn run_mirrorc_install_sync(
         Err(_) => None,
     };
 
-    // .metadata.json
+    // .元数据.json
     let metadata: Option<RepoMetadata> = match archive.by_name(&format!("{prefix}.metadata.json")) {
         Ok(mut metadata) => {
             let mut metadata_str = String::new();
@@ -80,7 +87,7 @@ pub fn run_mirrorc_install_sync(
         Err(_) => None,
     };
 
-    // if both changeset and metadata are None, return error
+    // changeset 与 metadata 均为 None 时返回错误
     if changeset.is_none() && metadata.is_none() {
         return return_ta_result(
             "Not a valid mirrorc archive: neither changes.json nor .metadata.json found"
@@ -104,20 +111,35 @@ pub fn run_mirrorc_install_sync(
         {
             continue;
         }
+        if !is_safe_relative_member(target_root, &file_name) {
+            return crate::utils::error::return_ta_result(
+                format!("Unsafe archive member path: {file_name}"),
+                "MIRRORC_ARCHIVE_PATH_ERR",
+            );
+        }
         let mut out_path = std::path::PathBuf::from(target_path);
         out_path.push(file_name.clone());
         if file.is_dir() {
             continue;
         }
-        if out_path == current_exe {
-            // delete .instbak if exists
+        if crate::installer::uninstall::has_reparse_point(&out_path) {
+            return crate::utils::error::return_ta_result(
+                format!(
+                    "Archive output path is a reparse point: {}",
+                    out_path.display()
+                ),
+                "MIRRORC_ARCHIVE_PATH_ERR",
+            );
+        }
+        if path_eq(&out_path, &current_exe) {
+            // 如果存在则删除 .instbak
             let instbak = out_path.clone().with_extension("instbak");
             if instbak.exists() {
                 std::fs::remove_file(&instbak)
                     .into_ta_result()
                     .context("SELF_UPDATE_ERR")?;
             }
-            // mv current exe to .instbak
+            // 将当前 exe 移动为 .instbak
             std::fs::rename(&current_exe, &instbak)
                 .into_ta_result()
                 .context("SELF_UPDATE_ERR")?;
@@ -145,12 +167,16 @@ pub fn run_mirrorc_install_sync(
         );
     }
 
-    // delete files in target_path that are not in the changeset
+    // 删除 target_path 中不在变更集里的文件
     if let Some(changeset) = changeset.as_ref() {
         if let Some(deletes) = changeset.deleted.as_ref() {
             for file in deletes {
                 let mut out_path = std::path::PathBuf::from(target_path);
                 let strip_path = file.strip_prefix(&prefix).unwrap_or(file);
+                if !is_safe_relative_member(target_root, strip_path) {
+                    tracing::warn!("跳过不安全的 Mirrorc 删除路径: {strip_path}");
+                    continue;
+                }
                 out_path.push(strip_path);
                 if out_path.exists() {
                     std::fs::remove_file(out_path).into_ta_result()?;
@@ -160,10 +186,14 @@ pub fn run_mirrorc_install_sync(
         }
     }
     if let Some(metadata) = metadata.as_ref() {
-        // delete files in target_path that are not in the metadata
+        // 删除 target_path 中不在元数据里的文件
         if let Some(deletes) = metadata.deletes.as_ref() {
             for file in deletes {
                 let mut out_path = std::path::PathBuf::from(target_path);
+                if !is_safe_relative_member(target_root, file) {
+                    tracing::warn!("跳过不安全的 metadata 删除路径: {file}");
+                    continue;
+                }
                 out_path.push(file.clone());
                 if out_path.exists() {
                     std::fs::remove_file(out_path).into_ta_result()?;
@@ -172,7 +202,7 @@ pub fn run_mirrorc_install_sync(
             }
         }
     }
-    // delete zip file
+    // 删除 zip 文件
     let _ = std::fs::remove_file(zip_path);
     Ok((metadata, changeset))
 }

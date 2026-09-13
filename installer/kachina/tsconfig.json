@@ -8,14 +8,14 @@
     "jsxImportSource": "vue",
     "useDefineForClassFields": true,
 
-    /* modules */
+    /* 模块 */
     "module": "ESNext",
     "isolatedModules": true,
     "resolveJsonModule": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
 
-    /* type checking */
+    /* 类型 检查 */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true

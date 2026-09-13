@@ -36,7 +36,7 @@
 # if defined(ANDROID) && (defined(__GNUC__) || defined(__clang__))
 #   define _IS_USED__sync_fetch_and_or 1
 #  else
-#   include <atomic> //need c++11, vc version need vc2012
+#   include <atomic> //需要 c++11, vc 版本 需要 vc2012
 #  endif
 #endif
 
@@ -48,12 +48,12 @@ public:
     inline ~TBitSet(){ clear(0); }
     
     inline void set(size_t bitIndex){
-        //assert(bitIndex<m_bitSize);
+        //第三方实现细节。
         m_bits[bitIndex>>kBaseShr] |= ((base_t)1<<(bitIndex&kBaseMask));
     }
 #if (_IS_USED_MULTITHREAD)
     inline void set_MT(size_t bitIndex){
-        //assert(bitIndex<m_bitSize);
+        //第三方实现细节。
       #if (_IS_USED__sync_fetch_and_or)
         __sync_fetch_and_or(&m_bits[bitIndex>>kBaseShr],((base_t)1<<(bitIndex&kBaseMask)));
       #else
@@ -62,7 +62,7 @@ public:
     }
 #endif
     inline bool is_hit(size_t bitIndex)const{
-        //assert(bitIndex<m_bitSize);
+        //第三方实现细节。
         return 0!=(m_bits[bitIndex>>kBaseShr] & ((base_t)1<<(bitIndex&kBaseMask)));
     }
     
@@ -88,7 +88,7 @@ private:
         kBaseShr=(sizeof(base_t)==8)?6:((sizeof(base_t)==4)?5:0),
         kBaseTBits=(1<<kBaseShr),
         kBaseMask=kBaseTBits-1 };
-    //assert(kBaseTBits==sizeof(base_t)*8);
+    //第三方实现细节。
     struct __private_TBitSet_check_base_t_size { char _[(kBaseTBits==sizeof(base_t)*8)?1:-1]; };
     base_t* m_bits;
     size_t  m_bitSize;
@@ -103,7 +103,7 @@ public:
     inline TBloomFilter():m_bitSetMask(0){}
     inline void clear(){ m_bitSet.clear(0); }
     void init(size_t dataCount,size_t zoom = kZoomBig){
-        m_bitSetMask=getMask(dataCount,zoom);//mask is 2^N-1
+        m_bitSetMask=getMask(dataCount,zoom);//mask 是 2^N-1
         m_bitSet.clear(m_bitSetMask+1);
     }
     inline size_t bitSize()const{ return m_bitSet.bitSize(); }
@@ -143,8 +143,8 @@ private:
     inline size_t hash1(T key)const { return ((~key)+(key << (sizeof(T)*2+1))+1)%m_bitSetMask; }
     inline size_t hash2(T key)const {
         size_t h=(sizeof(T)>4)?_hash2_64(key):_hash2_32((size_t)key); return h%(m_bitSetMask-1); }
-    static size_t _hash2_32(size_t key){//from: https://gist.github.com/badboy/6267743
-        const size_t c2=0x27d4eb2d; // a prime or an odd constant
+    static size_t _hash2_32(size_t key){//从: https://gist.github.com/badboy/6267743
+        const size_t c2=0x27d4eb2d; // a prime 或 an odd 常量
         key = (key ^ 61) ^ (key >> 16);
         key = key + (key << 3);
         key = key ^ (key >> 4);
@@ -153,9 +153,9 @@ private:
         return key;
     }
     static size_t _hash2_64(T key){
-        key = (~key) + (key << 18); // key = (key << 18) - key - 1;
+        key = (~key) + (key << 18); // 第三方实现细节。
         key = key ^ (key >> 31);
-        key = key * 21; // key = (key + (key << 2)) + (key << 4);
+        key = key * 21; // 第三方实现细节。
         key = key ^ (key >> 11);
         key = key + (key << 6);
         key = key ^ (key >> 22);
@@ -163,5 +163,5 @@ private:
     }
 };
 
-}//namespace hdiff_private
-#endif /* bloom_filter_h */
+}//命名空间 hdiff_private
+#endif 第三方实现细节。

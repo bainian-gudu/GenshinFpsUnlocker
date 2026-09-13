@@ -80,7 +80,7 @@ pub async fn install_webview2() {
         S_OK
     }
     tokio::task::spawn_blocking(move || {
-        // get HICON of the current process
+        // 获取当前进程的 HICON
         let hmodule = unsafe { GetModuleHandleW(PCWSTR(null_mut())).unwrap() };
         let hicon = unsafe {
             LoadIconW(
@@ -111,7 +111,7 @@ pub async fn install_webview2() {
         let _ =
             unsafe { windows::Win32::UI::Controls::TaskDialogIndirect(&config, None, None, None) };
     });
-    // use reqwest to download the installer
+    // 使用 reqwest 下载安装器
     let wv2_url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
     let res = REQUEST_CLIENT
         .get(wv2_url)
@@ -120,8 +120,10 @@ pub async fn install_webview2() {
         .with_http_context("install_webview2", wv2_url);
     if let Err(e) = res {
         let hwnd = dialog_hwnd.take();
-        unsafe {
-            SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+            }
         }
         rfd::MessageDialog::new()
             .set_title("出错了")
@@ -137,8 +139,10 @@ pub async fn install_webview2() {
         .with_http_context("install_webview2", wv2_url);
     if let Err(e) = wv2_installer_blob {
         let hwnd = dialog_hwnd.take();
-        unsafe {
-            SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+            }
         }
         rfd::MessageDialog::new()
             .set_title("出错了")
@@ -150,7 +154,7 @@ pub async fn install_webview2() {
     let wv2_installer_blob = wv2_installer_blob.unwrap();
     // 落地目录 / 随机文件名 / 独占创建 / 执行前验签：全部见 utils/secure_temp.rs。
     // 上游这里是 %TEMP% 里的固定文件名 + tokio::fs::write（CREATE_ALWAYS，跟随符号
-    // 链接），而且下完不验签就 spawn —— 同一个会话的普通权限进程既能把下载内容引进
+    // 链接），而且下完不验签就 创建 —— 同一个会话的普通权限进程既能把下载内容引进
     // 系统文件，也能在安装启动前把文件换掉。
     let installer_path = secure_temp::package_path("kachina.MicrosoftEdgeWebview2Setup");
     let res = async {
@@ -165,8 +169,10 @@ pub async fn install_webview2() {
     if let Err(e) = res {
         let _ = tokio::fs::remove_file(&installer_path).await;
         let hwnd = dialog_hwnd.take();
-        unsafe {
-            SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+            }
         }
         rfd::MessageDialog::new()
             .set_title("出错了")
@@ -175,29 +181,33 @@ pub async fn install_webview2() {
             .show();
         std::process::exit(0);
     }
-    // change content of the dialog
+    // 修改对话框内容
     let content = "正在安装 WebView2 运行时...";
     let content_utf16_nul = content
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect::<Vec<u16>>();
-    unsafe {
-        SendMessageW(
-            *dialog_hwnd.as_ref().unwrap(),
-            TDM_UPDATE_ELEMENT_TEXT.0 as u32,
-            Some(WPARAM(TDE_CONTENT.0.try_into().unwrap())),
-            Some(LPARAM(content_utf16_nul.as_ptr() as isize)),
-        );
+    if let Some(hwnd) = dialog_hwnd.as_ref() {
+        unsafe {
+            SendMessageW(
+                *hwnd,
+                TDM_UPDATE_ELEMENT_TEXT.0 as u32,
+                Some(WPARAM(TDE_CONTENT.0.try_into().unwrap())),
+                Some(LPARAM(content_utf16_nul.as_ptr() as isize)),
+            );
+        }
     }
-    // run the installer
+    // 运行安装器
     let status = tokio::process::Command::new(installer_path.clone())
         .arg("/install")
         .status()
         .await;
     if let Err(e) = status {
         let hwnd = dialog_hwnd.take();
-        unsafe {
-            SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+            }
         }
         rfd::MessageDialog::new()
             .set_title("出错了")
@@ -209,18 +219,21 @@ pub async fn install_webview2() {
     let status = status.unwrap();
     let _ = tokio::fs::remove_file(installer_path).await;
     if status.success() {
-        dialog_hwnd.take();
-        // close the dialog
+        // 关闭对话框
         let hwnd = dialog_hwnd.take();
-        unsafe {
-            SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+            }
         }
         let _ = tokio::process::Command::new(std::env::current_exe().unwrap()).spawn();
-        // delete the installer
+        // 删除安装器
     } else {
         let hwnd = dialog_hwnd.take();
-        unsafe {
-            SendMessageW(hwnd.unwrap(), WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
+            }
         }
         rfd::MessageDialog::new()
             .set_title("出错了")

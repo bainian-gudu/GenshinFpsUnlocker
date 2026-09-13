@@ -23,7 +23,7 @@ impl Cli {
 pub async fn install_webview2() {
     println!("安装程序缺少必要的运行环境");
     println!("当前系统未安装 WebView2 运行时，正在下载并安装...");
-    // use reqwest to download the installer
+    // 使用 reqwest 下载安装器
     let wv2_url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
     let res = REQUEST_CLIENT
         .get(wv2_url)
@@ -55,7 +55,7 @@ pub async fn install_webview2() {
     crate::utils::secure_temp::verify_microsoft_signed(&installer_path)
         .await
         .expect("WebView2 引导器验签失败（不是微软签名的文件，已删除）");
-    // run the installer
+    // 运行安装器
     let status = tokio::process::Command::new(installer_path.clone())
         .arg("/install")
         .status()
@@ -65,9 +65,9 @@ pub async fn install_webview2() {
     if status.success() {
         println!("WebView2 运行时安装成功");
         println!("正在重新启动安装程序...");
-        // exec self and detatch
+        // 启动自身并脱离当前进程
         let _ = tokio::process::Command::new(std::env::current_exe().unwrap()).spawn();
-        // delete the installer
+        // 删除安装器
     } else {
         println!("WebView2 运行时安装失败");
         println!("按任意键退出...");

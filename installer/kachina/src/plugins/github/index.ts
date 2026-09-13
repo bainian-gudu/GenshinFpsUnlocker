@@ -4,7 +4,7 @@ import { invoke } from '../../tauri';
 
 interface UrlCache {
   resolvedUrl: string;
-  expiryTime: number; // Unix timestamp
+  expiryTime: number; // Unix 时间戳
   originalUrl: string;
 }
 
@@ -130,7 +130,7 @@ export class GitHubPlugin implements KachinaInstallSource {
       ignoreRedirects: true,
     });
     
-    // 从Location header或final_url获取重定向地址
+    // 从Location 头部或final_url获取重定向地址
     let redirectUrl = response.headers['location'] || response.final_url;
     if (!redirectUrl || redirectUrl === originalUrl) {
       // 没有重定向，直接返回原URL
@@ -176,7 +176,7 @@ export class GitHubPlugin implements KachinaInstallSource {
     }
 
     if (!versionRegex) {
-      // 默认行为：从 /releases/tag/ 后提取完整tag
+      // 默认行为：从 /releases/标签/ 后提取完整标签
       const tagMatch = redirectUrl.match(/\/releases\/tag\/([^/?#]+)/);
       if (!tagMatch || !tagMatch[1]) {
         throw new Error(`Failed to extract tag from ${redirectUrl}`);

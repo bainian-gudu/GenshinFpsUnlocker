@@ -7,7 +7,7 @@ const FIXTURES_DIR = './fixtures';
 function createServer() {
   const app = express();
 
-  // 启用Range请求支持
+  // 启用范围请求支持
   app.use(express.static(path.resolve(FIXTURES_DIR), {
     acceptRanges: true,
     lastModified: true,
