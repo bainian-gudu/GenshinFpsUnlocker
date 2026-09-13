@@ -73,7 +73,13 @@ internal sealed class IpcSharedMemory : IDisposable
         // 非管理员无 Global\ 权限时 CreateOrOpen 会抛；必须回退，且不得让 Host 启动失败
         MemoryMappedFile? file = null;
         Exception? last = null;
-        foreach (var name in new[] { MappingName, MappingNameLocal, @"Local\" + MappingNameLocal })
+        // 标准用户没有创建 Global\ 对象的权限，CreateOrOpen 会在内部反复重试，
+        // 登录时可阻塞约 80 秒才抛出异常。按权限选择顺序，避免无意义的全局重试；
+        // Stub 同时尝试 Global 和本地名称，因此两种会话都能正常通信。
+        var names = Elevation.IsAdministrator()
+            ? new[] { MappingName, MappingNameLocal, @"Local\" + MappingNameLocal }
+            : new[] { MappingNameLocal, @"Local\" + MappingNameLocal };
+        foreach (var name in names)
         {
             try
             {
