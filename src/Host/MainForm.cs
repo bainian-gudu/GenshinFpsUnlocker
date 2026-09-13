@@ -11,6 +11,9 @@ internal sealed partial class MainForm : Form
     private readonly UnlockService _service;
     private readonly UiBridge _bridge;
     private readonly WebView2 _webView;
+    private readonly Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> _webEnvironmentTask;
+    private readonly Panel _webLoadingSurface;
+    private readonly Label _webLoadingText;
     private NotifyIcon _tray = null!;
 
     private bool _reallyExit;
@@ -77,9 +80,31 @@ internal sealed partial class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            DefaultBackgroundColor = Color.FromArgb(0x12, 0x13, 0x19),
+            // WebView2 导航前会有一段空白期，使用浅色底色避免出现黑屏闪烁。
+            DefaultBackgroundColor = UiStyle.UiLightBg,
         };
+        // 提前启动 WebView2 环境创建，与托盘和窗体初始化并行，减少首次导航等待。
+        _webEnvironmentTask = CreateWebEnvironmentAsync();
         Controls.Add(_webView);
+
+        // WebView2 初始化和首次导航可能持续数秒，先显示稳定的浅色加载层，
+        // 等页面真正完成导航后再交给 Web UI，避免用户看到黑色空白窗口。
+        _webLoadingSurface = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = UiStyle.UiLightBg,
+        };
+        _webLoadingText = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "正在加载界面…",
+            ForeColor = UiStyle.UiLightText,
+            Font = UiStyle.UiFont,
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        _webLoadingSurface.Controls.Add(_webLoadingText);
+        Controls.Add(_webLoadingSurface);
+        _webLoadingSurface.BringToFront();
 
         WireTrayFallback();
 

@@ -7,10 +7,8 @@ internal sealed partial class MainForm : Form
 {
     private async Task InitializeWebAsync()
     {
-        var userData = Path.Combine(AppPaths.DataDirectory, "webview2");
-        PathUtil.EnsureDir(userData);
-
-        var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
+        // 环境创建已在窗体构造期间启动，这里只等待结果并在 UI 线程绑定控件。
+        var env = await _webEnvironmentTask;
         await _webView.EnsureCoreWebView2Async(env);
 
         var core = _webView.CoreWebView2;
@@ -46,11 +44,22 @@ internal sealed partial class MainForm : Form
 
         core.NavigationCompleted += (_, args) =>
         {
-            if (!args.IsSuccess) return;
+            if (!args.IsSuccess)
+            {
+                AppLog.Warn($"Web UI 导航失败: {args.WebErrorStatus}");
+                try { BeginInvoke(() => ShowNativeFallbackUi($"页面导航失败：{args.WebErrorStatus}")); }
+                catch { /* 窗体销毁阶段忽略 */ }
+                return;
+            }
+            HideWebLoadingSurface();
             _webReady = true;
             _bridge.PushState();
             AppLog.Info("Web UI ready");
         };
+
+        // DOM 已完成且 React 脚本已执行时即可显示页面，不必等待图片等资源全部下载完。
+        // NavigationCompleted 仍负责最终状态同步和失败兜底。
+        core.DOMContentLoaded += (_, _) => HideWebLoadingSurface();
 
         core.NewWindowRequested += (_, e) =>
         {
@@ -72,6 +81,14 @@ internal sealed partial class MainForm : Form
         };
 
         core.Navigate("https://app.local/index.html");
+    }
+
+    /// <summary>异步创建 WebView2 环境，供窗体构造阶段提前启动。</summary>
+    private static async Task<CoreWebView2Environment> CreateWebEnvironmentAsync()
+    {
+        var userData = Path.Combine(AppPaths.DataDirectory, "webview2");
+        PathUtil.EnsureDir(userData);
+        return await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
     }
 
     private static string? ResolveUiDirectory()
@@ -101,6 +118,7 @@ internal sealed partial class MainForm : Form
     /// </summary>
     private void ShowNativeFallbackUi(string reason)
     {
+        HideWebLoadingSurface();
         try { _webView.Visible = false; } catch { /* ignore */ }
 
         var panel = new Panel
@@ -181,6 +199,17 @@ internal sealed partial class MainForm : Form
         AppLog.Warn("native fallback UI shown");
     }
 
+    /// <summary>页面导航完成或切换到原生兜底界面后，移除启动加载层。</summary>
+    private void HideWebLoadingSurface()
+    {
+        try
+        {
+            _webLoadingSurface.Visible = false;
+            _webLoadingSurface.SendToBack();
+        }
+        catch { /* 窗体销毁阶段忽略 */ }
+    }
+
     /// <summary>Web UI 主题变化时同步窗体底色与 WebView 默认背景。</summary>
     public void ApplyWebChromeTheme(bool dark)
     {
@@ -192,6 +221,12 @@ internal sealed partial class MainForm : Form
                 try
                 {
                     _webView.DefaultBackgroundColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+                }
+                catch { /* ignore */ }
+                try
+                {
+                    _webLoadingSurface.BackColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+                    _webLoadingText.ForeColor = dark ? UiStyle.UiDarkText : UiStyle.UiLightText;
                 }
                 catch { /* ignore */ }
                 UiStyle.ApplyTitleBarChrome(this, dark);
