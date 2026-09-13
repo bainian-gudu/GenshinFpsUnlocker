@@ -25,7 +25,6 @@ export interface UnlockerConfig {
   debugLogging: boolean;
   logLevel: LogLevel;
   logRetainDays: number;
-  createDesktopShortcut: boolean;
   suppressAdminHint: boolean;
 }
 
@@ -55,7 +54,6 @@ export const DEFAULT_CONFIG: UnlockerConfig = {
   debugLogging: true,
   logLevel: 'Debug',
   logRetainDays: 14,
-  createDesktopShortcut: true,
   suppressAdminHint: false,
 };
 
@@ -76,7 +74,6 @@ export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
   debugLogging: '调试日志',
   logLevel: '最低日志级别',
   logRetainDays: '日志保留天数',
-  createDesktopShortcut: '桌面快捷方式',
   suppressAdminHint: '隐藏管理员权限提醒',
 };
 

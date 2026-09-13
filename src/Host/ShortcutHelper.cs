@@ -5,48 +5,12 @@ using System.Text;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 开始菜单 / 桌面快捷方式。
+/// 开始菜单快捷方式。
 /// 统一显示名为 <see cref="AppPaths.ProductDisplayName"/>（中文），并清理 Kachina 等
 /// 以英文 <see cref="AppPaths.ProductName"/> 创建的重复项，避免「一个英文无图标 + 一个中文有图标」。
 /// </summary>
 internal static class ShortcutHelper
 {
-    /// <summary>创建/刷新开始菜单 + 桌面；先清重复再写规范项。</summary>
-    public static void CreateAll(string? exePath = null, string? workDir = null)
-    {
-        exePath ??= AppPaths.ExePath;
-        workDir ??= AppPaths.ExeDirectory;
-
-        try
-        {
-            CleanupDuplicateShortcuts(exePath);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Warn("清理重复快捷方式: " + ex.Message);
-        }
-
-        try
-        {
-            CreateStartMenuShortcuts(exePath, workDir);
-            AppLog.Info("开始菜单快捷方式已创建/更新");
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error(ex, "创建开始菜单快捷方式");
-        }
-
-        try
-        {
-            CreateDesktopShortcut(exePath, workDir);
-            AppLog.Info("桌面快捷方式已创建/更新");
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error(ex, "创建桌面快捷方式");
-        }
-    }
-
     /// <summary>
     /// 开始菜单：仅「原神帧率解锁」主项 + 卸载。
     /// 文件夹名仍用 ProductName（与安装目录/注册表一致）；.lnk 文件名为中文显示名。
@@ -118,119 +82,12 @@ internal static class ShortcutHelper
     }
 
     /// <summary>
-    /// 桌面仅保留一个中文主快捷方式（有图标）。
-    /// 公共桌面（C:\Users\Public\Desktop，所有用户桌面可见）若已有本快捷方式，
-    /// 即为规范位置——绝不在用户桌面再写第二份（历史上「公共+用户」双写
-    /// 导致桌面出现两个一模一样图标，且每次启动都会重建）；
-    /// 仅当公共桌面没有、且当前进程写不了公共桌面时，才写用户桌面。
-    /// </summary>
-    public static void CreateDesktopShortcut(string exePath, string workDir)
-    {
-        var icon = ResolveIconPath(exePath, workDir);
-        const string desc = " — 自定义 FPS · 后台注入";
-
-        var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        var user = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-
-        // 两侧英文命名历史残留（Kachina 默认名等）一律清理
-        CleanDesktopAliases(common);
-        CleanDesktopAliases(user);
-
-        var commonLnk = string.IsNullOrEmpty(common) ? null : Path.Combine(common, AppPaths.ProductDisplayName + ".lnk");
-        var userLnk = string.IsNullOrEmpty(user) ? null : Path.Combine(user, AppPaths.ProductDisplayName + ".lnk");
-
-        // 1) 公共桌面已有 → 规范位置：移除用户桌面第二份，管理员则刷新目标
-        if (commonLnk is not null && PathUtil.ExistsFile(commonLnk))
-        {
-            if (userLnk is not null) TryDelete(userLnk);
-            if (CanWriteDir(common))
-            {
-                CreateShortcut(commonLnk, exePath, null, workDir,
-                    AppPaths.ProductDisplayName + desc, icon);
-                AppLog.Info("桌面快捷方式（公共，规范）→ " + commonLnk);
-            }
-            else
-            {
-                AppLog.Debug("公共桌面快捷方式已存在，当前进程无写权限 — 保留，不写用户桌面");
-            }
-            return;
-        }
-
-        // 2) 公共桌面没有且可写（管理员）→ 写公共桌面，并移除用户桌面旧副本
-        if (!string.IsNullOrEmpty(common) && Directory.Exists(common) && CanWriteDir(common))
-        {
-            CreateShortcut(commonLnk!, exePath, null, workDir,
-                AppPaths.ProductDisplayName + desc, icon);
-            if (userLnk is not null) TryDelete(userLnk);
-            AppLog.Info("桌面快捷方式（公共）→ " + commonLnk);
-            return;
-        }
-
-        // 3) 标准用户 → 只写用户桌面一份
-        if (userLnk is not null)
-        {
-            CreateShortcut(userLnk, exePath, null, workDir,
-                AppPaths.ProductDisplayName + desc, icon);
-            AppLog.Info("桌面快捷方式（用户）→ " + userLnk);
-            return;
-        }
-
-        throw new IOException("无法写入任何桌面目录的快捷方式");
-    }
-
-    /// <summary>
-    /// 清掉桌面上的历史别名快捷方式（早期英文名、<c>.exe.lnk</c> 双后缀）。
-    /// 只按固定文件名删，不做通配，避免误删用户的其它快捷方式。
-    /// </summary>
-    private static void CleanDesktopAliases(string? desktop)
-    {
-        if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop)) return;
-        foreach (var name in new[]
-                 {
-                     AppPaths.ProductName + ".lnk",
-                     AppPaths.ProductName + ".exe.lnk",
-                     "Genshin FPS Unlocker.lnk",
-                 })
-            TryDelete(Path.Combine(desktop, name));
-    }
-
-    /// <summary>
-    /// 清理桌面/开始菜单中指向本 exe 的重复项，以及英文命名的 Kachina 默认快捷方式。
+    /// 清理开始菜单中指向本 exe 的重复项，以及英文命名的 Kachina 默认快捷方式。
     /// </summary>
     public static void CleanupDuplicateShortcuts(string? exePath = null)
     {
         exePath ??= AppPaths.ExePath;
         var exeFull = PathUtil.Normalize(exePath);
-
-        foreach (var desk in DesktopRoots())
-        {
-            if (string.IsNullOrEmpty(desk) || !Directory.Exists(desk)) continue;
-            // 明确删英文名
-            foreach (var name in new[]
-                     {
-                         AppPaths.ProductName + ".lnk",
-                         AppPaths.ProductName + ".exe.lnk",
-                         "Genshin FPS Unlocker.lnk",
-                     })
-                TryDelete(Path.Combine(desk, name));
-
-            // 同目录其它 .lnk 若指向本 exe 且文件名不是中文标准名 → 删除
-            try
-            {
-                foreach (var lnk in Directory.EnumerateFiles(desk, "*.lnk"))
-                {
-                    var leaf = Path.GetFileName(lnk);
-                    if (leaf.Equals(AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (ShortcutTargetsExe(lnk, exeFull))
-                    {
-                        TryDelete(lnk);
-                        AppLog.Info("移除重复桌面快捷方式: " + leaf);
-                    }
-                }
-            }
-            catch (Exception ex) { AppLog.Debug("scan desktop lnk: " + ex.Message); }
-        }
 
         foreach (var root in new[]
                  {
@@ -265,15 +122,6 @@ internal static class ShortcutHelper
             }
             catch (Exception ex) { AppLog.Debug("scan start menu lnk: " + ex.Message); }
         }
-    }
-
-    /// <summary>
-    /// 需要覆盖的两个桌面：全体用户桌面 + 当前用户桌面（后者可能被 OneDrive 重定向）。
-    /// </summary>
-    private static IEnumerable<string> DesktopRoots()
-    {
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
     }
 
     /// <summary>优先 exe 旁 app.ico（完整多尺寸），否则 exe 自身。</summary>

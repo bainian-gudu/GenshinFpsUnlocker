@@ -34,38 +34,6 @@ internal sealed partial class UiBridge
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
             if (p["startMinimized"] is JsonNode min)
                 _config.StartMinimized = min.GetValue<bool>();
-            if (p["createDesktopShortcut"] is JsonNode createDeskNode)
-            {
-                _config.CreateDesktopShortcut = createDeskNode.GetValue<bool>();
-                try
-                {
-                    ShortcutHelper.CleanupDuplicateShortcuts();
-                    if (_config.CreateDesktopShortcut)
-                        ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory);
-                    else
-                    {
-                        // 关闭维护：移除桌面中英文快捷方式，保留开始菜单
-                        foreach (var desktopDir in new[]
-                                 {
-                                     Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
-                                     Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                                 })
-                        {
-                            if (string.IsNullOrEmpty(desktopDir)) continue;
-                            foreach (var n in new[]
-                                     {
-                                         AppPaths.ProductDisplayName + ".lnk",
-                                         AppPaths.ProductName + ".lnk",
-                                     })
-                            {
-                                var f = Path.Combine(desktopDir, n);
-                                if (File.Exists(f)) File.Delete(f);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex) { AppLog.Warn(ex.Message); }
-            }
             if (p["debugLogging"] is JsonNode dbg)
             {
                 _config.DebugLogging = dbg.GetValue<bool>();
@@ -117,7 +85,6 @@ internal sealed partial class UiBridge
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
         SetBool(root, "debugLogging", v => _config.DebugLogging = v);
-        SetBool(root, "createDesktopShortcut", v => _config.CreateDesktopShortcut = v);
         SetBool(root, "showSafetyNoticeOnStartup", v => _config.ShowSafetyNoticeOnStartup = v);
         SetBool(root, "safetyNoticeAcknowledged", v => _config.SafetyNoticeAcknowledged = v);
         SetBool(root, "suppressAdminHint", v => _config.SuppressAdminHint = v);
@@ -165,7 +132,6 @@ internal sealed partial class UiBridge
         to.DebugLogging = from.DebugLogging;
         to.LogLevel = from.LogLevel;
         to.LogRetainDays = from.LogRetainDays;
-        to.CreateDesktopShortcut = from.CreateDesktopShortcut;
         to.SuppressAdminHint = from.SuppressAdminHint;
     }
 
@@ -200,7 +166,6 @@ internal sealed partial class UiBridge
         debugLogging = _config.DebugLogging,
         logLevel = _config.LogLevel,
         logRetainDays = _config.LogRetainDays,
-        createDesktopShortcut = _config.CreateDesktopShortcut,
         suppressAdminHint = _config.SuppressAdminHint,
     };
 

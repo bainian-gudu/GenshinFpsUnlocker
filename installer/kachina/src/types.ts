@@ -39,6 +39,8 @@ export type RegistryCleanupItem = {
 export type ProjectConfig = {
   source: string | SourceItem[];
   appName: string;
+  /** 快捷方式显示名；未设置时回退到 appName。 */
+  shortcutName?: string;
   publisher: string;
   regName: string;
   exeName: string;

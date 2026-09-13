@@ -13,6 +13,5 @@
   "defenderExclusionApplied": false,
   "debugLogging": true,
   "logLevel": "Debug",
-  "logRetainDays": 14,
-  "createDesktopShortcut": true
+  "logRetainDays": 14
 }

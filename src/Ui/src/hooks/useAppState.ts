@@ -23,7 +23,7 @@ export function useAppState() {
   configRef.current = config;
   const [page, setPage] = useState<Page>(getPage);
   const [theme, setTheme] = useState<Theme>(() => {
-    try { return localStorage.getItem('genshin-fps-unlocker.theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+    try { return localStorage.getItem('genshin-fps-unlocker.theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; }
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<ModalType>(null);

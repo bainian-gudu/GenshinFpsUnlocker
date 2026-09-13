@@ -86,9 +86,6 @@ internal sealed partial class AppConfig
     /// <summary>日志保留天数（超过则清理 app-*.log）。</summary>
     public int LogRetainDays { get; set; } = 14;
 
-    /// <summary>安装/首次运行时是否创建桌面快捷方式。</summary>
-    public bool CreateDesktopShortcut { get; set; } = true;
-
     /// <summary>是否隐藏界面上的「建议管理员运行」提示条（默认显示；可在设置中关闭）。</summary>
     public bool SuppressAdminHint { get; set; } = false;
 

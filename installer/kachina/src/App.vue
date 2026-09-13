@@ -1733,11 +1733,12 @@ async function getLnkPath() {
   const [program, desktop] = await invoke<InvokeGetDirsRes>('get_dirs', {
     elevated: needElevate.value,
   });
+  const shortcutName = PROJECT_CONFIG.shortcutName || PROJECT_CONFIG.appName;
   return {
     programFolder: `${program}${sep()}${PROJECT_CONFIG.appName}`,
-    program: `${program}${sep()}${PROJECT_CONFIG.appName}${sep()}${PROJECT_CONFIG.appName}.lnk`,
-    desktop: `${desktop}${sep()}${PROJECT_CONFIG.appName}.lnk`,
-    uninstall: `${program}${sep()}${PROJECT_CONFIG.appName}${sep()}卸载${PROJECT_CONFIG.appName}.lnk`,
+    program: `${program}${sep()}${PROJECT_CONFIG.appName}${sep()}${shortcutName}.lnk`,
+    desktop: `${desktop}${sep()}${shortcutName}.lnk`,
+    uninstall: `${program}${sep()}${PROJECT_CONFIG.appName}${sep()}卸载${shortcutName}.lnk`,
   };
 }
 

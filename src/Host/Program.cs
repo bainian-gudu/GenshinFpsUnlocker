@@ -253,14 +253,8 @@ internal static class Program
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
         AppLog.Info($"autostart={config.AutoStartWithWindows} cmd={Autostart.GetCommand()}");
 
-        // 快捷方式维护：Kachina 安装时会建快捷方式，但用的是英文 appName
-        // （GenshinFpsUnlocker.lnk），这里每次启动自愈一次——统一成中文显示名、
-        // 清理英文重复项、exe 路径漂移后重新指向当前路径。
-        // 标准用户写不了公共目录时 ShortcutHelper 内部会自动退回用户目录。
-        //
-        // 只对「Kachina 装出来的副本」做，便携/开发目录不要往桌面塞图标。
-        // 判据：安装目录里有 Kachina 的 uninst.exe，或位于 Program Files 下，
-        // 或存在旧版本写下的安装标记（向后兼容历史安装）。
+        // 只对 Kachina 安装副本维护开始菜单快捷方式；桌面快捷方式由安装器一次性创建，
+        // 宿主启动时不再扫描、创建或删除桌面图标。
         var isInstalledCopy =
             PathUtil.ExistsFile(AppPaths.UninstExePath)
             || AppPaths.IsInstalledUnderProgramFiles()
@@ -272,8 +266,6 @@ internal static class Program
             {
                 ShortcutHelper.CleanupDuplicateShortcuts();
                 ShortcutHelper.CreateStartMenuShortcuts(AppPaths.ExePath, AppPaths.ExeDirectory);
-                if (config.CreateDesktopShortcut)
-                    ShortcutHelper.CreateDesktopShortcut(AppPaths.ExePath, AppPaths.ExeDirectory);
             }
             catch (Exception ex) { AppLog.Warn("刷新快捷方式: " + ex.Message); }
         }
