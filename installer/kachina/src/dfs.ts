@@ -1,5 +1,5 @@
 import { hybridPatch, InstallFile } from './api/installFile';
-import { ipc, log, warn, addInsightWithMode } from './api/ipc';
+import { ipc, log, addInsightWithMode } from './api/ipc';
 import { invoke } from './tauri';
 import { KachinaInstallSource, pluginManager } from './plugins';
 import { registerAllPlugins } from './plugins/registry';

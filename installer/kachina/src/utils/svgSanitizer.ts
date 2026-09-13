@@ -105,7 +105,7 @@ export function sanitizeSvg(svgContent: string): string | null {
     if (!cleaned) return null;
 
     // 进一步净化样式属性
-    cleaned = cleaned.replace(/style\s*=\s*["']([^"']*)["']/gi, (match, styleValue) => {
+    cleaned = cleaned.replace(/style\s*=\s*["']([^"']*)["']/gi, (_match, styleValue) => {
       const safeCss = sanitizeCssStyle(styleValue);
       return safeCss ? `style="${safeCss}"` : '';
     });

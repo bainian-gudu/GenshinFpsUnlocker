@@ -29,7 +29,7 @@
 #ifndef HDiff_qsort_parallel_h
 #define HDiff_qsort_parallel_h
 #include <algorithm>
-#include "../../../libParallel/parallel_import.h"
+#include "../../libParallel/parallel_import.h"
 #if (_IS_USED_MULTITHREAD)
 #include <thread>   //使用 VC++ 时需要 VC2012 或更高版本
 #endif
