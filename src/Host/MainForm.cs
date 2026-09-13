@@ -38,6 +38,7 @@ internal sealed partial class MainForm : Form
     private Point _restoreLocation;
     private bool _hasRestoreLocation;
     private CancellationTokenSource? _wakeCts;
+    private System.Windows.Forms.Timer? _trayRecoveryTimer;
 
     public MainForm(AppConfig config, UnlockService service)
     {
@@ -77,6 +78,10 @@ internal sealed partial class MainForm : Form
         catch { /* ignore */ }
         UiStyle.ApplyToForm(this);
 
+        // 托盘必须先于 WebView2 控件和环境创建，登录阶段也要尽快显示。
+        WireTrayFallback();
+        WireStartupToTray();
+
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
@@ -105,10 +110,6 @@ internal sealed partial class MainForm : Form
         _webLoadingSurface.Controls.Add(_webLoadingText);
         Controls.Add(_webLoadingSurface);
         _webLoadingSurface.BringToFront();
-
-        WireTrayFallback();
-
-        WireStartupToTray();
 
         WireInstanceWake();
 

@@ -1,8 +1,35 @@
+using System.Runtime.InteropServices;
+
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>窗口与托盘切换：启动进托盘、隐藏 / 恢复、屏幕内校正、原生激活与提权重启。</summary>
 internal sealed partial class MainForm : Form
 {
+    private static readonly int TaskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int RegisterWindowMessage(string lpString);
+
+    /// <summary>Explorer 重启或登录后就绪时，重新注册托盘图标。</summary>
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == TaskbarCreatedMessage && _tray is not null && !IsDisposed)
+        {
+            try
+            {
+                _tray.Visible = false;
+                _tray.Visible = true;
+                UpdateTrayTip();
+                AppLog.Info("Explorer 通知区域已重置，托盘图标已重新注册");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Debug("TaskbarCreated 托盘恢复: " + ex.Message);
+            }
+        }
+        base.WndProc(ref m);
+    }
+
     /// <summary>
     /// 启动托盘：工具窗口 + 不激活，进一步降低任务栏/动画闪现。
     /// </summary>

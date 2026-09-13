@@ -31,6 +31,48 @@ internal sealed partial class MainForm
                 AppLog.Error(ex2, "fallback tray");
             }
         }
+
+        StartTrayRecoveryTimer();
+    }
+
+    /// <summary>
+    /// 登录时 Explorer 的通知区域可能晚于本进程启动；短时间重注册图标，
+    /// 避免 NotifyIcon 首次消息被 Shell 丢弃后长时间不可见。
+    /// </summary>
+    private void StartTrayRecoveryTimer()
+    {
+        if (_trayRecoveryTimer is not null) return;
+        var attempts = 0;
+        _trayRecoveryTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        _trayRecoveryTimer.Tick += (_, _) =>
+        {
+            if (IsDisposed || _tray is null)
+            {
+                _trayRecoveryTimer?.Stop();
+                return;
+            }
+
+            attempts++;
+            try
+            {
+                // 启动后的 3 分钟内按递增间隔重注册；避免首次 NIM_ADD 被 Shell 丢弃。
+                // 前 10 秒每 2 秒尝试，之后降低频率，既覆盖慢启动又避免图标闪烁。
+                var retryNow = attempts <= 5 || attempts % 5 == 0;
+                if (attempts <= 90 && retryNow)
+                {
+                    _tray.Visible = false;
+                    _tray.Visible = true;
+                    UpdateTrayTip();
+                }
+                if (attempts >= 90)
+                    _trayRecoveryTimer.Stop();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Debug("托盘启动恢复: " + ex.Message);
+            }
+        };
+        _trayRecoveryTimer.Start();
     }
 
     private void WireStartupToTray()
@@ -281,6 +323,7 @@ internal sealed partial class MainForm
             _reallyExit = true;
             try { _wakeCts?.Cancel(); } catch { /* ignore */ }
             try { _wakeCts?.Dispose(); } catch { /* ignore */ }
+            try { _trayRecoveryTimer?.Stop(); _trayRecoveryTimer?.Dispose(); } catch { /* ignore */ }
             try { _service.StateChanged -= OnServiceStateForTray; } catch { /* ignore */ }
             try { _tray.Visible = false; } catch { /* ignore */ }
             try { (_trayMenu?.Renderer as IDisposable)?.Dispose(); } catch { /* ignore */ }
