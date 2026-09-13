@@ -1,10 +1,46 @@
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>WebView2 承载：初始化、UI 目录解析、Web 不可用时的原生兜底界面与窗口配色。</summary>
 internal sealed partial class MainForm : Form
 {
+    /// <summary>
+    /// 延迟创建 WebView2。启动进托盘时不触碰 WebView2/运行时，避免其环境锁或磁盘
+    /// 初始化阻塞 UI 消息泵；用户真正打开主窗口后才创建界面控件。
+    /// </summary>
+    private void InitializeWebControls()
+    {
+        if (_webView is not null && _webEnvironmentTask is not null)
+            return;
+
+        _webView = new WebView2
+        {
+            Dock = DockStyle.Fill,
+            DefaultBackgroundColor = UiStyle.UiLightBg,
+        };
+        _webEnvironmentTask = CreateWebEnvironmentAsync();
+        Controls.Add(_webView);
+
+        _webLoadingSurface = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = UiStyle.UiLightBg,
+        };
+        _webLoadingText = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "正在加载界面…",
+            ForeColor = UiStyle.UiLightText,
+            Font = UiStyle.UiFont,
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        _webLoadingSurface.Controls.Add(_webLoadingText);
+        Controls.Add(_webLoadingSurface);
+        _webLoadingSurface.BringToFront();
+    }
+
     private async Task InitializeWebAsync()
     {
         // 环境创建已在窗体构造期间启动，这里只等待结果并在 UI 线程绑定控件。

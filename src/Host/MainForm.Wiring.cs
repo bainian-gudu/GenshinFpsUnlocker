@@ -184,6 +184,7 @@ internal sealed partial class MainForm
             var webOk = false;
             try
             {
+                InitializeWebControls();
                 await InitializeWebAsync();
                 webOk = true;
             }
@@ -330,7 +331,7 @@ internal sealed partial class MainForm
             try { _tray.Dispose(); } catch { /* ignore */ }
             try { _trayIconOwned?.Dispose(); } catch { /* ignore */ }
             try { _bridge.Dispose(); } catch { /* ignore */ }
-            try { _webView.Dispose(); } catch { /* ignore */ }
+            try { _webView?.Dispose(); } catch { /* ignore */ }
         };
     }
 }
