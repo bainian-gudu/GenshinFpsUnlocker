@@ -272,7 +272,4 @@ internal static class UiStyle
         catch { /* ignore */ }
     }
 
-    /// <summary>兼容旧调用名。</summary>
-    public static void TrySetTitleBarDarkMode(Form form, bool dark) =>
-        ApplyTitleBarChrome(form, dark);
 }

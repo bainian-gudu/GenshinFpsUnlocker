@@ -21,9 +21,6 @@ internal sealed partial class MainForm
     /// <summary>主窗是否已藏入托盘（气泡/提示文案用）。</summary>
     private bool _inTray;
 
-    /// <summary>当前是否在托盘后台模式。</summary>
-    internal bool IsInTray => _inTray;
-
     private void OnServiceStateForTray()
     {
         if (IsDisposed) return;

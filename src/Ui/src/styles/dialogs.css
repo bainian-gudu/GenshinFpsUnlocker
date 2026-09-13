@@ -1,5 +1,5 @@
 /* 弹窗、Toast 与公共动画（spin / pulse / content-enter）。 */
-/* Dialogs keep destructive actions and native-only capabilities explicit. */
+/* 弹窗明确标出高风险操作与仅桌面版可用的能力。 */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: #07090cc7; backdrop-filter: blur(7px); overflow-y: auto; }
 .modal { position: relative; width: min(100%, 490px); max-height: calc(100svh - 48px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 13px; box-shadow: 0 25px 90px #0005; }
 .modal-wide { width: min(100%, 615px); }
@@ -17,7 +17,7 @@
 .text-input { width: 100%; min-width: 0; height: 45px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--input); color: var(--text); font-size: 12px; transition: border-color .2s, box-shadow .2s; }
 .text-input:focus { outline: none; border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
 .text-input::placeholder { color: var(--muted); }
-.path-input { font-family: 'DM Sans', monospace; font-size: 11px; }
+.path-input { font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace; font-size: 11px; }
 .field-error, .setting-row .field-error { color: var(--error); font-size: 10.5px; line-height: 1.8; }
 .input-invalid { border-color: var(--error); }
 .text-input + .field-error { margin-top: 8px; }

@@ -79,7 +79,7 @@
 .settings-small-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.9; }
 .settings-small-note > svg { margin-top: 3px; }
 .settings-path-panel { margin-top: 20px; padding-bottom: 21px; }
-.path-display { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 5px; background: var(--input); color: var(--secondary); font-family: 'DM Sans', monospace; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.path-display { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 5px; background: var(--input); color: var(--secondary); font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .input-help { color: var(--muted); font-size: 10.5px; line-height: 1.9; margin-top: 8px; }
 .setting-list { padding: 26px 28px 15px; }
 .section-intro { margin-bottom: 13px; }

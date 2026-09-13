@@ -1,6 +1,7 @@
 /* 设计令牌（深浅色变量）、基础排版与全局元素样式。 */
 :root {
-  font-family: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  /* 只使用系统字体，避免外部字体下载拖慢启动，也适配用户的系统字形设置。 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
   color: #edecf3;
   background: #121319;
   color-scheme: dark;
