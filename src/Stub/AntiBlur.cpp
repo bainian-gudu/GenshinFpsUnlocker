@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cstdint>
 
 #include "MinHook.h"
 #include "Scanner.h"
@@ -39,6 +40,17 @@ namespace
         "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC ?? ?? ?? ?? 0F 29 B4 24 ?? ?? ?? ?? "
         "4C 89 CF 48 89 D6 49 89 CC 48 8B AC 24";
 
+    // 新版客户端的水下遮罩处理函数。旧版是调用 DisplayEffect 后 Patch，
+    // 新版拆成进入/主处理/退出三个阶段，直接 Hook 返回值更稳定。
+    constexpr const char* kUnderwaterMaskPrePattern =
+        "41 56 56 57 55 53 48 81 EC F0 04 00 00";
+    constexpr const char* kUnderwaterMaskMainPattern =
+        "41 57 41 56 56 57 53 48 81 EC D0 04 00 00 48 89 CE";
+    constexpr const char* kUnderwaterMaskPostPattern =
+        "41 56 56 57 55 53 48 81 EC E0 00 00 00 48 89 CE 80 3D ?? ?? ?? ?? ?? 75 ?? 48 8B 86 ?? ?? ?? ?? 48 85 C0";
+    constexpr const char* kUnderwaterMaskClearPattern =
+        "56 57 48 83 EC 28 48 89 CE 80 3D ?? ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 48 8D BE ?? ?? ?? ?? 80 3D";
+
     // 在调用者体内向前搜索 call DisplayEffect 的最大窗口（字节）。
     constexpr int kMosaicCallWindow = 0x800;
 
@@ -48,12 +60,19 @@ namespace
     const char kMosaicPatchBytes[5] = { (char)0xB8, (char)0x00, (char)0x00, (char)0x00, (char)0x00 };
 
     using PlayerPerspectiveFn = void (*)(void* rcx, bool display);
+    using UnderwaterMaskFn = int64_t (*)(void* self, double deltaTime);
+    using ClearMaskFn = void (*)(void* self);
 
     PlayerPerspectiveFn g_originalPlayerPerspective = nullptr;
     Patch* g_mosaicPatch = nullptr;
+    UnderwaterMaskFn g_originalMaskPre = nullptr;
+    UnderwaterMaskFn g_originalMaskMain = nullptr;
+    UnderwaterMaskFn g_originalMaskPost = nullptr;
+    ClearMaskFn g_clearMask = nullptr;
 
     bool g_perspectiveReady = false;
     bool g_mosaicReady = false;
+    bool g_maskHookReady = false;
 
     // hook 内绑定的 IPC 指针（Initialize 时写入，先于 MH_EnableHook 生效）。
     void* g_boundIpc = nullptr;
@@ -73,6 +92,62 @@ namespace
         if (g_originalPlayerPerspective)
         {
             g_originalPlayerPerspective(rcx, display);
+        }
+    }
+
+    int64_t HookUnderwaterMask(UnderwaterMaskFn original, void* self, double deltaTime)
+    {
+        IpcData* ipc = static_cast<IpcData*>(g_boundIpc);
+        if (!ipc || ipc->AntiBlurDiveMosaic == 0)
+        {
+            return original ? original(self, deltaTime) : 0;
+        }
+
+        // 清理旧遮罩对象，避免仅跳过计算后残留上一帧马赛克。
+        if (g_clearMask && self)
+        {
+#if defined(_MSC_VER)
+            __try
+            {
+                g_clearMask(self);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                // 清理函数随版本变化时可能失效；跳过清理仍可阻止本帧新遮罩。
+            }
+#else
+            g_clearMask(self);
+#endif
+        }
+        return 0;
+    }
+
+    int64_t HookMaskPre(void* self, double deltaTime)
+    {
+        return HookUnderwaterMask(g_originalMaskPre, self, deltaTime);
+    }
+
+    int64_t HookMaskMain(void* self, double deltaTime)
+    {
+        return HookUnderwaterMask(g_originalMaskMain, self, deltaTime);
+    }
+
+    int64_t HookMaskPost(void* self, double deltaTime)
+    {
+        return HookUnderwaterMask(g_originalMaskPost, self, deltaTime);
+    }
+
+    void InstallMaskHook(HMODULE gameModule, const char* pattern, void* hook,
+                         UnderwaterMaskFn* original)
+    {
+        void* target = Scanner::ScanModule(gameModule, pattern);
+        if (!target || *original)
+        {
+            return;
+        }
+        if (MH_CreateHook(target, hook, reinterpret_cast<LPVOID*>(original)) == MH_OK)
+        {
+            g_maskHookReady = true;
         }
     }
 
@@ -197,6 +272,32 @@ namespace AntiBlur
             }
         }
 
+        // 新版客户端兼容路径：三段水下遮罩函数直接 Hook。至少成功一个即视为
+        // 已就绪；Hook 内按共享内存开关决定跳过或调用原函数。
+        if (!g_maskHookReady)
+        {
+            if (void* clear = Scanner::ScanModule(gameModule, kUnderwaterMaskClearPattern))
+            {
+                g_clearMask = reinterpret_cast<ClearMaskFn>(clear);
+            }
+            InstallMaskHook(gameModule, kUnderwaterMaskPrePattern,
+                            reinterpret_cast<void*>(&HookMaskPre), &g_originalMaskPre);
+            InstallMaskHook(gameModule, kUnderwaterMaskMainPattern,
+                            reinterpret_cast<void*>(&HookMaskMain), &g_originalMaskMain);
+            InstallMaskHook(gameModule, kUnderwaterMaskPostPattern,
+                            reinterpret_cast<void*>(&HookMaskPost), &g_originalMaskPost);
+            if (g_maskHookReady)
+            {
+                g_mosaicReady = true;
+            }
+        }
+
+        // 兼容重试：Hook 已创建但本轮调用点 Patch 未找到时，仍保留 Hook 路径。
+        if (g_maskHookReady)
+        {
+            g_mosaicReady = true;
+        }
+
         // 刷新状态掩码
         ipc->AntiBlurState =
             (g_perspectiveReady ? static_cast<int32_t>(IpcAntiBlurState::PerspectiveReady) : 0) |
@@ -225,6 +326,18 @@ namespace AntiBlur
                 ipc->AntiBlurState &= ~static_cast<int32_t>(IpcAntiBlurState::DiveMosaicPatched);
             }
         }
+
+        if (g_maskHookReady)
+        {
+            if (ipc->AntiBlurDiveMosaic != 0)
+            {
+                ipc->AntiBlurState |= static_cast<int32_t>(IpcAntiBlurState::DiveMosaicPatched);
+            }
+            else
+            {
+                ipc->AntiBlurState &= ~static_cast<int32_t>(IpcAntiBlurState::DiveMosaicPatched);
+            }
+        }
     }
 
     void Shutdown(IpcData* ipc)
@@ -235,7 +348,8 @@ namespace AntiBlur
             delete g_mosaicPatch;
             g_mosaicPatch = nullptr;
         }
-        g_mosaicReady = false;
+        // 已创建的 MinHook 会由宿主统一禁用，保留就绪标记以支持同一进程内重试。
+        g_mosaicReady = g_maskHookReady;
 
         // 反角色虚化 Hook 由宿主统一 MH_DisableHook(MH_ALL_HOOKS) 处理。
         if (ipc)
