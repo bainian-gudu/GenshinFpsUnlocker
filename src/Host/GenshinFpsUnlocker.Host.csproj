@@ -2,7 +2,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- 必须带 Windows 版本号，否则 TargetPlatformVersion 默认为 7.0，与 SupportedOSPlatformVersion 冲突 (NETSDK1135) -->
-    <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
+    <!-- Toast 兼容库需要 18362 SDK；TargetPlatformMinVersion 仍保留 17763，
+         运行时在旧系统自动回退托盘提示。 -->
+    <TargetFramework>net9.0-windows10.0.18362.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
@@ -39,6 +41,8 @@
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.0" />
     <!-- WinForms 宿主只用 Core；排除 Wpf 以免 MSB3277 (WindowsBase 4 vs 5) -->
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <!-- Windows 10/11 现代 Toast；不可用时宿主回退到托盘提示。 -->
+    <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
   </ItemGroup>
   <Target Name="ExcludeWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>

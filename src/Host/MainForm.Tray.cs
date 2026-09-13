@@ -81,6 +81,10 @@ internal sealed partial class MainForm
     {
         try
         {
+            if (ToastNotifications.TryShow(title, text))
+                return;
+
+            // 旧系统或通知服务被禁用时保留兼容提示，避免状态变化完全无反馈。
             _tray.BalloonTipTitle = title;
             _tray.BalloonTipText = text;
             _tray.BalloonTipIcon = ToolTipIcon.Info;

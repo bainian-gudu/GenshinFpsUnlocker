@@ -17,6 +17,8 @@ namespace GenshinFpsUnlocker.Host;
 internal static class Autostart
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string StartupApprovedRunKey =
+        @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string ValueName = AppPaths.ProductName;
 
     public static bool IsEnabled()
@@ -58,6 +60,7 @@ internal static class Autostart
                 }
 
                 var cmd = $"\"{exe}\" --autostart";
+                ClearRunAsAdminCompatibility(exe);
                 if (!string.Equals(existing, cmd, StringComparison.OrdinalIgnoreCase))
                 {
                     var oldTarget = ParseTarget(existing);
@@ -67,7 +70,14 @@ internal static class Autostart
                         AppLog.Info("autostart 更新: " + existing + " → " + cmd);
 
                     key.SetValue(ValueName, cmd);
+                    SetStartupApproved(enabled: true);
                     AppLog.Info("autostart enabled: " + (key.GetValue(ValueName) ?? cmd));
+                }
+                else
+                {
+                    // Windows 任务管理器可单独禁用启动项；每次同步时重新启用，
+                    // 避免 Run 值存在但登录时被 StartupApproved 静默拦截。
+                    SetStartupApproved(enabled: true);
                 }
             }
             else if (existing is not null)
@@ -81,6 +91,7 @@ internal static class Autostart
 
                 var oldTarget = ParseTarget(existing);
                 key.DeleteValue(ValueName, throwOnMissingValue: false);
+                SetStartupApproved(enabled: false);
                 var stale = oldTarget is not null && !PathUtil.ExistsFile(oldTarget)
                     ? "（原目标已不存在，按失效项清理）"
                     : "";
@@ -130,6 +141,67 @@ internal static class Autostart
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// 同步 Windows 任务管理器维护的启动项批准状态。
+    /// HKCU\...\Run 仅表示“要启动”，StartupApproved 才决定登录时是否实际执行。
+    /// </summary>
+    private static void SetStartupApproved(bool enabled)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(StartupApprovedRunKey, writable: true)
+                            ?? (enabled ? Registry.CurrentUser.CreateSubKey(StartupApprovedRunKey) : null);
+            if (key is null) return;
+
+            if (enabled)
+            {
+                // 02 = 已启用，后 11 字节为 Windows 保留的时间/状态字段。
+                var value = new byte[12];
+                value[0] = 0x02;
+                key.SetValue(ValueName, value, RegistryValueKind.Binary);
+            }
+            else
+            {
+                key.DeleteValue(ValueName, throwOnMissingValue: false);
+            }
+        }
+        catch (Exception ex)
+        {
+            // 某些精简系统没有 StartupApproved，不应阻断 Run 值写入。
+            AppLog.Debug("StartupApproved 同步失败: " + ex.Message);
+        }
+    }
+
+    /// <summary>清除当前用户为本程序设置的 RUNASADMIN 兼容层，防止 Run 自启被 UAC 阻断。</summary>
+    private static void ClearRunAsAdminCompatibility(string exe)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers", writable: true);
+            if (key is null) return;
+            var value = key.GetValue(exe) as string;
+            if (string.IsNullOrWhiteSpace(value)) return;
+
+            var flags = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(flag => !flag.Equals("RUNASADMIN", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            // 单独的“~”只是兼容层关闭标记，没有保留价值，直接删除整项。
+            if (flags.Length == 0 || flags.All(flag => flag == "~"))
+                key.DeleteValue(exe, throwOnMissingValue: false);
+            else if (flags.Length != value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length)
+                key.SetValue(exe, string.Join(' ', flags), RegistryValueKind.String);
+            else
+                return;
+
+            AppLog.Info("已清除自启兼容层 RUNASADMIN: " + exe);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("清除自启 RUNASADMIN 失败: " + ex.Message);
         }
     }
 
