@@ -77,13 +77,6 @@ installer/tools/kachina-builder.exe
 首次冷构建耗时较长（`lto = true`、`codegen-units = 1`、静态 msquic）。
 CI 里用 `Swatinem/rust-cache` 缓存后通常几分钟内完成。
 
-### WSL 说明
-
-WSL 可用于运行 `tools/devcheck` 的 `vendor`、`ps1`、`gen`、`logic` 和部分 `rust` 检查，
-但不能替代完整的 Kachina 构建。完整构建需要 Windows MSVC、Windows SDK 以及
-`x86_64-win7-windows-msvc` 目标；请在 Windows PowerShell 中执行
-`pwsh installer/build-kachina.ps1`。
-
 ## 许可提示（重要）
 
 截至快照日期，**上游仓库没有提供 LICENSE 文件**，`package.json` / `Cargo.toml`
