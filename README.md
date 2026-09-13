@@ -23,16 +23,13 @@
 
 ## 要求
 
-- **操作系统**：64 位 **Windows 10**（1607 / 版本 14393 及以上）或 **Windows 11**
-- **架构**：x64（与游戏客户端一致）
-- 构建：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）、**Node.js 20+**（界面）
-- 打包安装器：源码已随仓库提供（[`installer/kachina/`](installer/kachina/)），另需 **Rust nightly + `rust-src`** 与 **pnpm 10**；CI 会自动装
-- 运行界面：系统需安装 **Microsoft Edge WebView2 Runtime**（Win10/11 通常已自带）
-- 运行依赖策略：
-  - **应用自身**（托管 DLL、`FpsUnlockerStub.dll`、MinHook 静态编入 Stub 等）随安装包**自包含**
-  - **无** Node / Python 等其它编程语言运行时依赖
-  - **.NET Desktop Runtime 9**、**VC++ 2015+ x64**：由 **Kachina** 安装器按配置检测/安装（亦可首次运行时由主程序提示下载）
-  - 可选 `build.ps1 -SelfContained` 将 .NET 也打进主程序（离线、包体更大）
+- **运行**：64 位 **Windows 10**（1607 / 14393 及以上）或 **Windows 11**，x64；
+  需要 **Microsoft Edge WebView2 Runtime**（Win10/11 通常已自带），
+  **.NET Desktop Runtime 9** 与 **VC++ 2015+ x64** 由安装器按配置检测/安装
+  （亦可首次运行时由主程序提示下载）。**不需要** Node / Python 等开发运行时，
+  逐项见下文「依赖说明」。
+- **构建**：.NET 9 SDK、CMake、MSVC（或 VS Build Tools）、Node.js 20+；
+  打安装器另需 Rust nightly + `rust-src` 与 pnpm 10（源码随仓库提供，CI 会自动装）。
 
 ## 技术栈
 
@@ -45,9 +42,6 @@
 | exe 图标 / 版本资源写入 | vendored `rcedit-rs`（C++，MSVC 编译） | `installer/kachina/vendor/rcedit-rs/`，与上游差异见其 `LOCAL_PATCHES.md` |
 | 构建 / 打包 / 自检 | PowerShell 7 | `build.ps1`、`installer/pack.ps1`、`installer/build-kachina.ps1`、`tools/devcheck/` |
 | CI | GitHub Actions（`ubuntu-latest` + `windows-latest`） | `devcheck.yml`（push/PR 自动）、`build.yml`（仅手动） |
-
-运行侧只依赖 **WebView2 Runtime** 与（默认构建下的）**.NET Desktop Runtime 9 / VC++ 运行库**，
-后两者由安装器按配置检测安装；**不需要** Node / Python 等任何开发运行时。
 
 ## 构建
 
@@ -218,23 +212,10 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 [`installer/kachina/UPSTREAM.md`](installer/kachina/UPSTREAM.md) 与
 [`tools/devcheck/README.md`](tools/devcheck/README.md)。
 
-Build 的三个 job 并行/串行协作，**不再从上游 Release 下载 `kachina-builder.exe`**：
-
-1. `build-kachina` —— 用 `installer/kachina/` 源码构建 `kachina-builder.exe`。
-   源码未变时命中 `actions/cache`（key = `hashFiles('installer/kachina/**')`）直接复用；
-   输入 `rebuild_kachina=true` 可强制重建。
-2. `build-app` —— `build.ps1 -SkipSetup` 产出 `dist\`。
-3. `pack` —— `installer\pack.ps1 -SkipKachinaBuild` 产出最终安装包。
-
-产物：
-
-- `GenshinFpsUnlocker-portable-win-x64.zip`
-- `GenshinFpsUnlocker_v*.7z`（若 runner 有 7z）
-- `GenshinFpsUnlocker.Install.*.exe`（Kachina）
-
-工作流可选 `host_mode=self-contained` 打全量自包含主程序。
-
-将 `Install` 包发布到 Release 且 tag 为 `v{version}` 后，配置中的 GitHub 在线源即可用于更新器。
+**Build** 依次跑 `build-kachina`（源码 → `kachina-builder.exe`，源码未变时命中缓存，
+输入 `rebuild_kachina=true` 可强制重建）→ `build-app` → `pack`，可选
+`host_mode=self-contained` 打全量自包含主程序；产物与本地构建一致，挂在 Release 上。
+把 `Install` 包发布到 Release 且 tag 为 `v{version}` 后，配置里的 GitHub 在线源即可用于更新器。
 
 ## 隐私与遥测
 
