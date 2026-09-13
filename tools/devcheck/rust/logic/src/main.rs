@@ -23,6 +23,9 @@ pub mod windows_registry {
         pub const fn hive(name: &'static str) -> Key {
             Key { name }
         }
+        pub fn options(&self) -> OpenOptions<'_> {
+            OpenOptions { key: self }
+        }
         pub fn open(&self, path: &str) -> Result<Key, Box<dyn std::error::Error>> {
             super::log(&format!("open {}\\{}", self.name, path));
             Ok(Key {
@@ -58,6 +61,20 @@ pub mod windows_registry {
                 ],
                 i: 0,
             })
+        }
+    }
+    pub struct OpenOptions<'a> {
+        key: &'a Key,
+    }
+    impl<'a> OpenOptions<'a> {
+        pub fn read(self) -> Self {
+            self
+        }
+        pub fn write(self) -> Self {
+            self
+        }
+        pub fn open(self, path: &str) -> Result<Key, Box<dyn std::error::Error>> {
+            self.key.open(path)
         }
     }
     pub struct KeyIterator {

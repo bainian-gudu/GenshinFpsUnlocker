@@ -89,7 +89,7 @@ internal sealed partial class MainForm
         /// <summary>勾选槽宽：√ 固定画在这一槽内（水平居中于槽、垂直居中于行）。</summary>
         private const int CheckGutter = 28;
 
-        /// <summary>分隔线左缘（文字改为整行居中后不再需要「文字左缘」这个常量）。</summary>
+        /// <summary>文字和分隔线的左缘，保证菜单项统一左对齐。</summary>
         private const int TextLeft = 32;
 
         protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
@@ -140,18 +140,15 @@ internal sealed partial class MainForm
                         ? _accent
                         : _text;
 
-            // 文字在**整行宽度内水平居中**、整行高度内垂直居中：矩形直接取整行，
-            // 由 HorizontalCenter / VerticalCenter 负责对中，别再自己叠
-            // ContentRectangle.Y / 内边距（叠了会偏高偏矮不一，和勾选标记对不齐）。
-            //
-            // 左右不再各留不对称的内缩：菜单宽度本来就是由最宽那一项撑出来的，
-            // 再内缩会让最宽项被 EndEllipsis 截掉一截。√ 仍在左侧 CheckGutter 槽内，
-            // 勾选项目前最长的是「移除水下马赛克」（≈7 个汉字），居中后左右各余
-            // 40px 以上，不会压到 √；带子菜单箭头的「修改帧率 · N FPS」也不是最宽项，
-            // 居中后离右侧箭头还有富余。
+            // 文字从勾选槽右侧开始左对齐，并在整行高度内垂直居中。
+            // 右侧预留箭头和边距，避免「修改帧率」子菜单项的文字盖住箭头。
             var font = e.TextFont ?? item.Font ?? SystemFonts.MenuFont ?? SystemFonts.DefaultFont;
             var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
-            var textRect = new Rectangle(0, 0, Math.Max(8, item.Width), item.Height);
+            var textRect = new Rectangle(
+                TextLeft,
+                0,
+                Math.Max(8, item.Width - TextLeft - 12),
+                item.Height);
 
             TextRenderer.DrawText(
                 g,
@@ -160,7 +157,7 @@ internal sealed partial class MainForm
                 textRect,
                 e.TextColor,
                 flags
-                    | TextFormatFlags.HorizontalCenter
+                    | TextFormatFlags.Left
                     | TextFormatFlags.VerticalCenter
                     | TextFormatFlags.SingleLine);
             // 不再调用 base，避免系统再画一次偏移文字

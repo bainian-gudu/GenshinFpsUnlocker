@@ -40,8 +40,10 @@ internal static class Autostart
     {
         try
         {
+            // 关闭时只打开已有键，不为禁用状态额外创建空的 Run 子键。
+            // 开启时才在缺失时创建，避免每次启动都修改用户注册表结构。
             using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)
-                            ?? Registry.CurrentUser.CreateSubKey(RunKey);
+                            ?? (enabled ? Registry.CurrentUser.CreateSubKey(RunKey) : null);
             if (key is null) return;
 
             var existing = key.GetValue(ValueName) as string;
