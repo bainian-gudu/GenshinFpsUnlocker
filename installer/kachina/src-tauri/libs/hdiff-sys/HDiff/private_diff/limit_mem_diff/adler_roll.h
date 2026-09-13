@@ -39,7 +39,7 @@ extern "C" {
 #   define adler_data_t unsigned char
 #endif
 
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 标准 */)
 #   include <stdint.h> //用于 uint16_t,uint32_t,uint64_t
 #else
 #   ifdef _MSC_VER

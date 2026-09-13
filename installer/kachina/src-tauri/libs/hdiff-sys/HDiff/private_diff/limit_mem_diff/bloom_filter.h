@@ -164,4 +164,4 @@ private:
 };
 
 }//命名空间 hdiff_private
-#endif 第三方实现细节。
+#endif /* bloom_filter_h */

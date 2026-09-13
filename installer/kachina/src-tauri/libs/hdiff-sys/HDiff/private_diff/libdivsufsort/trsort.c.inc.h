@@ -97,7 +97,7 @@ tr_fixdown(const sastore_t*ISAd, sastore_t* SA, saidx_t i, saidx_t size) {
   SA[i] = v;
 }
 
-第三方实现细节。
+/* 第三方实现细节。 */
 static
 void
 tr_heapsort(const sastore_t*ISAd, sastore_t* SA, saidx_t size) {
@@ -150,7 +150,7 @@ tr_median5(const sastore_t*ISAd,
   return v3;
 }
 
-第三方实现细节。
+/* 第三方实现细节。 */
 static INLINE
 sastore_t*
 tr_pivot(const sastore_t*ISAd, sastore_t*first, sastore_t*last) {
@@ -329,10 +329,10 @@ tr_introsort(sastore_t*ISA, const sastore_t*ISAd,
 
     if(limit < 0) {
       if(limit == -1) {
-        第三方实现细节。
+        /* 第三方实现细节。 */
         tr_partition(ISAd - incr, first, first, last, &a, &b, (saidx_t)(last - SA - 1));
 
-        第三方实现细节。
+        /* 第三方实现细节。 */
         if(a < last) {
           for(c = first, v = (saidx_t)(a - SA - 1); c < a; ++c) { ISA[*c] = v; }
         }
@@ -340,7 +340,7 @@ tr_introsort(sastore_t*ISA, const sastore_t*ISAd,
           for(c = a, v = (saidx_t)(b - SA - 1); c < b; ++c) { ISA[*c] = v; }
         }
 
-        第三方实现细节。
+        /* 第三方实现细节。 */
         if(1 < (b - a)) {
           STACK_PUSH5(NULL, a, b, 0, 0);
           STACK_PUSH5(ISAd - incr, first, last, -2, trlink);
@@ -376,7 +376,7 @@ tr_introsort(sastore_t*ISA, const sastore_t*ISAd,
         }
         STACK_POP5(ISAd, first, last, limit, trlink);
       } else {
-        第三方实现细节。
+        /* 第三方实现细节。 */
         if(0 <= *first) {
           a = first;
           do { ISA[*a] = (saidx_t)(a - SA); } while((++a < last) && (0 <= *a));
@@ -387,7 +387,7 @@ tr_introsort(sastore_t*ISA, const sastore_t*ISAd,
           next = (ISA[*a] != ISAd[*a]) ? tr_ilg((saidx_t)(a - first + 1)) : -1;
           if(++a < last) { for(b = first, v = (saidx_t)(a - SA - 1); b < a; ++b) { ISA[*b] = v; } }
 
-          第三方实现细节。
+          /* 第三方实现细节。 */
           if(trbudget_check(budget, (saidx_t)(a - first))) {
             if((a - first) <= (last - a)) {
               STACK_PUSH5(ISAd, a, last, -3, trlink);
@@ -430,21 +430,21 @@ tr_introsort(sastore_t*ISA, const sastore_t*ISAd,
       continue;
     }
 
-    第三方实现细节。
+    /* 第三方实现细节。 */
     a = tr_pivot(ISAd, first, last);
     SWAP(*first, *a);
     v = ISAd[*first];
 
-    第三方实现细节。
+    /* 第三方实现细节。 */
     tr_partition(ISAd, first, first + 1, last, &a, &b, v);
     if((last - first) != (b - a)) {
       next = (ISA[*a] != v) ? tr_ilg((saidx_t)(b - a)) : -1;
 
-      第三方实现细节。
+      /* 第三方实现细节。 */
       for(c = first, v = (saidx_t)(a - SA - 1); c < a; ++c) { ISA[*c] = v; }
       if(b < last) { for(c = a, v = (saidx_t)(b - SA - 1); c < b; ++c) { ISA[*c] = v; } }
 
-      第三方实现细节。
+      /* 第三方实现细节。 */
       if((1 < (b - a)) && (trbudget_check(budget, (saidx_t)(b - a)))) {
         if((a - first) <= (last - b)) {
           if((last - b) <= (b - a)) {
@@ -548,7 +548,7 @@ trsort(sastore_t *ISA, sastore_t* SA, saidx_t n, saidx_t depth) {
   saidx_t t, skip, unsorted;
 
   trbudget_init(&budget, tr_ilg(n) * 2 / 3, n);
-第三方实现细节。
+/* 第三方实现细节。 */
   for(ISAd = ISA + depth; -n < *SA; ISAd += ISAd - ISA) {
     first = SA;
     skip = 0;

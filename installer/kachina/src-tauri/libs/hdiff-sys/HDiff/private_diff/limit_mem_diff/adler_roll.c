@@ -135,30 +135,30 @@ static const uint64_t __fast_adler_table[128]={
 };
 #endif
 /*
-#包含 <set>
+#include <set>
 //gen 表 better than CRC32Table:{0,0x77073096,..,0x2D02EF8D} 或 CRC64Table
 静态 bool _gen_fast_adler_table(unsigned int rand_seed,bool isPrint=真){
-    第三方实现细节。
+    std::set<uint32_t> check_set;
     如果 (isPrint) printf("{\n");
     用于 (int y=64-1; y>=0; --y) {
         如果 (isPrint) printf("    ");
         用于 (int x=8-1; x>=0; --x) {
-            第三方实现细节。
-            第三方实现细节。
-            第三方实现细节。
-            第三方实现细节。
-            第三方实现细节。
+            uint32_t v=0;
+            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
+            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
+            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
+            v=(v<<8)|(unsigned char)rand_r(&rand_seed);
             {//检查
                 如果 (check_set.查找(v&0xFFFF)!=check_set.结束()) 返回 假;
-                第三方实现细节。
+                check_set.insert(v&0xFFFF);
                 如果 (check_set.查找(v>>16)!=check_set.结束()) 返回 假;
-                第三方实现细节。
+                check_set.insert(v>>16);
             }
             如果 (isPrint){
                 如果 (x%2==1){
-                    第三方实现细节。
+                    printf("0x%08x",v);
                 }否则{
-                    第三方实现细节。
+                    printf("%08xull",v);
                     如果 (x>0) printf(",");
                 }
             }
@@ -171,7 +171,7 @@ static const uint64_t __fast_adler_table[128]={
     bool 结果=假;
     用于 (unsigned int i=0; i<1000000000;++i) {
         如果 (!_gen_fast_adler_table(i,假)) continue;
-        第三方实现细节。
+        printf("rand_seed: %u\n",i);
         结果=_gen_fast_adler_table(i,真);
     }
     assert(结果);
@@ -294,7 +294,7 @@ _case8:        \
         case  0: {  sum  =mod(sum,BASE);          \
                     border1(adler,BASE);          \
                     return adler | (sum<<half_bit); } \
-        default: { 第三方实现细节。 } \
+        default: { /* 继续 */ } \
     } \
     while(n>=kFNBest){  \
         size_t fn;      \
@@ -331,7 +331,7 @@ _case8:  \
         case  2: { fast_adler_add1(_table,adler,sum,pdata); } \
         case  1: { fast_adler_add1(_table,adler,sum,pdata); } \
         case  0: {  return_SUMADLER(sum,adler); }             \
-        default:{ 第三方实现细节。} \
+        default:{ /* 继续 */} \
     }   \
     do{ \
         fast_adler_add2(_c_t,_table,adler,sum,pdata); \
@@ -347,10 +347,10 @@ _case8:  \
                      adler,blockSize,out_data,in_data){ \
     uint_t sum=adler>>half_bit;       \
     adler&=(((uint_t)1<<half_bit)-1); \
-    第三方实现细节。 \
-    adler+=in_data+(uint_t)(BASE-out_data);  第三方实现细节。    \
+    /*  [0..B-1] + [0..255] + B - [0..255]   =>  [0+0+B-255..B-1+255+B-0]*/ \
+    adler+=in_data+(uint_t)(BASE-out_data);  /* => [B-255..B*2-1+255] */    \
     border2(adler,BASE);  \
-    第三方实现细节。 \
+    /* [0..B-1] + [0..B-1] + B-1 - [0..B-1] => [(B-1)-(B-1)..B-1+B-1+B-1]*/ \
     blockSize=(blockSize<=kBestBlockSize)?blockSize:mod(blockSize,BASE);    \
     sum=sum+adler+(uint_t)((BASE-ADLER_INITIAL) - mod(blockSize*out_data,BASE)); \
     border2(sum,BASE);    \

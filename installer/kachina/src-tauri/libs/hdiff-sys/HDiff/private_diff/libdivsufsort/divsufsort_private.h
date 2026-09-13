@@ -55,10 +55,10 @@
 # endif
 #endif
 
-第三方实现细节。
+/* 第三方实现细节。 */
 #if !defined(UINT8_MAX)
 # define UINT8_MAX (255)
-#endif 第三方实现细节。
+#endif /* UINT8_MAX */
 #if defined(ALPHABET_SIZE) && (ALPHABET_SIZE < 1)
 # undef ALPHABET_SIZE
 #endif
@@ -88,7 +88,7 @@
 #else
 # define SS_BLOCKSIZE (1024)
 #endif
-第三方实现细节。
+/* 第三方实现细节。 */
 #if SS_BLOCKSIZE == 0
 # if !defined(BUILD_DIVSUFSORT64)
 #  define SS_MISORT_STACKSIZE (64)
@@ -114,16 +114,16 @@
 #endif
 
 
-第三方实现细节。
+/* 第三方实现细节。 */
 #ifndef SWAP
 # define SWAP(_a, _b) do { t = (_a); (_a) = (_b); (_b) = t; } while(0)
-#endif 第三方实现细节。
+#endif /* SWAP */
 #ifndef MIN
 # define MIN(_a, _b) (((_a) < (_b)) ? (_a) : (_b))
-#endif 第三方实现细节。
+#endif /* MIN */
 #ifndef MAX
 # define MAX(_a, _b) (((_a) > (_b)) ? (_a) : (_b))
-#endif 第三方实现细节。
+#endif /* MAX */
 #define STACK_PUSH(_a, _b, _c, _d)\
   do {\
     assert(ssize < STACK_SIZE);\
@@ -162,13 +162,13 @@
 
 
 /*- 私有 Prototypes -*/
-第三方实现细节。
+/* 第三方实现细节。 */
 void
 sssort(const sauchar_t *Td, const sastore_t *PA,
        sastore_t *first, sastore_t *last,
        sastore_t *buf, saidx_t bufsize,
        saidx_t depth, saidx_t n, saint_t lastsuffix);
-第三方实现细节。
+/* 第三方实现细节。 */
 void
 trsort(sastore_t *ISA, sastore_t* SA, saidx_t n, saidx_t depth);
 
@@ -183,4 +183,4 @@ static const int lg_table[256]= {
   7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
 };
 
-#endif 第三方实现细节。
+#endif /* _DIVSUFSORT_PRIVATE_H */

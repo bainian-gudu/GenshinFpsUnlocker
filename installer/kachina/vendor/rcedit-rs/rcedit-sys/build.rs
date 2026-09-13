@@ -16,6 +16,8 @@ fn main() {
     Build::new()
         .cpp(true)
         .static_crt(true)
+        // MSVC 默认按本地代码页读取源文件；项目注释使用 UTF-8，显式指定源文件编码。
+        .flag_if_supported("/utf-8")
         .flag_if_supported("-std=c++11")
         .files(SOURCE_FILES.iter().map(|name| format!("{}/{}", current_dir, name)))
         .compile("rcedit");

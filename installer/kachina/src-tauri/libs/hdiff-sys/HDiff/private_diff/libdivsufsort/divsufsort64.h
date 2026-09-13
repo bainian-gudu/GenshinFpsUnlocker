@@ -27,7 +27,7 @@
 #ifndef _DIVSUFSORT64_H
 #define _DIVSUFSORT64_H 1
 
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 标准 */)
 #   include <stdint.h> //用于 uint8_t,int32_t
 #else
 #   if (_MSC_VER >= 1300)
@@ -41,7 +41,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif 第三方实现细节。
+#endif /* __cplusplus */
 #ifndef PRId32
 #   define PRId32 "d"
 #endif
@@ -65,22 +65,22 @@ extern "C" {
 # endif
 #endif
 
-第三方实现细节。
+/*- Datatypes -*/
 #ifndef SAUCHAR_T
 #define SAUCHAR_T
 typedef uint8_t sauchar_t;
-#endif 第三方实现细节。
+#endif /* SAUCHAR_T */
 #ifndef SAINT_T
 #define SAINT_T
 typedef int32_t saint_t;
-#endif 第三方实现细节。
+#endif /* SAINT_T */
 #ifndef SAIDX64_T
 #define SAIDX64_T
 typedef llong_t saidx64_t;
-#endif 第三方实现细节。
+#endif /* SAIDX64_T */
 
 
-第三方实现细节。
+/*- Prototypes -*/
 
 /**
  * Constructs the 后缀 数组 的 a given 字符串.
@@ -102,7 +102,7 @@ const char *
 divsufsort64_version(void);
 
 #ifdef __cplusplus
-} 第三方实现细节。
-#endif 第三方实现细节。
+} /* extern "C" */
+#endif /* __cplusplus */
 
-#endif 第三方实现细节。
+#endif /* _DIVSUFSORT64_H */

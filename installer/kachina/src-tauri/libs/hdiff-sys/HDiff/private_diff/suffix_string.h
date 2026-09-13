@@ -42,7 +42,7 @@
 #   include "limit_mem_diff/adler_roll.h"
 #endif
 
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 标准 */)
 #   include <stdint.h> //用于 int32_t
 namespace hdiff_private{
 #else

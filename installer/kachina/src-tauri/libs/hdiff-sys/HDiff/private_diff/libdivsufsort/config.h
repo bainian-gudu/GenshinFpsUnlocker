@@ -29,7 +29,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif 第三方实现细节。
+#endif /* __cplusplus */
 
 /** 定义 到 the 版本 的 this package. **/
 #define PROJECT_VERSION_FULL "2.0.1-14-g5f60d6f"
@@ -37,7 +37,7 @@ extern "C" {
 /** 定义 到 1 如果 you have the 头部 文件. **/
 #define HAVE_INTTYPES_H 0
 #define HAVE_STDDEF_H 1
-#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) 第三方实现细节。)
+#if defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 标准 */)
 #   define HAVE_STDINT_H 1
 #else
 #   define HAVE_STDINT_H 0
@@ -49,13 +49,13 @@ extern "C" {
 #define HAVE_SYS_TYPES_H 0
 
 /** 用于 WinIO **/
-第三方实现细节。
-第三方实现细节。
-第三方实现细节。
-第三方实现细节。
-第三方实现细节。
-第三方实现细节。
-第三方实现细节。
+/* #undef HAVE_IO_H */
+/* #undef HAVE_FCNTL_H */
+/* #undef HAVE__SETMODE */
+/* #undef HAVE_SETMODE */
+/* #undef HAVE__FILENO */
+/* #undef HAVE_FOPEN_S */
+/* #undef HAVE__O_BINARY */
 #ifndef HAVE__SETMODE
 # if HAVE_SETMODE
 #  define _setmode setmode
@@ -83,7 +83,7 @@ extern "C" {
 
 
 #ifdef __cplusplus
-} 第三方实现细节。
-#endif 第三方实现细节。
+} /* extern "C" */
+#endif /* __cplusplus */
 
-#endif 第三方实现细节。
+#endif /* _CONFIG_H */

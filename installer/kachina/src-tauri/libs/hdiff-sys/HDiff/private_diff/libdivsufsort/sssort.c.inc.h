@@ -45,7 +45,7 @@ ss_ilg(saidx_t n) {
 #endif
 }
 
-#endif 第三方实现细节。
+#endif /* (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE) */
 
 #if SS_BLOCKSIZE != 0
 
@@ -95,12 +95,12 @@ ss_isqrt(saidx_t x) {
   return (x < (y * y)) ? y - 1 : y;
 }
 
-#endif 第三方实现细节。
+#endif /* SS_BLOCKSIZE != 0 */
 
 
 /*---------------------------------------------------------------------------*/
 
-第三方实现细节。
+/* 第三方实现细节。 */
 static INLINE
 saint_t
 ss_compare(const sauchar_t *T,
@@ -145,7 +145,7 @@ ss_insertionsort(const sauchar_t *T, const sastore_t *PA,
   }
 }
 
-#endif 第三方实现细节。
+#endif /* (SS_BLOCKSIZE != 1) && (SS_INSERTIONSORT_THRESHOLD != 1) */
 
 
 /*---------------------------------------------------------------------------*/
@@ -168,7 +168,7 @@ ss_fixdown(const sauchar_t *Td, const sastore_t *PA,
   SA[i] = v;
 }
 
-第三方实现细节。
+/* 第三方实现细节。 */
 static
 void
 ss_heapsort(const sauchar_t *Td, const sastore_t*PA, sastore_t* SA, saidx_t size) {
@@ -222,7 +222,7 @@ ss_median5(const sauchar_t *Td, const sastore_t*PA,
   return v3;
 }
 
-第三方实现细节。
+/* 第三方实现细节。 */
 static INLINE
 sastore_t*
 ss_pivot(const sauchar_t *Td, const sastore_t*PA, sastore_t*first, sastore_t*last) {
@@ -325,12 +325,12 @@ ss_mintrosort(const sauchar_t *T, const sastore_t *PA,
       continue;
     }
 
-    第三方实现细节。
+    /* 第三方实现细节。 */
     a = ss_pivot(Td, PA, first, last);
     v = Td[PA[*a]];
     SWAP(*first, *a);
 
-    第三方实现细节。
+    /* 第三方实现细节。 */
     for(b = first; (++b < last) && ((x = Td[PA[*b]]) == v);) { }
     if(((a = b) < last) && (x < v)) {
       for(; (++b < last) && ((x = Td[PA[*b]]) <= v);) {
@@ -405,7 +405,7 @@ ss_mintrosort(const sauchar_t *T, const sastore_t *PA,
 #undef STACK_SIZE
 }
 
-#endif 第三方实现细节。
+#endif /* (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE) */
 
 
 /*---------------------------------------------------------------------------*/
@@ -613,7 +613,7 @@ ss_mergebackward(const sauchar_t *T, const sastore_t*PA,
   }
 }
 
-第三方实现细节。
+/* 第三方实现细节。 */
 static
 void
 ss_swapmerge(const sauchar_t *T, const sastore_t*PA,
@@ -700,7 +700,7 @@ ss_swapmerge(const sauchar_t *T, const sastore_t*PA,
 #undef STACK_SIZE
 }
 
-#endif 第三方实现细节。
+#endif /* SS_BLOCKSIZE != 0 */
 
 
 /*---------------------------------------------------------------------------*/

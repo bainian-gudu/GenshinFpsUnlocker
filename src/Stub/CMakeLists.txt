@@ -41,7 +41,8 @@ if(MSVC)
     # 静态链接 CRT（/MT）：注入 DLL 不依赖目标机 VC++ 可再发行组件，减小“额外依赖”
     set_property(TARGET FpsUnlockerStub PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    target_compile_options(FpsUnlockerStub PRIVATE /W3 /EHsc)
+    # 源文件包含中文注释，明确告诉 MSVC 按 UTF-8 读取，避免本地代码页误解析注释。
+    target_compile_options(FpsUnlockerStub PRIVATE /W3 /EHsc /utf-8)
     set_target_properties(FpsUnlockerStub PROPERTIES
         OUTPUT_NAME "FpsUnlockerStub"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

@@ -1992,7 +1992,7 @@ hpatch_BOOL hpatch_coverList_open_compressedDiff(hpatch_TCoverList* out_coverLis
 
 //
 
-#定义     _kCacheSgCount  3
+#define     _kCacheSgCount  3
 
 hpatch_BOOL patch_single_compressed_diff(const hpatch_TStreamOutput* out_newData,
                                          const hpatch_TStreamInput*  oldData,

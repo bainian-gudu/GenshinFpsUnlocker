@@ -2,6 +2,8 @@ fn main() {
     cc::Build::new()
         .cpp(true)
         .cargo_output(true)
+        // MSVC 默认按本地代码页读取源文件；项目注释使用 UTF-8，显式指定源文件编码。
+        .flag_if_supported("/utf-8")
         .file("HDiff/diff.cpp")
         .file("HDiff/match_block.cpp")
         .file("HDiff/private_diff/bytes_rle.cpp")

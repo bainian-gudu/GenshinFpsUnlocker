@@ -83,7 +83,7 @@ sort_typeBstar(const sauchar_t *T, sastore_t* SA,
   saidx_t i, j, k, t, m;
   saint_t c0, c1;
 
-  第三方实现细节。
+  /* 第三方实现细节。 */
   for(i = 0; i < BUCKET_A_SIZE; ++i) { bucket_A[i] = 0; }
   for(i = 0; i < BUCKET_B_SIZE; ++i) { bucket_B[i] = 0; }
 
@@ -299,7 +299,7 @@ divsufsort(const sauchar_t *T, sastore_t* SA, saidx_t n,int threadNum) {
   bucket_A = (saidx_t *)malloc(BUCKET_A_SIZE * sizeof(saidx_t));
   bucket_B = (saidx_t *)malloc(BUCKET_B_SIZE * sizeof(saidx_t));
 
-  第三方实现细节。
+  /* 第三方实现细节。 */
   if((bucket_A != NULL) && (bucket_B != NULL)) {
     m = sort_typeBstar(T, SA, bucket_A, bucket_B, n, threadNum);
     construct_SA(T, SA, bucket_A, bucket_B, n, m);
