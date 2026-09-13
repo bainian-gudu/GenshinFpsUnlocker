@@ -798,6 +798,156 @@ fn uninstall_consent_wiring_case() {
     );
 }
 
+fn relative_member_cases() {
+    println!("[13] 安装目录内文件清单的安全阀 is_safe_relative_member / path_starts_with");
+    // files 来自注册表 InstallerMeta（非提权安装时写在 HKCU，同账户中等完整性进程可改），
+    // 却由提权卸载器逐个 remove_file —— 上游直接 source.join(f)，绝对路径会丢掉 source、
+    // `..` 能逃出安装目录。
+    let base = std::env::temp_dir().join("kcheck-install-dir");
+
+    // 正例：安装目录里的普通文件与子目录（正反斜杠都要放行）
+    for e in [
+        "GenshinFpsUnlocker.exe",
+        "FpsUnlockerStub.dll",
+        "ui/index.html",
+        r"ui\index.html",
+        r"ui\sub\a.txt",
+    ] {
+        check(
+            &format!("放行安装目录内的 {e}"),
+            is_safe_relative_member(&base, e),
+            "被拦了",
+        );
+    }
+
+    // 反例：绝对路径（join 会把 base 整个丢掉）—— 两种平台的形状都要拦
+    let elsewhere = std::env::temp_dir().join("kcheck-elsewhere").join("secret.txt");
+    check(
+        "拦掉 Windows 绝对路径 C:\\Windows\\...\\hosts",
+        !is_safe_relative_member(&base, r"C:\Windows\System32\drivers\etc\hosts"),
+        "放行了",
+    );
+    check(
+        "拦掉本机绝对路径",
+        !is_safe_relative_member(&base, &elsewhere.to_string_lossy()),
+        "放行了",
+    );
+
+    // 反例：.. 逃逸
+    for e in [
+        "../secret.txt",
+        r"..\..\Windows\win.ini",
+        "ui/../../x.txt",
+        r"ui\..\..\y.txt",
+    ] {
+        check(
+            &format!("拦掉 .. 逃逸 {e}"),
+            !is_safe_relative_member(&base, e),
+            "放行了",
+        );
+    }
+
+    // 反例：根相对 / UNC / 盘符相对 / 当前目录 / 空 / NUL
+    for e in [
+        r"\Windows\win.ini",
+        "/etc/passwd",
+        "C:evil.exe",
+        r"\\server\share\x.exe",
+        "",
+        ".",
+        "./x.txt",
+        "a\u{0}b.txt",
+    ] {
+        check(
+            &format!("拦掉非法形状 {:?}", e),
+            !is_safe_relative_member(&base, e),
+            "放行了",
+        );
+    }
+
+    // path_starts_with：大小写不敏感 + 按分隔符边界比（不是裸字符串前缀）
+    check(
+        "大小写不一致也算在里面（注册表 InstallLocation 常见）",
+        path_starts_with(
+            Path::new(r"C:\Program Files\App\GenshinFpsUnlocker.uninst.exe"),
+            Path::new(r"c:\program files\app"),
+        ),
+        "没认出来",
+    );
+    check(
+        "斜杠方向不同也算在里面",
+        path_starts_with(Path::new("C:/App/x.exe"), Path::new(r"C:\App")),
+        "没认出来",
+    );
+    check(
+        "不是裸前缀：C:\\Foo 不在 C:\\F 里",
+        !path_starts_with(Path::new(r"C:\Foo\x.exe"), Path::new(r"C:\F")),
+        "误判成在里面",
+    );
+    check(
+        "相等不算在里面",
+        !path_starts_with(Path::new(r"C:\App"), Path::new(r"C:\App")),
+        "相等被当成子路径",
+    );
+    check(
+        "盘符根下面算在里面",
+        path_starts_with(Path::new(r"C:\x.exe"), Path::new("C:")),
+        "没认出来",
+    );
+    check(
+        "空 parent 不放行",
+        !path_starts_with(Path::new(r"C:\x.exe"), Path::new("")),
+        "放行了",
+    );
+}
+
+fn runtime_signature_cases() {
+    println!("[14] 运行时安装包验签判定 is_trusted_runtime_signature");
+    let ms = "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
+    check(
+        "微软签名 + Valid 放行",
+        is_trusted_runtime_signature("Valid", ms),
+        "被拦了",
+    );
+    check(
+        "Status 大小写不敏感",
+        is_trusted_runtime_signature("valid", ms),
+        "被拦了",
+    );
+    check(
+        "Subject 段落顺序不同也认得",
+        is_trusted_runtime_signature("Valid", "O=Microsoft Corporation, CN=Microsoft Corporation"),
+        "被拦了",
+    );
+    for (status, why) in [
+        ("NotSigned", "未签名"),
+        ("HashMismatch", "哈希不符"),
+        ("UnknownError", "验签失败"),
+        ("", "空状态"),
+    ] {
+        check(
+            &format!("拦掉{why}（{status}）"),
+            !is_trusted_runtime_signature(status, ms),
+            "放行了",
+        );
+    }
+    check(
+        "拦掉别人签的（Status=Valid 也不放行）",
+        !is_trusted_runtime_signature("Valid", "CN=Evil Corp, O=Evil Corp, L=X, C=CN"),
+        "放行了",
+    );
+    check(
+        "拦掉冒名写法（子串匹配会放过的那种）",
+        !is_trusted_runtime_signature("Valid", "CN=Not Microsoft Corporation Ltd"),
+        "放行了",
+    );
+    check(
+        "拦掉空签名者",
+        !is_trusted_runtime_signature("Valid", ""),
+        "放行了",
+    );
+}
+
 #[tokio::main]
 async fn main() {
     reg_target_cases();
@@ -812,6 +962,8 @@ async fn main() {
     per_user_sweep_cases().await;
     temp_artifact_cases().await;
     uninstall_consent_wiring_case();
+    relative_member_cases();
+    runtime_signature_cases();
     let (pass, fail) = (PASS.load(Ordering::Relaxed), FAIL.load(Ordering::Relaxed));
     println!("\n==== PASS {pass} / FAIL {fail} ====");
     if fail > 0 {

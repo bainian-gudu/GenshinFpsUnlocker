@@ -11,7 +11,7 @@
 # 仓库根目录
 pwsh tools/devcheck/devcheck.ps1                 # 跑 all（ps1 gen rust logic front host）
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
-pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 8 个错误，确认每层都会报错
+pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 12 个错误，确认每层都会报错
 pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑 rustfmt
 ```
 
@@ -30,7 +30,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `gen` | 从 `installer/kachina` 源码生成检查用的 Rust / TS 文件 | pwsh 7 | ~0.3s |
 | `rust` | **整份** `installer/uninstall.rs` + `utils/error.rs` 的类型检查：塞进一个只有 11 个依赖的 crate，`cargo check --target x86_64-pc-windows-msvc`。不需要 tauri、不需要 Windows 机器 | cargo + `rustup target add x86_64-pc-windows-msvc` | 首次 ~30s，之后 ~0.2s |
 | `native` | vendored `rcedit-sys` 的 C++（`rescle.cc` / `librcedit.cpp`）真用 MSVC 编一遍。没有 `cl.exe` 的机器（Linux / 未进 VS 开发环境的 Windows）自动 SKIP | cargo + MSVC（`cl.exe` 在 PATH） | 首次 ~30s，之后 ~2s |
-| `logic` | 同一批函数的**行为断言**（53 条）：注册表安全阀、快捷方式安全阀、用户数据目录安全阀、`path_eq` 归一化、以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement` | cargo | 首次 ~15s，之后 ~0.4s |
+| `logic` | 同一批函数的**行为断言**（162 条，含循环用例）：注册表安全阀、快捷方式安全阀、用户数据目录安全阀、`path_eq` 归一化、以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement` | cargo | 首次 ~15s，之后 ~0.4s |
 | `front` | `utils/agreement.ts` + `types.ts` 的 `tsc --strict`；`installer/kachina/src` 下**全部** `.vue` 的 `@vue/compiler-sfc` 编译；`agreement.ts` 的 prettier 风格 | node + npm | 首次 ~10s，之后 ~2s |
 | `host` | `src/Host` 的 `dotnet build -c Release -p:EnableWindowsTargeting=true` | .NET 9 SDK | ~2–8s |
 | `ui` | `src/Ui` 的 `vite build`（**不在 `all` 里**，要先 `cd src/Ui && npm install`） | node + npm | 视机器 |
@@ -40,7 +40,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `vendor` 层：kachina 只从本仓库拉
 
 `installer/kachina/` 是上游 kachina-installer 的**源码快照**，构建必须完全基于它。
-这一层把这条约束变成可执行的断言（八项，任何一项不满足就失败）：
+这一层把这条约束变成可执行的断言（九项，任何一项不满足就失败）：
 
 1. 仓库根不存在 `.gitmodules`（kachina 不是 submodule）
 2. 快照完整：`package.json` / `pnpm-lock.yaml` / `src-tauri/Cargo.toml` /
@@ -74,6 +74,16 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
      `sendInsight` / `getInsightBase` / `evCache`；
    - 兜底：112 个文本文件（`.rs/.ts/.vue/.js/.json/.toml/.yaml/.html/.css/.lock/...`，
      不含 `.md`）里不许出现上报域名 `cocogoat`（Sentry DSN 与统计端点都带它）。
+9. **写进 ARP 的卸载命令行必须能跑**：kachina 本体不在 devcheck 的编译范围内，
+   `clap` 的选项名写错没有任何一层会发现，而传一个不存在的选项 = clap 以退出码 2
+   报「unexpected argument」，卸载一步都不跑。两组断言：
+   - `UninstallString` 的值必须整体被引号包住（默认装在 `Program Files\` 下，
+     不加引号时「应用和功能」会按第一个空格把命令截断成 `C:\Program`）；
+   - `QuietUninstallString` 里出现的每个 `-x` / `--xxx` 都要在 `src/cli/arg.rs` 里
+     真的声明过（短名取 `short = 'X'`，长名取 `long = "xxx"` 与「只写 `long`、
+     由字段名推导」两种），且至少要有一个选项 —— 否则它跟 `UninstallString` 没区别，
+     静默卸载会弹界面。这条是真踩出来的：第一版写了 `--uninstall --silent
+     --non-interactive`，而 `arg.rs` 里这几个 flag 只声明了 `short`（`-U` / `-S` / `-I`）。
 
 第 5、7、8 项扫 `Cargo.toml` / `rescle.cc` / 源码时都会**先剥掉注释**：这些文件里的注释
 本身就会写出「原为 `git = "...rcedit-rs.git"`」「原为 `std::locale::empty()`」
@@ -86,15 +96,16 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `-SelfTest`：证明这套检查不是空壳
 
 检查工具最大的风险是「跑通了但其实什么都没查」。`-SelfTest` 会先正常生成一次，
-然后注入 11 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，6 个会临时创建/追加
-仓库内的文件（`.gitmodules`、一个假工作流、`rescle.cc` 末尾一行、`utils/mod.rs` 末尾一行
-`sentry::init`、`Cargo.toml` 末尾一行 `sentry = {…}`、一个带 DSN 域名的临时 `.ts`），
-每个用例跑完立即还原，收尾再兜底删一次：
+然后注入 12 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，7 个会临时创建/改写
+仓库内的文件（`.gitmodules`、一个假工作流、`registry.rs` 的 `QuietUninstallString`、
+`rescle.cc` 末尾一行、`utils/mod.rs` 末尾一行 `sentry::init`、`Cargo.toml` 末尾一行
+`sentry = {…}`、一个带 DSN 域名的临时 `.ts`），每个用例跑完立即还原，收尾再兜底删一次：
 
 | 注入 | 期望 |
 | --- | --- |
 | 临时创建 `.gitmodules` | `vendor` 层报错（kachina 不能是 submodule） |
 | 临时创建 `.github/workflows/zz-devcheck-selftest.yml`（内含 `Invoke-WebRequest` 下载 builder） | `vendor` 层报错（工作流不许从外部拉） |
+| `registry.rs` 的 `QuietUninstallString` 改成 `--uninstall --silent --non-interactive`（`arg.rs` 里没有这些长名） | `vendor` 层报错（静默卸载会以退出码 2 失败） |
 | `rescle.cc` 末尾追加一行真代码 `std::locale(std::locale::empty())` | `vendor` 层报错（MSVC 14.51 编不过） |
 | `src-tauri/src/utils/mod.rs` 末尾追加 `fn _devcheck_selftest_telemetry() { sentry::init(…) }` | `vendor` 层报错（遥测不许回来） |
 | `src-tauri/Cargo.toml` 末尾追加 `sentry = { version = "0.37", … }` | `vendor` 层报错（遥测依赖不许回来） |
@@ -122,7 +133,7 @@ tools/devcheck/
 │   ├── Cargo.toml          依赖版本与 kachina src-tauri/Cargo.toml 对齐
 │   └── src/lib.rs          把生成文件挂到上游的模块路径上 + 2 个最小桩
 ├── rust/logic/             行为断言 crate（mock windows-registry，跨平台）
-│   └── src/main.rs         53 条断言 + mock
+│   └── src/main.rs         162 条断言 + mock
 ├── front/                  package.json / tsconfig.json / sfccheck.mjs
 └── rust/native/target/     native 层的 CARGO_TARGET_DIR（运行时生成，已 gitignore）
 ```
@@ -207,7 +218,7 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 | 出现位置 | 字样 | 为什么正常 |
 | --- | --- | --- |
 | `logic` 层末尾 | `Warning: failed to read agreementFile ".../NO_SUCH_FILE.txt"` | 反例用例：协议文件缺失时 `resolve_agreement` 必须告警且不写出 `content`（前端链接保持不可点）。紧邻上一行有「（预期告警 ↓ …）」标注 |
-| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 8 个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/8：…」横幅 |
+| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 12 个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/12：…」横幅 |
 | `rust` / `logic` 层 | `Agreement embedded: ".../USER_AGREEMENT.txt"` | 正常路径的信息输出，说明协议真的被读进来并内联了 |
 
 已经消掉的噪音（别再把它们加回来）：

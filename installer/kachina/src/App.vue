@@ -2328,6 +2328,11 @@ async function uninstall() {
       },
       needElevate.value,
     );
+    // Mirror酱 CDK 存在 Windows 凭据管理器里，卸载器不管这块（不是注册表也不是文件），
+    // 自己清掉；没有这条凭据时命令会报错，忽略即可。
+    await invoke('wincred_delete', {
+      target: `KachinaInstaller_MirrorChyanCDK_${PROJECT_CONFIG.appName}`,
+    }).catch((e) => warn('删除 Mirror酱 CDK 凭据失败:', e));
     step.value = 6;
     if (INSTALLER_CONFIG.args.silent) {
       const win = getCurrentWindow();

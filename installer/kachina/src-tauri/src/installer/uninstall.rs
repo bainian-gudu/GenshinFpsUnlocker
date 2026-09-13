@@ -311,18 +311,85 @@ fn is_safe_shortcut_target(path: &Path, allowed_names: &[String]) -> bool {
             .is_some_and(|g| g.eq_ignore_ascii_case("Programs"))
 }
 
-/// 路径相等比较：统一分隔符、去掉尾部斜杠、大小写不敏感（Windows 语义）。
+/// 路径归一化（仅用于比较）：统一分隔符、去掉尾部斜杠、转小写（Windows 语义）。
+/// 盘符根（`C:`）补成 `C:\\`，免得前缀比较时把 `C:\\Foo` 判成不在 `C:` 里面。
+fn normalize_path_for_compare(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('/', "\\");
+    let s = s.trim_end_matches('\\').to_ascii_lowercase();
+    if s.len() == 2 && s.as_bytes()[1] == b':' {
+        format!("{s}\\")
+    } else {
+        s
+    }
+}
+
+/// 路径相等比较：归一化后按字符串比（大小写不敏感、`/` 与 `\\` 等价）。
 fn path_eq(a: &Path, b: &Path) -> bool {
-    let norm = |p: &Path| -> String {
-        let s = p.to_string_lossy().replace('/', "\\");
-        let s = s.trim_end_matches('\\').to_ascii_lowercase();
-        if s.len() == 2 && s.as_bytes()[1] == b':' {
-            format!("{s}\\")
-        } else {
-            s
+    normalize_path_for_compare(a) == normalize_path_for_compare(b)
+}
+
+/// `child` 是否**严格落在** `parent` 里面（相等不算）。
+///
+/// 不用 `Path::starts_with`：它区分大小写，而注册表里的 `InstallLocation` 与
+/// `current_exe()` 的大小写完全可能不一致（`C:\\Program Files` vs `c:\\program files`），
+/// 一旦比不上就会把「自己的卸载器」误判成「外部卸载器」，转而去删正在运行的自己。
+/// 也不用裸字符串前缀：`C:\\Foo` 会「以 `C:\\F` 开头」，必须按分隔符边界比。
+fn path_starts_with(child: &Path, parent: &Path) -> bool {
+    let c = normalize_path_for_compare(child);
+    let p = normalize_path_for_compare(parent);
+    if p.is_empty() || c.len() <= p.len() {
+        return false;
+    }
+    if p.ends_with('\\') {
+        // 盘符根 / UNC 根：归一化后已带尾部分隔符
+        return c.starts_with(&p);
+    }
+    c.starts_with(&format!("{p}\\"))
+}
+
+/// 「安装目录内文件清单」通道的安全阀。
+///
+/// `files` 来自注册表的 `InstallerMeta`，而 `InstallerMeta` 在**非提权安装**时写在
+/// HKCU —— 同账户的中等完整性进程就能改它；卸载却通常是提权跑的，于是这份清单会以
+/// 管理员权限逐个 `remove_file`。上游直接 `source.join(f)`，两个洞：
+/// `f` 是绝对路径时 `join` 会把 `source` 整个丢掉，`f` 带 `..` 时能逃出安装目录 ——
+/// 「删自己装的文件」就变成了「删任意文件」。这里要求：相对路径、无盘符/根前缀、
+/// 无 `..` 与 `.`、拼完仍落在安装目录内。不通过的一律跳过并记日志。
+fn is_safe_relative_member(base: &Path, entry: &str) -> bool {
+    let bytes = entry.as_bytes();
+    if bytes.is_empty() || entry.contains('\0') {
+        return false;
+    }
+    // 显式挡 Windows 形状（`\...`、`/...`、`C:...`）：靠 is_absolute()/components()
+    // 判断会随宿主平台变化，而这套逻辑要在 Linux 上跑断言。
+    if bytes[0] == b'\\' || bytes[0] == b'/' || (bytes.len() >= 2 && bytes[1] == b':') {
+        return false;
+    }
+    // 显式挡 `..` / `.` 段：`Path::components()` 的分隔符语义随宿主平台变化
+    // （Linux 上 `..\..\x` 是**一个**普通文件名，看不出 ParentDir），而这条判定
+    // 必须在两个平台上都成立 —— devcheck 的 logic 层在 Linux 上跑，CI 两边都跑。
+    if entry
+        .split(['/', '\\'])
+        .any(|seg| seg == ".." || seg == ".")
+    {
+        return false;
+    }
+    let p = Path::new(entry);
+    if p.is_absolute() {
+        return false;
+    }
+    let mut segments = 0usize;
+    for c in p.components() {
+        // 只允许普通路径段：一次挡掉 `..`、`.` 以及任何前缀/根组件
+        if !matches!(c, std::path::Component::Normal(_)) {
+            return false;
         }
-    };
-    norm(a) == norm(b)
+        segments += 1;
+    }
+    if segments == 0 {
+        return false;
+    }
+    path_starts_with(&base.join(p), base)
 }
 
 /// 是否恰好等于某个受保护的根目录（系统目录、Program Files、用户配置目录，
@@ -865,8 +932,9 @@ pub async fn run_uninstall(
     extra_uninstall_shortcuts: Vec<String>,
 ) -> TAResult<Vec<String>> {
     let exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
-    // check if exe_path is in source
-    if DELETE_SELF_ON_EXIT_PATH.read().unwrap().is_none() && exe_path.starts_with(&source) {
+    let source_path: &Path = Path::new(source.as_str());
+    // check if exe_path is in source（大小写不敏感，见 path_starts_with）
+    if DELETE_SELF_ON_EXIT_PATH.read().unwrap().is_none() && path_starts_with(&exe_path, source_path) {
         let tmp_dir = std::env::temp_dir();
         let mut tmp_uninstaller_path = tmp_dir.join(format!(
             "kachina.uninst.{}.exe",
@@ -900,14 +968,24 @@ pub async fn run_uninstall(
             .replace(tmp_uninstaller_path.to_string_lossy().to_string());
     }
 
-    let mut delete_list = files
-        .iter()
-        .map(|f| Path::new(source.as_str()).join(f))
-        .filter(|f| f.exists() && *f != exe_path)
-        .collect::<Vec<_>>();
-    if !exe_path.starts_with(&source) {
+    let mut delete_list: Vec<PathBuf> = Vec::new();
+    for f in files.iter() {
+        if !is_safe_relative_member(source_path, f) {
+            tracing::warn!("跳过安装目录外的文件清单条目: {f}");
+            continue;
+        }
+        let p = source_path.join(f);
+        if p.exists() && !path_eq(&p, &exe_path) {
+            delete_list.push(p);
+        }
+    }
+    if !path_starts_with(&exe_path, source_path) {
         // external uninstaller
-        delete_list.push(Path::new(source.as_str()).join(uninstall_name));
+        if is_safe_relative_member(source_path, &uninstall_name) {
+            delete_list.push(source_path.join(&uninstall_name));
+        } else {
+            tracing::warn!("跳过不安全的卸载器名: {uninstall_name}");
+        }
     }
     let res = rm_list(delete_list).await;
 
@@ -915,7 +993,7 @@ pub async fn run_uninstall(
     // 允许的产品名取 reg_name 与安装目录名，用于安全阀判断「属于本产品」。
     let allowed_names = [
         Some(reg_name.clone()),
-        Path::new(source.as_str())
+        source_path
             .file_name()
             .and_then(|s| s.to_str())
             .map(String::from),
@@ -935,6 +1013,12 @@ pub async fn run_uninstall(
     // 的 replacePathEnvirables 只展开 `${INSTALL_PATH}` / `${APP_NAME}`，不碰 `%VAR%`。
     // 不在这里展开的话，下面的安全阀会因为「不是绝对路径」把整条跳过 —— 结果就是
     // 用户勾了「删除配置与日志」也一个字节都没删（config.json / logs / webview2 全留下）。
+    // 失败语义：这里的错误**不再提前返回**，只记进 `fatal`，等注册表清理跑完再抛。
+    // 上游是直接 `?`：用户数据删失败（文件被占用等）时，安装目录的文件已经删了、
+    // 卸载器副本也已移到 %TEMP% 且关窗即自删，ARP 项却还留着指向一个不存在的 exe，
+    // 「应用和功能」里就永远卸不掉了 —— 只能手工删注册表。宁可让用户看到「数据目录
+    // 没删干净」的报错，也要保证 ARP 项和自启动项一定被清掉。
+    let mut fatal: Option<anyhow::Error> = None;
     let to_be_delete = expand_path_list(&[&user_data_path[..], &extra_uninstall_path[..]].concat());
     for pathstr in to_be_delete.iter() {
         let path = Path::new(pathstr);
@@ -942,22 +1026,23 @@ pub async fn run_uninstall(
             tracing::warn!("跳过不安全的卸载目录: {pathstr}");
             continue;
         }
-        if path.exists() {
-            // check if is file or dir
-            if path.is_file() {
-                tokio::fs::remove_file(path)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to remove user data file {}: {:?}", pathstr, e)
-                    })
-                    .context("RM_USERDATA_ERR")?;
-            } else {
-                tokio::fs::remove_dir_all(path)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to remove user data folder {}: {:?}", pathstr, e)
-                    })
-                    .context("RM_USERDATA_ERR")?;
+        if !path.exists() {
+            continue;
+        }
+        // check if is file or dir
+        let rm = if path.is_file() {
+            tokio::fs::remove_file(path)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to remove user data file {}: {:?}", pathstr, e))
+        } else {
+            tokio::fs::remove_dir_all(path).await.map_err(|e| {
+                anyhow::anyhow!("Failed to remove user data folder {}: {:?}", pathstr, e)
+            })
+        };
+        if let Err(e) = rm.context("RM_USERDATA_ERR") {
+            tracing::error!("删除用户数据失败（继续清理注册表）: {e:#}");
+            if fatal.is_none() {
+                fatal = Some(e);
             }
         }
     }
@@ -972,7 +1057,12 @@ pub async fn run_uninstall(
     clean_installer_temp_files(self_tmp.as_deref()).await;
 
     // recursively delete empty folders
-    clear_empty_dirs(source).await?;
+    if let Err(e) = clear_empty_dirs(source.clone()).await {
+        tracing::error!("清理空目录失败（继续清理注册表）: {e:#}");
+        if fatal.is_none() {
+            fatal = Some(e);
+        }
+    }
 
     // 清理安装期写入的注册表项（开机自启动等），见项目配置 extraUninstallRegistry
     clean_extra_registry(&extra_uninstall_registry);
@@ -982,6 +1072,9 @@ pub async fn run_uninstall(
     let _ = windows_registry::LOCAL_MACHINE.remove_tree(&reg_path);
     let _ = windows_registry::CURRENT_USER.remove_tree(&reg_path);
 
+    if let Some(e) = fatal {
+        return Err(e.into());
+    }
     Ok(res)
 }
 

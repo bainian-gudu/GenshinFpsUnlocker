@@ -43,6 +43,26 @@ jobs:
         -Run { Test-VendoredSource } `
         -Cleanup { if (Test-Path -LiteralPath $badWorkflow) { Remove-Item -LiteralPath $badWorkflow -Force } }
 
+    # --- 0b2) vendor：QuietUninstallString 用了 cli/arg.rs 里不存在的选项就必须报错 ---
+    #      真踩过：第一版写的是 --uninstall --silent --non-interactive，而 arg.rs 里
+    #      这几个 flag 只声明了 short（-U/-S/-I），clap 不认长名，退出码 2、卸载不跑。
+    $registryFile = Join-Path $RepoRoot 'installer/kachina/src-tauri/src/installer/registry.rs'
+    Add-Case 'vendor 层能抓到 ARP 静默卸载用了不存在的选项' `
+        -Mutate {
+            $script:RegistryBackup = [System.IO.File]::ReadAllText($registryFile)
+            $mutated = $script:RegistryBackup -replace [regex]::Escape('"\"{uninstaller}\" -U -S -I"'), `
+                '"\"{uninstaller}\" --uninstall --silent --non-interactive"'
+            if ($mutated -eq $script:RegistryBackup) { throw 'selftest 注入点没匹配上（registry.rs 的 QuietUninstallString 写法变了？）' }
+            [System.IO.File]::WriteAllText($registryFile, $mutated)
+        } `
+        -Run { Test-VendoredSource } `
+        -Cleanup {
+            if ($script:RegistryBackup) {
+                [System.IO.File]::WriteAllText($registryFile, $script:RegistryBackup)
+                $script:RegistryBackup = $null
+            }
+        }
+
     # --- 0c) vendor：rescle.cc 里再出现 locale::empty() 就必须报错 ---
     #     这是 vendored 副本里唯一的「MSVC 版本敏感」代码，用注释形式注入不算
     #     （检查会剥掉 // 注释），所以注入一行真代码。

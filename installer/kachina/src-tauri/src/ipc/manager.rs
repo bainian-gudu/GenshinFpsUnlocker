@@ -180,13 +180,21 @@ pub async fn managed_operation(
             mgr.start().await?;
             tracing::info!("Elevate process started");
         }
-        let _ = mgr
+        if mgr
             .mpsc_tx
             .send(IpcInner {
                 op: ipc,
                 id: id.clone(),
             })
-            .await;
+            .await
+            .is_err()
+        {
+            // 写任务已经退出（提权进程死了 / 管道断了）：复位，下次调用才会重新拉起。
+            *mgr.process.write().await = None;
+            return Err(anyhow::anyhow!("Elevate process channel closed")
+                .context("IPC_ERR")
+                .into());
+        }
         let mut rx = mgr.broadcast_tx.subscribe();
         while let Ok(v) = rx.recv().await {
             let msgid = v["id"].as_str();
@@ -202,11 +210,17 @@ pub async fn managed_operation(
             }
             let pipeerr = v["PipeErr"].as_str();
             if let Some(pipeerr) = pipeerr {
+                // 提权进程已断开：把句柄清掉，否则 mgr.process 一直是 Some，
+                // 后面的 managed_operation 会跳过 start()、把消息发进死管道，
+                // 再等一个永远不会来的广播 —— 界面就这么无限挂住（不是报错）。
+                *mgr.process.write().await = None;
                 return Err(anyhow::anyhow!("Elevate process disconnected: {}", pipeerr)
                     .context("IPC_ERR")
                     .into());
             }
         }
+        // 广播通道两侧的任务都退出了：同样按「提权进程没了」处理
+        *mgr.process.write().await = None;
         Err(
             anyhow::anyhow!("Failed to receive response from elevate process")
                 .context("IPC_ERR")

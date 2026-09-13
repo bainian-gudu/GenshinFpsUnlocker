@@ -206,6 +206,55 @@ function Test-VendoredSource {
     }
     $notes.Add("遥测已物理移除($($codeFiles.Count) 个源文件 + $($sweep.Count) 个文本文件无 Sentry/cocogoat)")
 
+    # 9) ARP 的卸载命令行只能用 cli/arg.rs 里**真的声明过**的选项
+    #    kachina 本体不在 devcheck 的编译范围内，clap 的长/短名写错没有任何一层会发现：
+    #    传一个不存在的 `--uninstall`，clap 直接以退出码 2 报「unexpected argument」，
+    #    静默卸载一步都不跑 —— 而 ARP 里那个值看起来是「存在」的，比没写更难查。
+    $argRs = [System.IO.File]::ReadAllText((Join-Path $ka 'src-tauri/src/cli/arg.rs'))
+    $regRs = [System.IO.File]::ReadAllText((Join-Path $ka 'src-tauri/src/installer/registry.rs'))
+    $declaredShort = @([regex]::Matches($argRs, "short\s*=\s*'([A-Za-z])'") |
+        ForEach-Object { $_.Groups[1].Value })
+    # 显式写了名字的长选项
+    $declaredLong = @([regex]::Matches($argRs, 'long\s*=\s*"([a-z0-9\-]+)"') |
+        ForEach-Object { $_.Groups[1].Value })
+    # 只写了 `#[clap(long, …)]` 的：clap 拿字段名当长名（下划线转连字符）
+    $declaredLong += @([regex]::Matches($argRs,
+        '(?m)^\s*#\s*\[\s*clap\s*\([^)]*\blong\b[^)]*\)\s*\]\s*\r?\n\s*pub\s+([a-z0-9_]+)\s*:') |
+        ForEach-Object { $_.Groups[1].Value -replace '_', '-' })
+    if ($declaredShort.Count -eq 0) {
+        throw 'cli/arg.rs 里一个 short 选项都没解析到 —— 本组断言的解析规则失效了'
+    }
+
+    # 9a) UninstallString 必须是「整条命令被引号包住的路径」（默认装在 Program Files 下，
+    #     不加引号时「应用和功能」会按第一个空格把命令截断成 C:\Program）
+    $plain = [regex]::Match($regRs,
+        '(?<!Quiet)UninstallString"\s*,\s*&?format!\(\s*"((?:[^"\\]|\\.)*)"')
+    if (-not $plain.Success) { throw 'registry.rs 里找不到 UninstallString 的写入' }
+    if ($plain.Groups[1].Value -notmatch '^\\".*\\"\s*$') {
+        throw "ARP 的 UninstallString 没有整体加引号（实际写法：$($plain.Groups[1].Value)）—— 路径含空格时会被截断"
+    }
+
+    # 9b) QuietUninstallString 的每个选项都要在 arg.rs 里存在
+    $quiet = [regex]::Match($regRs,
+        'QuietUninstallString"\s*,\s*\r?\n?\s*&format!\(\s*"((?:[^"\\]|\\.)*)"')
+    if (-not $quiet.Success) { throw 'registry.rs 里找不到 QuietUninstallString 的写入' }
+    $cmdline = $quiet.Groups[1].Value
+    $used = @([regex]::Matches($cmdline, '(?<![\w-])(--?[A-Za-z][\w-]*)') |
+        ForEach-Object { $_.Groups[1].Value })
+    if ($used.Count -eq 0) {
+        throw 'QuietUninstallString 一个选项都没有 —— 那它跟 UninstallString 没区别，静默卸载会弹界面'
+    }
+    foreach ($u in $used) {
+        if ($u.StartsWith('--')) {
+            if ($declaredLong -notcontains $u.Substring(2)) {
+                throw "QuietUninstallString 用了 $u，但 cli/arg.rs 没声明这个长选项（clap 会以退出码 2 报错，静默卸载不会跑）"
+            }
+        } elseif ($declaredShort -notcontains $u.Substring(1)) {
+            throw "QuietUninstallString 用了 $u，但 cli/arg.rs 没声明这个短选项（clap 会以退出码 2 报错，静默卸载不会跑）"
+        }
+    }
+    $notes.Add("ARP 卸载命令行与 cli/arg.rs 一致(UninstallString 已加引号；Quiet=$($used -join ' '))")
+
     return ($notes -join '；')
 }
 

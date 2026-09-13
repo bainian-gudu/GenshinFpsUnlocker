@@ -83,7 +83,20 @@ pub async fn write_registry_raw(
     {
         key.set_string("DisplayName", &name)?;
         key.set_string("DisplayVersion", &version)?;
-        key.set_string("UninstallString", &uninstaller)?;
+        // 路径带空格（默认就装在 `Program Files\` 下），ARP 的命令行必须加引号，
+        // 否则「应用和功能」的卸载按钮要靠 CreateProcess 的逐级猜测才能碰对。
+        key.set_string("UninstallString", &format!("\"{uninstaller}\""))?;
+        // 静默卸载（winget / 自动化脚本走这个值）。**只能用短选项**：
+        // `cli::InstallArgs` 里这几个 flag 都只声明了 `short`（-U / -S / -I），
+        // clap 不会凭空生成长名，写 `--uninstall` 会直接以退出码 2 报
+        // 「unexpected argument」，卸载根本不发生。
+        // -U 进卸载流程（其实卸载器靠自身文件名判定，这里显式带上更稳），
+        // -S 跑完自动关窗，-I 不弹任何询问；
+        // 用户数据默认保留（前端 deleteUserData 初值是 false），符合静默卸载的预期。
+        key.set_string(
+            "QuietUninstallString",
+            &format!("\"{uninstaller}\" -U -S -I"),
+        )?;
         key.set_string("InstallLocation", &source)?;
         key.set_string("DisplayIcon", &exe)?;
         key.set_string("Publisher", &publisher)?;

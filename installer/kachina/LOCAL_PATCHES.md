@@ -545,6 +545,79 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 ---
 
+## 8. 第二轮安全加固：提权边界、卸载收尾、运行时下载、凭据残留
+
+第 3 节是第一轮（收敛「删什么」）。这一轮复查了安装 / 卸载全链路的**提权边界**与
+**收尾完整性**，改了 6 处，全部在 kachina 内部，不动上游的既有语义。
+
+| # | 位置 | 上游行为 | 加固后 |
+| --- | --- | --- | --- |
+| 1 | `uninstall.rs`：`files`（安装目录内文件清单） | 直接 `source.join(f)` + `remove_file`，清单内容不经任何校验 | 新增 `is_safe_relative_member`：拒绝绝对路径、根相对（`\x`、`/x`）、盘符相对（`C:x`）、UNC、含 `..` / `.` 段、空串、NUL，并要求 join 结果确实落在安装目录内；命中即 warn + 跳过 |
+| 2 | `uninstall.rs`：卸载收尾顺序 | 用户数据删除一旦失败就 `?` 返回，**ARP 卸载信息与 `extraUninstallRegistry` 留在注册表里** → 「应用和功能」里出现卸不掉的僵尸条目 | 失败收集进 `fatal`，注册表清理与 ARP 移除照跑，最后才返回错误 |
+| 3 | `uninstall.rs`：路径比较 | `source.starts_with(candidate)` 与 `path_eq` 都是**大小写敏感**的裸字符串比较，而注册表里的 `InstallLocation` / `uninstaller` 与 `%ProgramFiles%` 展开结果的大小写常常不一致（`C:\Program Files` vs `c:\program files`）→「卸载器不在安装目录里就别把它移动走」这类保护会误判 | 抽出 `normalize_path_for_compare`（分隔符统一 + 小写），新增 `path_starts_with`（按分隔符边界比，`C:\Foo` 不算在 `C:\F` 里），自身移动 / 外部卸载器 / `files` 三处判定统一走它 |
+| 4 | `ipc/manager.rs`：提权管道 | `send` 失败、`PipeErr`、以及兜底分支都**不清 `process` 字段** → 下次点击时 `is_pipe_alive()` 仍为真，请求发给一个已经死掉的管道，前端 `await` 永不返回（UI 卡死，只能重启安装器） | 三条失败路径统一 `*mgr.process.write().await = None` 再返回错误。`SendableHandle` 没有 `Drop`，置空只泄漏一个句柄，不会误杀活进程 |
+| 5 | `installer/runtimes.rs`：.NET / VC++ 运行时 | ① 落地路径 `%TEMP%\Kachina.RuntimePackage.{tag}.exe` —— **固定名字**，且在提权进程里用 `File::create`（CREATE_ALWAYS，跟随符号链接）写；② 下完直接 `spawn`，**完全不验签** | ① 目录换成 `%SystemRoot%\Temp`（只有管理员 / SYSTEM 可写，取不到才退回 `%TEMP%`）+ 文件名带 UUID + `create_new` 独占创建（路径已被占即失败）+ 下载失败清理半成品；② 执行前验 Authenticode，只有 `Status=Valid` 且签名者逐段精确等于 `Microsoft Corporation`（CN 或 O）才放行，否则删文件报错 |
+| 6 | `installer/registry.rs` + `src/App.vue` | ① ARP 只写 `UninstallString`，且**没加引号**（路径含空格时「程序和功能」会按第一个空格截断成 `C:\Program`），也没有静默卸载入口；② 卸载时不清凭据管理器里的 MirrorChyan CDK | ① `UninstallString` 加引号 + 补 `QuietUninstallString`（`"<卸载器>" -U -S -I`，见下方「踩到的坑」）；宿主 `UninstallLauncher` 自己按路径找 `uninst.exe`、不读 ARP，加引号不影响它；② `uninstall()` 第 6 步前 best-effort 调 `wincred_delete` 删 `KachinaInstaller_MirrorChyanCDK_<appName>`，失败只 warn |
+
+第 5 条的两点补充：
+
+- **为什么用 PowerShell 而不是 `WinVerifyTrust` FFI**：后者是几十行 unsafe
+  （`WINTRUST_DATA` / `WTHelperGetProvSignerFromChain` / `CertGetNameStringW`），在本仓库
+  只能类型检查、没法实机跑，写错一个字段就是 UB；`Get-AuthenticodeSignature` 在 Win10+
+  一定存在。代价是多起一个 powershell 进程（几百毫秒，落在「装运行时」这个本来就是
+  分钟级的步骤里可忽略）。判定本身抽成了纯函数 `is_trusted_runtime_signature`，
+  devcheck 的 `logic` 层对它跑断言。
+- **攻击面**：上游那条路径下，同会话的普通权限进程可以先在 `%TEMP%` 放一个指向
+  `C:\Windows\System32\*` 的符号链接，让提权进程把下载内容写进系统文件；或者在
+  「下载完 → 启动安装」之间把文件换成自己的 exe；镜像源被劫持时更是直接提权 RCE。
+  离线包（`offset` / `size`，运行时被 packer 内嵌进安装器）走的是同一条验签路径。
+
+### 踩到的坑：`QuietUninstallString` 只能用短选项
+
+第一版写的是 `--uninstall --silent --non-interactive`，看着很自然，但
+`src/cli/arg.rs` 里这几个 flag 全都是 `#[clap(short = 'U')]` / `short = 'S'` /
+`short = 'I'` —— **没有声明 `long`，clap 就不会生成长名**。传长名的结果是 clap 直接
+以退出码 2 报「unexpected argument」，卸载一步都不会跑（而 ARP 的静默卸载入口看起来
+「存在」，winget / 脚本调用时静默失败，比没有这个值更难查）。
+
+顺带确认了这条链路的真实行为：卸载模式是靠**卸载器自身文件名**判定的
+（`config.rs`：`is_uninstall = exe_path.file_name() == uninstall_name`），`-U` 只是
+`is_uninstall = is_uninstall || args.uninstall` 的兜底；真正让卸载「不弹窗、跑完自己关窗」
+的是 `-S` / `-I`（`App.vue` onMounted：`silent || non_interactive` → 直接调
+`uninstall()`，结束时 `args.silent` 关窗）。用户数据在静默模式下默认保留
+（`deleteUserData` 初值 false），符合静默卸载的预期。
+
+### 本轮**没有**动的三处（有意保留）
+
+- `ipc/pipe.rs` 的 ACL 仍然给 `BU`（普通用户）读写：去掉会让「非提权 UI ↔ 提权安装
+  进程」的正常流程断掉。能安全收窄的只有 `AC` / `RC` 两条，收益有限。
+- `RmList` / `KillProcess` 的入参不校验：调用方是同一台机器上已经能连上管道的进程，
+  而这两个操作（列进程 / 结束进程）本身不需要提权。
+- 运行时版本仍跟 `latest.version`、不锁版本号：锁版本会让 .NET 的补丁更新失效，而
+  验签已经覆盖了「拿到的是不是微软的东西」这个真正的风险点。
+
+### 验证到哪一步
+
+- devcheck `rust` 层：`uninstall.rs` 整份在 `x86_64-pc-windows-msvc` 上类型检查通过、
+  0 warning（含本轮 3 个新助手与错误聚合改动）。
+- devcheck `logic` 层：新增第 [13] [14] 组共 35 条断言（127 → **162**），覆盖
+  `is_safe_relative_member` 的正 / 反例（两种平台的绝对路径形状、`..` 逃逸、根相对、
+  UNC、盘符相对、空串、NUL）、`path_starts_with` 的大小写与分隔符边界、
+  `is_trusted_runtime_signature` 的放行与 6 类拒绝。
+  - 写 [13] 时抓到一个真问题：`Path::components()` 的分隔符语义**随宿主平台变化**，
+    Linux 上 `..\..\x` 是一个普通文件名、看不出 `ParentDir`。所以
+    `is_safe_relative_member` 除了 components 判定，还加了一条按 `/` 与 `\` 切段的
+    文本判定，两个平台行为一致（CI 的 windows / ubuntu 两个 job 都跑同一套断言）。
+- `runtimes.rs` 的 6 个新助手 + 改动后的调用流程，另搭最小 crate 在 msvc 上单独类型
+  检查通过、0 warning。`manager.rs` / `registry.rs` / `App.vue` 三处要靠手动触发
+  `Build` 工作流验证（kachina 本体不在 devcheck 的 `rust` / `front` 层范围内）。
+- **唯一需要实机确认的点**：验签那条没在 Windows 上跑过。如果微软运行时安装包的证书
+  Subject 布局与 `CN=Microsoft Corporation, O=Microsoft Corporation, …` 不同，会被误拦
+  —— 错误信息里带上了实际的 status 与 subject，且宿主 `RuntimePrerequisite` 会回落到
+  「引导用户手动下载」，不会把安装流程卡死。
+
+---
+
 ## 升级上游时的套用顺序
 
 1. 按 `UPSTREAM.md` 覆盖整个目录；
@@ -562,6 +635,14 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
    `InfoFilter` 搬到 `utils/mod.rs`**，然后重新生成两个 lock（`cargo metadata` +
    `pnpm install --lockfile-only`）。跑 `pwsh tools/devcheck/devcheck.ps1 -Layer vendor`
    确认第 8 组断言全绿；
+3c. **重做第 8 节的 6 处加固**：`uninstall.rs`（`normalize_path_for_compare` /
+   `path_starts_with` / `is_safe_relative_member` 三个助手 + `files` 安全阀 +
+   收尾错误聚合 + 三处比较改用新助手）→ `ipc/manager.rs`（三条失败路径清
+   `process`）→ `installer/runtimes.rs`（落地目录 / 独占创建 / 验签，注意
+   `use crate::fs::{…}` 里要去掉 `create_target_file`）→ `installer/registry.rs`
+   （`UninstallString` 加引号 + `QuietUninstallString`）→ `src/App.vue`
+   （`wincred_delete`）。跑 `pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic`
+   确认 [13] [14] 两组断言全绿；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
