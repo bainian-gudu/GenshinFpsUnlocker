@@ -117,6 +117,7 @@ internal static class Program
 
         var quiet = args.Any(a => a is "--quiet" or "/S" or "/s");
         var isAutostart = args.Any(a => a is "--autostart");
+        var elevatedRestart = args.Any(a => a is "--elevated-restart");
 
         AppConfig? earlyConfig = null;
         try
@@ -174,7 +175,21 @@ internal static class Program
 
         // ---- 单实例：Global 失败自动 Local（非管理员关键路径）----
         using var instance = new SingleInstance();
-        if (!instance.TryAcquire())
+        var elevatedHandoff = args.Any(a => a is "--elevated-handoff");
+        var acquired = instance.TryAcquire();
+        if (!acquired && elevatedHandoff)
+        {
+            // 提权重启时旧实例可能仍在关闭窗体/释放句柄。只对显式交接参数
+            // 重试，普通二次启动仍保持立即唤醒已有实例的行为。
+            for (var attempt = 1; attempt <= 20 && !acquired; attempt++)
+            {
+                Thread.Sleep(250);
+                acquired = instance.TryAcquire();
+                if (!acquired)
+                    AppLog.Debug($"elevated handoff 等待旧实例退出 ({attempt}/20)");
+            }
+        }
+        if (!acquired)
         {
             AppLog.Warn("已有实例在运行 — 尝试唤醒主实例后退出" +
                         (isAutostart ? "（autostart launch 放弃二次启动，主实例仍在工作）" : ""));
@@ -214,6 +229,8 @@ internal static class Program
 
         var config = earlyConfig ?? AppConfig.Load();
         AppLog.ApplyConfig(config);
+        // 提权重启需要本次显示主窗，但必须保留用户原先的托盘启动偏好。
+        var configuredStartMinimized = config.StartMinimized;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -224,7 +241,7 @@ internal static class Program
             // 仅 --minimized / -m 强制启动进托盘；--autostart 跟随配置（默认显示窗，可勾选最小化）
             if (args[i] is "--minimized" or "-m")
                 config.StartMinimized = true;
-            if (args[i] is "--show" or "--no-minimize")
+            if (args[i] is "--show" or "--no-minimize" or "--elevated-restart")
                 config.StartMinimized = false;
             if (args[i] is "--master-off")
                 config.MasterEnabled = false;
@@ -270,7 +287,13 @@ internal static class Program
             catch (Exception ex) { AppLog.Warn("刷新快捷方式: " + ex.Message); }
         }
 
+        // --elevated-restart 的 false 只用于本次 MainForm，不能覆盖持久化设置。
+        var runtimeStartMinimized = config.StartMinimized;
+        if (elevatedRestart)
+            config.StartMinimized = configuredStartMinimized;
         if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
+        if (elevatedRestart)
+            config.StartMinimized = runtimeStartMinimized;
         AppLog.Info(
             $"config ok targetFps={config.TargetFps} master={config.MasterEnabled} " +
             $"enabled={config.Enabled} startMin={config.StartMinimized} data={AppPaths.DataDirectory}");

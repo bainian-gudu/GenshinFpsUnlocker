@@ -75,8 +75,10 @@ internal static class Elevation
         try { Program.ReleaseSingleInstance(); }
         catch (Exception ex) { AppLog.Warn("ReleaseSingleInstance: " + ex.Message); }
 
-        // --show：提权后显示主窗；不带 --autostart，避免与自启语义混淆
-        if (!TryRelaunchElevated("--show", out error))
+        // --elevated-restart：提权后显示主窗但不改动「启动后最小化」配置；
+        // --elevated-handoff 让新实例在旧实例
+        // 释放互斥的交接窗口内短暂重试，避免启动竞态导致管理员实例立即退出。
+        if (!TryRelaunchElevated("--elevated-restart --elevated-handoff", out error))
         {
             // 提权没成（多半是用户在 UAC 点了「否」）：把刚释放的锁拿回来，
             // 否则本进程还在跑却不再持有单实例锁 → 再点快捷方式就双开。
