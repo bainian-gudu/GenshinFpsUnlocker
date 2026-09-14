@@ -30,7 +30,14 @@ internal sealed partial class MainForm : Form
     /// <summary>创建冷启动加载层；普通启动提前创建，确保 WebView2 初始化期间文字可见。</summary>
     private void EnsureLoadingSurface()
     {
-        if (_webLoadingSurface is not null) return;
+        if (_webLoadingSurface is not null)
+        {
+            // 普通启动会先创建加载层，随后才加入 WebView2；后加入的控件
+            // 默认位于顶层，因此每次复用时都要重新置顶，避免文字被遮住。
+            _webLoadingSurface.Visible = true;
+            _webLoadingSurface.BringToFront();
+            return;
+        }
         _webLoadingSurface = new Panel
         {
             Dock = DockStyle.Fill,
