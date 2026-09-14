@@ -264,6 +264,41 @@ internal static class Program
         config.Sanitize();
         AppLog.ApplyConfig(config);
 
+        // 用户明确开启自动提权时，启动阶段交接到管理员实例。
+        // 只允许受保护的 Program Files 安装目录执行此路径，避免用户可写目录
+        // 中的 exe 被替换后借 UAC 获取高完整性令牌。
+        if (config.AutoStartAsAdministrator && !Elevation.IsAdministrator()
+            && !args.Any(a => a is "--elevated-auto" or "--elevated-restart"))
+        {
+            var trustError = string.Empty;
+            var trustedExe = AppPaths.IsInstalledUnderProgramFiles()
+                && ModuleTrust.IsTrustworthy(
+                    AppPaths.ExePath,
+                    "GenshinFpsUnlocker.exe",
+                    "自动提权程序",
+                    out trustError,
+                    elevatedHint: "请重新安装到 Program Files 下后再启用自动提权。");
+            if (!trustedExe)
+            {
+                AppLog.Warn("自动提权已跳过：" + (trustError ?? "程序目录未受保护"));
+            }
+            else
+            {
+                var handoffArgs = isAutostart
+                    ? "--elevated-auto --elevated-handoff --autostart"
+                    : "--elevated-auto --elevated-handoff";
+                ReleaseSingleInstance();
+                if (Elevation.TryRelaunchElevated(handoffArgs, out var elevationError))
+                {
+                    AppLog.Info("已交接至自动管理员启动实例");
+                    return;
+                }
+
+                AppLog.Warn("自动管理员启动失败，继续以标准权限运行: " + elevationError);
+                _ = ReacquireSingleInstance();
+            }
+        }
+
         // 自启项同步：配置为真 → 指向当前 exe（路径漂移自愈）；
         // 配置读不到时不删除现有值，避免配置意外丢失导致「重启后自启失败」。
         try { Autostart.SyncOnStartup(config.AutoStartWithWindows, config.LoadedFromDisk); }

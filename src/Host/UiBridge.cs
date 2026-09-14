@@ -224,8 +224,8 @@ internal sealed partial class UiBridge : IDisposable
             saveState = save == 1 ? "saving" : save == 2 ? "error" : "saved",
             isNative = true,
             isElevated = elevated,
-            // 仅在真实注入收到拒绝访问后提示提权；标准用户正常启动不再反复要求授权。
-            needsAdminForUnlock = !elevated && !_config.AdminAuthorizationAcknowledged && _service.NeedsAdminForUnlock,
+            // 权限状态只看当前进程令牌；真实注入被拒绝时再提示提权。
+            needsAdminForUnlock = !elevated && _service.NeedsAdminForUnlock,
             version = typeof(UiBridge).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
         };
     }

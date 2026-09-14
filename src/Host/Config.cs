@@ -45,6 +45,9 @@ internal sealed partial class AppConfig
     /// <summary>是否写入 HKCU\...\Run，实现开机自启动。</summary>
     public bool AutoStartWithWindows { get; set; } = false;
 
+    /// <summary>每次启动时自动请求管理员权限；关闭时保持标准用户启动。</summary>
+    public bool AutoStartAsAdministrator { get; set; } = false;
+
     /// <summary>
     /// 总开关。关闭时：不注入、不强制帧率，后台仍可待命。
     /// 与 <see cref="Enabled"/> 的区别：总开关优先级更高，可一键暂停全部解锁行为。
@@ -89,8 +92,6 @@ internal sealed partial class AppConfig
     /// <summary>是否隐藏界面上的「建议管理员运行」提示条（默认显示；可在设置中关闭）。</summary>
     public bool SuppressAdminHint { get; set; } = false;
 
-    /// <summary>用户曾主动完成过一次管理员授权；避免后续普通启动重复显示同一提示。</summary>
-    public bool AdminAuthorizationAcknowledged { get; set; } = false;
 
     /// <summary>配置文件完整路径（不序列化）。</summary>
     [JsonIgnore]

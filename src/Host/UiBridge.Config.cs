@@ -32,6 +32,8 @@ internal sealed partial class UiBridge
                 _service.SetAntiBlurDiveMosaic(abm.GetValue<bool>());
             if (p["autoStartWithWindows"] is JsonNode auto)
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
+            if (p["autoStartAsAdministrator"] is JsonNode autoAdmin)
+                _config.AutoStartAsAdministrator = autoAdmin.GetValue<bool>();
             if (p["startMinimized"] is JsonNode min)
                 _config.StartMinimized = min.GetValue<bool>();
             if (p["debugLogging"] is JsonNode dbg)
@@ -54,8 +56,6 @@ internal sealed partial class UiBridge
                 _config.SafetyNoticeAcknowledged = ack.GetValue<bool>();
             if (p["suppressAdminHint"] is JsonNode adm)
                 _config.SuppressAdminHint = adm.GetValue<bool>();
-            if (p["adminAuthorizationAcknowledged"] is JsonNode adminAck)
-                _config.AdminAuthorizationAcknowledged = adminAck.GetValue<bool>();
 
             _config.Sanitize();
             batch.Flush();      // 合并后的唯一一次落盘
@@ -86,11 +86,11 @@ internal sealed partial class UiBridge
         SetBool(root, "antiBlurDiveMosaic", v => _config.AntiBlurDiveMosaic = v);
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
+        SetBool(root, "autoStartAsAdministrator", v => _config.AutoStartAsAdministrator = v);
         SetBool(root, "debugLogging", v => _config.DebugLogging = v);
         SetBool(root, "showSafetyNoticeOnStartup", v => _config.ShowSafetyNoticeOnStartup = v);
         SetBool(root, "safetyNoticeAcknowledged", v => _config.SafetyNoticeAcknowledged = v);
         SetBool(root, "suppressAdminHint", v => _config.SuppressAdminHint = v);
-        SetBool(root, "adminAuthorizationAcknowledged", v => _config.AdminAuthorizationAcknowledged = v);
         if (root.TryGetProperty("pollIntervalMs", out var poll) && poll.TryGetInt32(out var pms))
             _config.PollIntervalMs = Math.Clamp(pms, 200, 10000);
         if (root.TryGetProperty("logRetainDays", out var days) && days.TryGetInt32(out var d))
@@ -127,6 +127,7 @@ internal sealed partial class UiBridge
         to.AutoWatch = from.AutoWatch;
         to.StartMinimized = from.StartMinimized;
         to.AutoStartWithWindows = from.AutoStartWithWindows;
+        to.AutoStartAsAdministrator = from.AutoStartAsAdministrator;
         to.PollIntervalMs = from.PollIntervalMs;
         to.GamePath = from.GamePath;
         to.SafetyNoticeAcknowledged = from.SafetyNoticeAcknowledged;
@@ -136,7 +137,6 @@ internal sealed partial class UiBridge
         to.LogLevel = from.LogLevel;
         to.LogRetainDays = from.LogRetainDays;
         to.SuppressAdminHint = from.SuppressAdminHint;
-        to.AdminAuthorizationAcknowledged = from.AdminAuthorizationAcknowledged;
     }
 
     private void SaveConfig()
@@ -162,6 +162,7 @@ internal sealed partial class UiBridge
         antiBlurDiveMosaic = _config.AntiBlurDiveMosaic,
         startMinimized = _config.StartMinimized,
         autoStartWithWindows = _config.AutoStartWithWindows,
+        autoStartAsAdministrator = _config.AutoStartAsAdministrator,
         pollIntervalMs = _config.PollIntervalMs,
         gamePath = _config.GamePath,
         safetyNoticeAcknowledged = _config.SafetyNoticeAcknowledged,
@@ -171,7 +172,6 @@ internal sealed partial class UiBridge
         logLevel = _config.LogLevel,
         logRetainDays = _config.LogRetainDays,
         suppressAdminHint = _config.SuppressAdminHint,
-        adminAuthorizationAcknowledged = _config.AdminAuthorizationAcknowledged,
     };
 
     private static object ReadRecentLogs()

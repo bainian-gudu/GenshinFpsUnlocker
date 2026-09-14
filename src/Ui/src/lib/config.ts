@@ -17,6 +17,7 @@ export interface UnlockerConfig {
   antiBlurDiveMosaic: boolean;
   startMinimized: boolean;
   autoStartWithWindows: boolean;
+  autoStartAsAdministrator: boolean;
   pollIntervalMs: number;
   gamePath: string | null;
   safetyNoticeAcknowledged: boolean;
@@ -46,6 +47,7 @@ export const DEFAULT_CONFIG: UnlockerConfig = {
   antiBlurDiveMosaic: false,
   startMinimized: false,
   autoStartWithWindows: false,
+  autoStartAsAdministrator: false,
   pollIntervalMs: 1000,
   gamePath: DEMO_GAME_PATH,
   safetyNoticeAcknowledged: false,
@@ -66,6 +68,7 @@ export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
   antiBlurDiveMosaic: '移除水下马赛克',
   startMinimized: '启动后最小化到托盘',
   autoStartWithWindows: '开机自启动',
+  autoStartAsAdministrator: '启动时自动以管理员权限运行',
   pollIntervalMs: '进程检测间隔',
   gamePath: '游戏路径',
   safetyNoticeAcknowledged: '安全声明确认',

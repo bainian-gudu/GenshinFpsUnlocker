@@ -421,11 +421,6 @@ internal sealed partial class MainForm : Form
         if (!Elevation.TryRestartElevatedForUnlock(out error))
             return false;
 
-        // 记录用户已明确同意过 UAC。后续从普通快捷方式启动时不再重复弹出
-        // “需要管理员权限”提示，但设置页仍保留手动提权入口。
-        _config.AdminAuthorizationAcknowledged = true;
-        _config.TrySave(out _);
-
         // 提权实例已拉起：真正退出，不藏托盘
         _reallyExit = true;
         try
