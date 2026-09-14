@@ -22,21 +22,21 @@ export function OverviewPage({ app }: { app: AppState }) {
       <motion.div className="overview-controls" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
         <div className="overview-left-stack">
           <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
+          <section className="upscaler-shape" aria-label="超分辨率替换">
+            <div className="upscaler-card">
+              <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
+              <div className="upscaler-card-body">
+                <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
+                <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>使用 OptiScaler 将 FSR 2.0 替换为 DLSS。</p></div>
+                <span className="feature-status">{upscaler.status}</span>
+              </div>
+              <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
+            </div>
+          </section>
         </div>
         <div className="overview-right-stack">
           <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows"><ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后自动应用设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} /><ToggleRow icon={WandSparkles} title="反角色虚化" description="镜头拉近时角色不再透明化" checked={config.antiBlurPerspective} onChange={(value) => updateConfig('antiBlurPerspective', value)} /><ToggleRow icon={WandSparkles} title="移除水下马赛克" description="角色入水时不再显示马赛克虚化" checked={config.antiBlurDiveMosaic} onChange={(value) => updateConfig('antiBlurDiveMosaic', value)} /><ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后在后台运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} /><ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后下次启动直接进托盘；关窗/最小化始终会藏到托盘" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} /></div></section>
         </div>
-        <section className="upscaler-shape" aria-label="超分辨率替换与组件说明">
-          <div className="upscaler-card">
-            <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
-            <div className="upscaler-card-body">
-              <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
-              <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>使用 OptiScaler 将 FSR 2.0 替换为 DLSS。</p></div>
-              <span className="feature-status">{upscaler.status}</span>
-            </div>
-            <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
-          </div>
-        </section>
       </motion.div>
       <motion.section className={`game-launch-panel ${launchState !== 'idle' || attachedPid > 0 ? 'session-active' : ''}`} aria-label="游戏与启动" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
         <div className="game-art" aria-hidden="true"><img className="game-art-icon" src="/images/game-icon.webp" alt="" width={54} height={54} draggable={false} /></div>
