@@ -13,7 +13,8 @@ const LogRow = memo(function LogRow({ entry }: { entry: LogEntry }) {
 export function LogsPage({ logs, onClear, onExport, onOpenFolder, isNative }: { logs: LogEntry[]; onClear: () => void; onExport: () => void; onOpenFolder?: () => void; isNative?: boolean }) {
   const [search, setSearch] = useState('');
   const [level, setLevel] = useState('all');
-  const filtered = useMemo(() => logs.filter((entry) => (level === 'all' || entry.level === level) && `${entry.message} ${formatTime(entry.timestamp)} ${entry.level}`.toLowerCase().includes(search.toLowerCase())), [logs, search, level]);
+  // 日志按时间倒序展示，最新一条固定在表格顶部；过滤在倒序后执行以保持顺序。
+  const filtered = useMemo(() => [...logs].reverse().filter((entry) => (level === 'all' || entry.level === level) && `${entry.message} ${formatTime(entry.timestamp)} ${entry.level}`.toLowerCase().includes(search.toLowerCase())), [logs, search, level]);
   return <>
     <PageHeading title="运行日志" description="每一步都有迹可循，让问题排查更简单。"><div className="page-heading-actions">{onOpenFolder && <button className="button button-secondary" onClick={onOpenFolder} type="button">打开日志目录</button>}<button className="button button-secondary" onClick={onExport} disabled={!logs.length}><Download size={15} />导出日志</button></div></PageHeading>
     <section className="log-workspace">
