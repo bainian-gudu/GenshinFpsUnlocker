@@ -14,7 +14,12 @@ internal static class DllInjector
     /// <summary>
     /// 尝试注入。成功返回 true；失败时 error 含中文说明。
     /// </summary>
-    public static bool TryInject(Process process, string dllPath, out string error, string moduleName = "Stub DLL")
+    public static bool TryInject(
+        Process process,
+        string dllPath,
+        out string error,
+        string moduleName = "Stub DLL",
+        bool allowHookFallback = true)
     {
         error = string.Empty;
         var fullDll = PathUtil.Normalize(dllPath);
@@ -69,6 +74,12 @@ internal static class DllInjector
 
         AppLog.Warn($"RemoteLoadLibrary 失败: {error}");
         var remoteError = error;
+        if (!allowHookFallback)
+        {
+            error = remoteError;
+            AppLog.Error($"{moduleName} 远程线程注入失败: {error}");
+            return false;
+        }
         if (TryWindowsHook(process, injectPath, out error))
         {
             AppLog.Info($"WindowsHook 注入成功 pid={process.Id}");

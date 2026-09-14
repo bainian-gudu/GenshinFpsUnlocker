@@ -133,9 +133,10 @@ internal sealed class UpscalerReplacement : IDisposable
                     // 同时把原因记录下来，避免因安装目录只读而完全失去替换能力。
                     AppLog.Warn("OptiScaler 配置写入失败，将使用现有配置: " + configError.Message);
                 }
+                var injectStartedUtc = DateTime.UtcNow;
                 using var process = Process.GetProcessById(pid.Value);
                 if (process.HasExited) return;
-                if (DllInjector.TryInject(process, AppPaths.UpscalerProxyPath, out var error, "超分辨率代理"))
+                if (DllInjector.TryInject(process, AppPaths.UpscalerProxyPath, out var error, "超分辨率代理", allowHookFallback: false))
                 {
                     _activePid = pid.Value;
                     _attemptedPid = pid.Value;
@@ -144,6 +145,19 @@ internal sealed class UpscalerReplacement : IDisposable
                     InitializeOptiScalerLogForwardingLocked();
                     _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），请查看 OptiScaler.log 确认 FSR2 调用";
                     AppLog.Info($"upscaler proxy injected pid={pid.Value} quality={_quality}");
+                }
+                else if (TryConfirmFreshOptiScalerLoadLocked(injectStartedUtc))
+                {
+                    // 某些游戏/安全软件会让远程线程返回值或模块枚举不可靠，
+                    // 但代理已经执行 DllMain 并写出了本次启动日志。以新日志作为成功凭据，
+                    // 避免把实际已加载的代理显示成注入失败。
+                    _activePid = pid.Value;
+                    _attemptedPid = pid.Value;
+                    _nextAttemptUtc = DateTime.MinValue;
+                    _proxyInjectUtc = injectStartedUtc;
+                    InitializeOptiScalerLogForwardingLocked();
+                    _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），等待渲染确认";
+                    AppLog.Warn($"upscaler proxy load confirmed by fresh OptiScaler.log despite injector result pid={pid.Value}");
                 }
                 else
                 {
@@ -161,6 +175,46 @@ internal sealed class UpscalerReplacement : IDisposable
                 AppLog.Warn("upscaler proxy injection exception: " + ex.Message);
             }
         }
+    }
+
+    /// <summary>
+    /// 注入器返回失败时，检查目标游戏目录是否刚刚生成了本次代理日志。
+    /// 这只作为超分代理的兜底确认，不能用于 FPS Stub。
+    /// </summary>
+    private bool TryConfirmFreshOptiScalerLoadLocked(DateTime sinceUtc)
+    {
+        var candidates = new List<string>
+        {
+            Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.log"),
+        };
+        var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(gameDirectory))
+            candidates.Add(Path.Combine(gameDirectory, "OptiScaler.log"));
+
+        foreach (var path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (!PathUtil.ExistsFile(path)) continue;
+                var info = new FileInfo(path);
+                if (info.LastWriteTimeUtc < sinceUtc.AddSeconds(-2)) continue;
+                var length = Math.Min(info.Length, 128 * 1024);
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                stream.Seek(-length, SeekOrigin.End);
+                using var reader = new StreamReader(stream);
+                var text = reader.ReadToEnd();
+                if (text.Contains("OptiScaler v", StringComparison.OrdinalIgnoreCase)
+                    && (text.Contains("Setting DllPath", StringComparison.OrdinalIgnoreCase)
+                        || text.Contains("Running on", StringComparison.OrdinalIgnoreCase)
+                        || text.Contains("DLSS.Enabled", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Debug("确认 OptiScaler 新日志失败: " + ex.Message);
+            }
+        }
+        return false;
     }
 
     public void Dispose()
@@ -376,6 +430,13 @@ internal sealed class UpscalerReplacement : IDisposable
                      || tail.Contains("init successful", StringComparison.OrdinalIgnoreCase))
             {
                 _status = "DLSS 功能已创建，等待实际渲染调用";
+            }
+            else if (tail.Contains("OptiScaler v", StringComparison.OrdinalIgnoreCase)
+                     && (tail.Contains("Setting DllPath", StringComparison.OrdinalIgnoreCase)
+                         || tail.Contains("Running on", StringComparison.OrdinalIgnoreCase)
+                         || tail.Contains("DLSS.Enabled", StringComparison.OrdinalIgnoreCase)))
+            {
+                _status = "OptiScaler 已加载并初始化，等待 FSR2 渲染调用";
             }
         }
         catch (Exception ex)
