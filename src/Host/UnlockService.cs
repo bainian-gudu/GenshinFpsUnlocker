@@ -12,6 +12,7 @@ internal sealed partial class UnlockService : IDisposable
     private readonly IpcSharedMemory _ipc;
     private readonly CancellationTokenSource _cts = new();
     private readonly string _stubPath;
+    private readonly UpscalerReplacement _upscaler;
     private readonly object _raiseLock = new();
 
     private Task? _loop;
@@ -49,6 +50,7 @@ internal sealed partial class UnlockService : IDisposable
 
     /// <summary>Stub 上报的反虚化就绪状态掩码（bit0 虚化 / bit1 马赛克 / bit2 马赛克已生效）。</summary>
     public int AntiBlurStateFeedback => _ipc.Read().AntiBlurState;
+    public UpscalerReplacement.Snapshot UpscalerState => _upscaler.State;
     public AppConfig Config => _config;
 
     /// <summary>
@@ -76,6 +78,8 @@ internal sealed partial class UnlockService : IDisposable
                 ex.Message, ex);
         }
         _stubPath = PathUtil.Normalize(AppPaths.StubDllPath);
+        _upscaler = new UpscalerReplacement();
+        _upscaler.SetEnabled(_config.UpscalerReplacementEnabled, _config.GamePath, _config.UpscalerQuality);
         try { RefreshGamePath(autoLocateIfMissing: true); } catch (Exception ex) { AppLog.Warn(ex.Message); }
         try { PushConfigToIpc(force: true); } catch (Exception ex) { AppLog.Warn(ex.Message); }
     }
@@ -85,6 +89,40 @@ internal sealed partial class UnlockService : IDisposable
     {
         AppLog.Info("UnlockService.Start()");
         _loop = Task.Run(() => WatchLoopAsync(_cts.Token));
+        StartUpscalerMonitor();
+    }
+
+    public void SetUpscalerReplacementEnabled(bool enabled)
+    {
+        _config.UpscalerReplacementEnabled = enabled;
+        _config.TrySave(out _);
+        SyncUpscalerConfiguration();
+    }
+
+    /// <summary>配置导入、重置及路径变更后，同步独立组件的运行时状态。</summary>
+    public void SyncUpscalerConfiguration()
+    {
+        _config.Sanitize();
+        _upscaler.SetEnabled(_config.UpscalerReplacementEnabled, _config.GamePath, _config.UpscalerQuality);
+        Raise(forceUi: true);
+    }
+
+    /// <summary>设置超分辨率质量挡位并立即刷新独立组件。</summary>
+    public void SetUpscalerQuality(string quality)
+    {
+        _config.UpscalerQuality = quality;
+        _config.Sanitize();
+        _config.TrySave(out _);
+        SyncUpscalerConfiguration();
+    }
+
+    public async Task<UpscalerReplacement.DownloadResult> DownloadDlssRuntimeAsync(CancellationToken token)
+    {
+        // UI 页面切换不打断后台下载，退出宿主时则必须取消，避免继续写入组件文件。
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _cts.Token);
+        var result = await _upscaler.DownloadDlssRuntimeAsync(linked.Token).ConfigureAwait(false);
+        if (!_disposed) Raise(forceUi: true);
+        return result;
     }
 
     /// <summary>
@@ -222,14 +260,14 @@ internal sealed partial class UnlockService : IDisposable
         {
             _config.GamePath = PathUtil.Normalize(_config.GamePath);
             Volatile.Write(ref _gamePathStatus, $"游戏路径: {_config.GamePath}（{GameLocator.SourceDisplayName(GameLocateSource.Config)}）");
-            Raise(forceUi: true);
+            SyncUpscalerConfiguration();
             return GameLocateResult.Success(_config.GamePath!, GameLocateSource.Config);
         }
 
         if (!autoLocateIfMissing)
         {
             Volatile.Write(ref _gamePathStatus, "游戏路径: 未设置");
-            Raise(forceUi: true);
+            SyncUpscalerConfiguration();
             return GameLocateResult.Fail("未设置");
         }
 
@@ -245,7 +283,7 @@ internal sealed partial class UnlockService : IDisposable
             Volatile.Write(ref _gamePathStatus, $"游戏路径: 未找到 — {result.Detail}");
         }
 
-        Raise(forceUi: true);
+        SyncUpscalerConfiguration();
         return result;
     }
 
@@ -259,7 +297,7 @@ internal sealed partial class UnlockService : IDisposable
             _config.TrySave(out _);
             Volatile.Write(ref _gamePathStatus, $"游戏路径: {_config.GamePath}（手动选择）");
             AppLog.Info("manual game path: " + _config.GamePath);
-            Raise(forceUi: true);
+            SyncUpscalerConfiguration();
         }
         return result;
     }
@@ -284,7 +322,7 @@ internal sealed partial class UnlockService : IDisposable
             Volatile.Write(ref _gamePathStatus, $"自动查找失败: {result.Detail}");
         }
 
-        Raise(forceUi: true);
+        SyncUpscalerConfiguration();
         return result;
     }
 
@@ -338,8 +376,10 @@ internal sealed partial class UnlockService : IDisposable
         try { _ipc.RequestExit(); } catch { /* ignore */ }
         _cts.Cancel();
         try { _loop?.Wait(2000); } catch { /* ignore */ }
+        try { _upscalerLoop?.Wait(2000); } catch { /* ignore */ }
         _cts.Dispose();
         _ipc.Dispose();
+        _upscaler.Dispose();
         AppLog.Info("UnlockService disposed");
     }
 }

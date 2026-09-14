@@ -11,6 +11,10 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal sealed partial class AppConfig
 {
+    public const string DefaultUpscalerQuality = "quality";
+    public static readonly string[] UpscalerQualityValues =
+        ["quality", "balanced", "performance", "ultraPerformance", "nativeAA"];
+
     /// <summary>目标帧率上限（1–540，默认 120）。</summary>
     public int TargetFps { get; set; } = 120;
 
@@ -31,6 +35,12 @@ internal sealed partial class AppConfig
     /// 默认关闭；联机/UGC 玩法中请勿开启。
     /// </summary>
     public bool AntiBlurDiveMosaic { get; set; } = false;
+
+    /// <summary>是否自动监视游戏并启用独立的 FSR 2.0 → DLSS 超分辨率替换组件。</summary>
+    public bool UpscalerReplacementEnabled { get; set; } = false;
+
+    /// <summary>超分辨率质量挡位：quality、balanced、performance、ultraPerformance 或 nativeAA。</summary>
+    public string UpscalerQuality { get; set; } = DefaultUpscalerQuality;
 
     /// <summary>
     /// 启动时是否最小化到系统托盘。
@@ -138,6 +148,11 @@ internal sealed partial class AppConfig
         TargetFps = Math.Clamp(TargetFps, 1, 540);
         PollIntervalMs = Math.Clamp(PollIntervalMs, 200, 10000);
         LogRetainDays = Math.Clamp(LogRetainDays, 1, 90);
+        if (!UpscalerQualityValues.Contains(UpscalerQuality, StringComparer.OrdinalIgnoreCase))
+            UpscalerQuality = DefaultUpscalerQuality;
+        else
+            UpscalerQuality = UpscalerQualityValues.First(v =>
+                string.Equals(v, UpscalerQuality, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(LogLevel)) LogLevel = "Debug";
         if (!string.IsNullOrWhiteSpace(GamePath))
         {

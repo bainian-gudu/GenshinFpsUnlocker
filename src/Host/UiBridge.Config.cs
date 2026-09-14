@@ -30,6 +30,10 @@ internal sealed partial class UiBridge
                 _service.SetAntiBlurPerspective(abp.GetValue<bool>());
             if (p["antiBlurDiveMosaic"] is JsonNode abm)
                 _service.SetAntiBlurDiveMosaic(abm.GetValue<bool>());
+            if (p["upscalerReplacementEnabled"] is JsonNode upscaler)
+                _service.SetUpscalerReplacementEnabled(upscaler.GetValue<bool>());
+            if (p["upscalerQuality"] is JsonNode quality)
+                _service.SetUpscalerQuality(quality.GetValue<string>());
             if (p["autoStartWithWindows"] is JsonNode auto)
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
             if (p["autoStartAsAdministrator"] is JsonNode autoAdmin)
@@ -84,6 +88,10 @@ internal sealed partial class UiBridge
         SetBool(root, "autoWatch", v => _config.AutoWatch = v);
         SetBool(root, "antiBlurPerspective", v => _config.AntiBlurPerspective = v);
         SetBool(root, "antiBlurDiveMosaic", v => _config.AntiBlurDiveMosaic = v);
+        SetBool(root, "upscalerReplacementEnabled", v => _config.UpscalerReplacementEnabled = v);
+        if (root.TryGetProperty("upscalerQuality", out var quality)
+            && quality.ValueKind == JsonValueKind.String)
+            _config.UpscalerQuality = quality.GetString() ?? AppConfig.DefaultUpscalerQuality;
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
         SetBool(root, "autoStartAsAdministrator", v => _config.AutoStartAsAdministrator = v);
@@ -106,6 +114,7 @@ internal sealed partial class UiBridge
         }
 
         _config.Sanitize();
+        _service.SyncUpscalerConfiguration();
         Autostart.SetEnabled(_config.AutoStartWithWindows);
         AppLog.ApplyConfig(_config);
         _form.SyncTrayFromConfig();
@@ -123,6 +132,8 @@ internal sealed partial class UiBridge
         to.Enabled = from.Enabled;
         to.AntiBlurPerspective = from.AntiBlurPerspective;
         to.AntiBlurDiveMosaic = from.AntiBlurDiveMosaic;
+        to.UpscalerReplacementEnabled = from.UpscalerReplacementEnabled;
+        to.UpscalerQuality = from.UpscalerQuality;
         to.MasterEnabled = from.MasterEnabled;
         to.AutoWatch = from.AutoWatch;
         to.StartMinimized = from.StartMinimized;
@@ -160,6 +171,8 @@ internal sealed partial class UiBridge
         autoWatch = _config.AutoWatch,
         antiBlurPerspective = _config.AntiBlurPerspective,
         antiBlurDiveMosaic = _config.AntiBlurDiveMosaic,
+        upscalerReplacementEnabled = _config.UpscalerReplacementEnabled,
+        upscalerQuality = _config.UpscalerQuality,
         startMinimized = _config.StartMinimized,
         autoStartWithWindows = _config.AutoStartWithWindows,
         autoStartAsAdministrator = _config.AutoStartAsAdministrator,

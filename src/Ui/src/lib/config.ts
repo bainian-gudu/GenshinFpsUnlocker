@@ -3,6 +3,7 @@ export const STORAGE_KEY = 'genshin-fps-unlocker.config.v1';
 export const DEMO_GAME_PATH = 'D:\\Games\\Genshin Impact\\Genshin Impact Game\\YuanShen.exe';
 
 export type Theme = 'dark' | 'light';
+export type UpscalerQuality = 'quality' | 'balanced' | 'performance' | 'ultraPerformance' | 'nativeAA';
 /** 全部页面 id；顺序即侧栏主导航 + 次级导航的顺序。 */
 export const PAGES = ['overview', 'settings', 'logs', 'guide', 'about'] as const;
 export type Page = (typeof PAGES)[number];
@@ -15,6 +16,8 @@ export interface UnlockerConfig {
   autoWatch: boolean;
   antiBlurPerspective: boolean;
   antiBlurDiveMosaic: boolean;
+  upscalerReplacementEnabled: boolean;
+  upscalerQuality: UpscalerQuality;
   startMinimized: boolean;
   autoStartWithWindows: boolean;
   autoStartAsAdministrator: boolean;
@@ -45,6 +48,8 @@ export const DEFAULT_CONFIG: UnlockerConfig = {
   autoWatch: true,
   antiBlurPerspective: false,
   antiBlurDiveMosaic: false,
+  upscalerReplacementEnabled: false,
+  upscalerQuality: 'quality',
   startMinimized: false,
   autoStartWithWindows: false,
   autoStartAsAdministrator: false,
@@ -66,6 +71,8 @@ export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
   autoWatch: '自动解锁',
   antiBlurPerspective: '反角色虚化',
   antiBlurDiveMosaic: '移除水下马赛克',
+  upscalerReplacementEnabled: '超分辨率替换',
+  upscalerQuality: '超分辨率挡位',
   startMinimized: '启动后最小化到托盘',
   autoStartWithWindows: '开机自启动',
   autoStartAsAdministrator: '启动时自动以管理员权限运行',
@@ -129,6 +136,12 @@ export function parseConfig(value: unknown): UnlockerConfig {
       throw new Error('不支持的日志级别。');
     }
     next.logLevel = input.logLevel as LogLevel;
+  }
+  if ('upscalerQuality' in input) {
+    if (typeof input.upscalerQuality !== 'string' || !['quality', 'balanced', 'performance', 'ultraPerformance', 'nativeAA'].includes(input.upscalerQuality)) {
+      throw new Error('不支持的超分辨率挡位。');
+    }
+    next.upscalerQuality = input.upscalerQuality as UpscalerQuality;
   }
   return next;
 }

@@ -102,8 +102,13 @@
 .upscaler-card-copy strong { display: block; color: var(--text); font-size: 12px; font-weight: 550; }
 .upscaler-card-copy p, .upscaler-card-note { color: var(--muted); font-size: 10px; line-height: 1.7; }
 .upscaler-card-copy p { margin-top: 3px; }
+.upscaler-card .upscaler-quick-toggle { margin-top: 9px; }
+.upscaler-card .upscaler-quick-toggle .toggle-row { min-height: 58px; }
 .feature-status { flex-shrink: 0; color: var(--muted); font-size: 10px; }
+.upscaler-card .feature-status { max-width: 42%; white-space: normal; text-align: right; overflow-wrap: anywhere; }
 .upscaler-card-note { margin: 13px 0 0 52px; padding-top: 11px; border-top: 1px solid var(--border-soft); }
+.upscaler-download-button { margin: 13px 0 0 52px; min-height: 30px; padding: 0 10px; font-size: 10px; }
+.settings-upscaler .upscaler-download-button { margin-left: 0; }
 .fps-fields { margin: 0; padding: 0; border: 0; min-width: 0; transition: opacity .2s; }
 .fps-fields:disabled { opacity: .45; }
 .fps-fields:disabled button:disabled, .fps-fields:disabled input:disabled { opacity: 1; }

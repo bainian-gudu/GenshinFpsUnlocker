@@ -1,4 +1,4 @@
-import type { LogEntry, LogLevel, Page, UnlockerConfig } from './config';
+import type { LogEntry, LogLevel, Page, UnlockerConfig, UpscalerQuality } from './config';
 import { asPage, DEFAULT_CONFIG, parseConfig } from './config';
 
 export type NativeState = {
@@ -14,7 +14,20 @@ export type NativeState = {
   isElevated: boolean;
   /** 解锁注入通常需要管理员；与 isElevated 相反时便于 UI 横幅 */
   needsAdminForUnlock: boolean;
+  upscaler: UpscalerState;
   version: string;
+};
+
+export type UpscalerState = {
+  enabled: boolean;
+  active: boolean;
+  activePid: number;
+  available: boolean;
+  proxyPresent: boolean;
+  dlssRuntimePresent: boolean;
+  gameConfigured: boolean;
+  quality: UpscalerQuality;
+  status: string;
 };
 
 type Pending = {
@@ -121,6 +134,19 @@ function normalizeState(raw: any): NativeState {
     isNative: true,
     isElevated,
     needsAdminForUnlock: raw.needsAdminForUnlock != null ? Boolean(raw.needsAdminForUnlock) : !isElevated,
+    upscaler: {
+      enabled: Boolean(raw.upscaler?.enabled),
+      active: Boolean(raw.upscaler?.active),
+      activePid: Number(raw.upscaler?.activePid ?? 0),
+      available: Boolean(raw.upscaler?.available),
+      proxyPresent: Boolean(raw.upscaler?.proxyPresent),
+      dlssRuntimePresent: Boolean(raw.upscaler?.dlssRuntimePresent),
+      gameConfigured: Boolean(raw.upscaler?.gameConfigured),
+      quality: (['quality', 'balanced', 'performance', 'ultraPerformance', 'nativeAA'].includes(raw.upscaler?.quality)
+        ? raw.upscaler.quality
+        : config.upscalerQuality) as UpscalerQuality,
+      status: String(raw.upscaler?.status ?? '组件未检测'),
+    },
     version: String(raw.version ?? '1.0.0'),
   };
 }
@@ -153,7 +179,7 @@ export function onNativeNavigate(listener: (page: Page) => void): () => void {
   return () => navigateListeners.delete(listener);
 }
 
-export function nativeInvoke<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+export function nativeInvoke<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs = 30000): Promise<T> {
   ensureListeners();
   if (!isNativeHost()) return Promise.reject(new Error('非原生环境'));
   const id = `c${++seq}`;
@@ -161,7 +187,7 @@ export function nativeInvoke<T = unknown>(method: string, params: Record<string,
     const timer = window.setTimeout(() => {
       pending.delete(id);
       reject(new Error(`原生调用超时: ${method}`));
-    }, 30000);
+    }, timeoutMs);
     pending.set(id, {
       resolve: (v) => resolve(v as T),
       reject,

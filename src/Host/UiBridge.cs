@@ -212,6 +212,7 @@ internal sealed partial class UiBridge : IDisposable
     {
         var save = Volatile.Read(ref _saveState);
         var elevated = Elevation.IsAdministrator();
+        var upscaler = _service.UpscalerState;
         return new
         {
             config = BuildConfigDto(),
@@ -221,6 +222,18 @@ internal sealed partial class UiBridge : IDisposable
             currentFps = _service.CurrentFpsFeedback,
             stubStatus = (int)_service.StubStatus,
             antiBlurState = _service.AntiBlurStateFeedback,
+            upscaler = new
+            {
+                enabled = upscaler.Enabled,
+                active = upscaler.Active,
+                activePid = upscaler.ActivePid,
+                available = upscaler.Available,
+                proxyPresent = upscaler.ProxyPresent,
+                dlssRuntimePresent = upscaler.DlssRuntimePresent,
+                gameConfigured = upscaler.GameConfigured,
+                quality = upscaler.Quality,
+                status = upscaler.Status,
+            },
             saveState = save == 1 ? "saving" : save == 2 ? "error" : "saved",
             isNative = true,
             isElevated = elevated,

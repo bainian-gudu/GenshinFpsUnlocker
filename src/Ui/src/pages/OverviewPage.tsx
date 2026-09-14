@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Download, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
 import { FpsControl } from '../components/FpsControl';
 import { PageHeading, ToggleRow } from '../components/ui';
@@ -8,7 +8,7 @@ import { PageHeading, ToggleRow } from '../components/ui';
 export function OverviewPage({ app }: { app: AppState }) {
   const {
     native, config, setModal, launchState, statusText, attachedPid, isElevated, needsAdmin, elevating,
-    effectiveEnabled, readiness, navigate, updateConfig, restartElevated, handleLaunch,
+    effectiveEnabled, readiness, upscaler, navigate, updateConfig, restartElevated, handleLaunch, downloadDlssRuntime, downloadingDlss,
   } = app;
 
   return (
@@ -26,10 +26,15 @@ export function OverviewPage({ app }: { app: AppState }) {
             <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
             <div className="upscaler-card-body">
               <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
-              <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>独立代理组件正在适配原神渲染接口，完成验证后可在这里启用。</p></div>
-              <span className="feature-status">准备中</span>
+              <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>独立代理组件与现有注入模块分开运行，完成渲染接口验证后可在这里启用。</p></div>
+              <span className="feature-status">{upscaler.status}</span>
             </div>
+            <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description="检测到原神启动后自动应用超分辨率替换" checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} disabled={!upscaler.available} /></div>
             <p className="upscaler-card-note">需要 NVIDIA RTX 显卡、兼容驱动和用户提供的官方 DLSS Runtime；不会改变帧率解锁与反虚化注入。</p>
+            {native && <button className="button button-secondary upscaler-download-button" type="button" onClick={() => void downloadDlssRuntime()} disabled={downloadingDlss || upscaler.dlssRuntimePresent}>
+              {downloadingDlss ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}
+              {downloadingDlss ? '下载中…' : upscaler.dlssRuntimePresent ? 'DLSS Runtime 已存在' : '下载 DLSS Runtime'}
+            </button>}
           </section>
         </div>
         <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows"><ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后自动应用设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} /><ToggleRow icon={WandSparkles} title="反角色虚化" description="镜头拉近时角色不再透明化" checked={config.antiBlurPerspective} onChange={(value) => updateConfig('antiBlurPerspective', value)} /><ToggleRow icon={WandSparkles} title="移除水下马赛克" description="角色入水时不再显示马赛克虚化" checked={config.antiBlurDiveMosaic} onChange={(value) => updateConfig('antiBlurDiveMosaic', value)} /><ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后在后台运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} /><ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后下次启动直接进托盘；关窗/最小化始终会藏到托盘" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} /></div></section>

@@ -106,6 +106,7 @@ internal sealed partial class UiBridge
                 var fresh = new AppConfig();
                 CopyConfig(fresh, _config);
                 _config.Sanitize();
+                _service.SyncUpscalerConfiguration();
                 Autostart.SetEnabled(_config.AutoStartWithWindows);
                 _service.PushConfigToIpc(force: true);
                 SaveConfig();
@@ -129,6 +130,9 @@ internal sealed partial class UiBridge
                 catch (Exception ex) { throw new InvalidOperationException(ex.Message); }
                 return Task.FromResult<object?>(true);
             }
+
+            case "downloadDlssRuntime":
+                return DownloadDlssRuntimeAsync();
 
             case "getLogs":
                 return Task.FromResult<object?>(ReadRecentLogs());
@@ -242,5 +246,11 @@ internal sealed partial class UiBridge
             default:
                 throw new InvalidOperationException("未知方法: " + method);
         }
+    }
+
+    private async Task<object?> DownloadDlssRuntimeAsync()
+    {
+        var result = await _service.DownloadDlssRuntimeAsync(CancellationToken.None);
+        return new { ok = result.Ok, message = result.Message, state = BuildStateObject() };
     }
 }
