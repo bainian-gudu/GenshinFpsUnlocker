@@ -45,7 +45,7 @@ internal sealed partial class AppConfig
     /// <summary>是否写入 HKCU\...\Run，实现开机自启动。</summary>
     public bool AutoStartWithWindows { get; set; } = false;
 
-    /// <summary>每次启动时自动请求管理员权限；关闭时保持标准用户启动。</summary>
+    /// <summary>手动启动时自动请求管理员权限；登录自启动始终保持普通权限。</summary>
     public bool AutoStartAsAdministrator { get; set; } = false;
 
     /// <summary>

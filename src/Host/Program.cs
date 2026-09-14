@@ -261,10 +261,11 @@ internal static class Program
         config.Sanitize();
         AppLog.ApplyConfig(config);
 
-        // 用户明确开启自动提权时，启动阶段交接到管理员实例。
+        // 用户明确开启自动提权时，仅手动启动交接到管理员实例。
+        // 登录自启动始终保持静默，不因这一偏好请求 UAC。
         // 只允许受保护的 Program Files 安装目录执行此路径，避免用户可写目录
         // 中的 exe 被替换后借 UAC 获取高完整性令牌。
-        if (config.AutoStartAsAdministrator && !Elevation.IsAdministrator()
+        if (!isAutostart && config.AutoStartAsAdministrator && !Elevation.IsAdministrator()
             && !args.Any(a => a is "--elevated-auto" or "--elevated-restart"))
         {
             var trustError = string.Empty;
@@ -281,11 +282,8 @@ internal static class Program
             }
             else
             {
-                var handoffArgs = isAutostart
-                    ? "--elevated-auto --elevated-handoff --autostart"
-                    : "--elevated-auto --elevated-handoff";
                 ReleaseSingleInstance();
-                if (Elevation.TryRelaunchElevated(handoffArgs, out var elevationError))
+                if (Elevation.TryRelaunchElevated("--elevated-auto --elevated-handoff", out var elevationError))
                 {
                     AppLog.Info("已交接至自动管理员启动实例");
                     return;
