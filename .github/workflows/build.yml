@@ -175,35 +175,6 @@ jobs:
         with:
           arch: x64
 
-      # 超分辨率替换组件：如果源码中未包含（例如 LFS 不可用），从 GitHub 自动下载最新版本
-      - name: Download upscaler components
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $upscalerDir = "src/Host/upscaler"
-          New-Item -ItemType Directory -Force -Path $upscalerDir | Out-Null
-
-          # OptiScaler.dll — 从 GitHub API 获取最新 release
-          if (-not (Test-Path "$upscalerDir/OptiScaler.dll")) {
-            Write-Host "Querying latest OptiScaler release..."
-            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/optiscaler/OptiScaler/releases/latest" -UseBasicParsing
-            $asset = $release.assets | Where-Object { $_.name -match '\.7z$' } | Select-Object -First 1
-            if (-not $asset) { throw "No .7z asset in latest OptiScaler release" }
-            Write-Host "  Release: $($release.tag_name)  Asset: $($asset.name)"
-            $archive = "$upscalerDir/$($asset.name)"
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive -UseBasicParsing
-            & 7z e $archive "-o$upscalerDir" OptiScaler.dll -y | Out-Null
-            Remove-Item $archive -Force -ErrorAction SilentlyContinue
-          }
-
-          # nvngx_dlss.dll — NVIDIA DLSS 仓库 main 分支
-          if (-not (Test-Path "$upscalerDir/nvngx_dlss.dll")) {
-            Write-Host "Downloading nvngx_dlss.dll (main branch)..."
-            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/NVIDIA/DLSS/main/lib/Windows_x86_64/rel/nvngx_dlss.dll" -OutFile "$upscalerDir/nvngx_dlss.dll" -UseBasicParsing
-          }
-
-          Get-ChildItem $upscalerDir | Select-Object Name, @{n="MB";e={[math]::Round($_.Length/1MB,2)}} | Format-Table -AutoSize
-
       - name: Build stub + host
         shell: pwsh
         env:
