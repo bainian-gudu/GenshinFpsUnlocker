@@ -89,6 +89,9 @@ internal sealed partial class AppConfig
     /// <summary>是否隐藏界面上的「建议管理员运行」提示条（默认显示；可在设置中关闭）。</summary>
     public bool SuppressAdminHint { get; set; } = false;
 
+    /// <summary>用户曾主动完成过一次管理员授权；避免后续普通启动重复显示同一提示。</summary>
+    public bool AdminAuthorizationAcknowledged { get; set; } = false;
+
     /// <summary>配置文件完整路径（不序列化）。</summary>
     [JsonIgnore]
     public static string ConfigPath => AppPaths.ConfigPath;
