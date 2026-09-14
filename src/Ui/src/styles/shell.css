@@ -79,6 +79,7 @@
 .hero-guide:hover svg { transform: translateX(4px); }
 .overview-controls { display: grid; grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr); gap: 20px; margin-top: 20px; }
 .overview-left-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.overview-right-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .control-panel { min-width: 0; padding: 20px 22px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 23px; margin-bottom: 10px; }
 .panel-heading h2 { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 500; line-height: 1.7; white-space: nowrap; }
@@ -93,8 +94,11 @@
 :root[data-theme='light'] .toggle:not(.is-on) { background: #d5cedf; border-color: #d5cedf; }
 :root[data-theme='light'] .toggle:not(.is-on) > span { background: #fff; }
 .fps-panel { min-height: 280px; padding-bottom: 15px; }
-.upscaler-card { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr); column-gap: 20px; padding-bottom: 16px; }
-.upscaler-card-main { min-width: 0; }
+.upscaler-shape { --upscaler-step: 120px; position: relative; isolation: isolate; display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr); column-gap: 20px; min-width: 0; margin-top: calc(-1 * var(--upscaler-step)); padding: var(--upscaler-step) 22px 16px; }
+.upscaler-shape::before, .upscaler-shape::after { content: ''; position: absolute; inset: 0; pointer-events: none; clip-path: polygon(0 0, 52% 0, 52% var(--upscaler-step), 100% var(--upscaler-step), 100% 100%, 0 100%); }
+.upscaler-shape::before { z-index: -2; background: var(--border); }
+.upscaler-shape::after { z-index: -1; inset: 1px; background: var(--panel); clip-path: polygon(0 0, 52% 0, 52% calc(var(--upscaler-step) - 1px), 100% calc(var(--upscaler-step) - 1px), 100% 100%, 0 100%); }
+.upscaler-card { min-width: 0; padding: 0; border: 0; background: transparent; }
 .upscaler-card .panel-heading { margin-bottom: 15px; }
 .feature-badge { padding: 3px 7px; border: 1px solid var(--accent-border); border-radius: 4px; color: var(--accent); font-size: 9px; white-space: nowrap; }
 .upscaler-card-body { display: flex; align-items: center; gap: 12px; min-height: 54px; }
@@ -107,8 +111,8 @@
 .upscaler-card .upscaler-quick-toggle .toggle-row { min-height: 58px; }
 .feature-status { flex-shrink: 0; color: var(--muted); font-size: 10px; }
 .upscaler-card .feature-status { max-width: 42%; white-space: normal; text-align: right; overflow-wrap: anywhere; }
-.upscaler-card-footer { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; min-width: 0; padding-left: 20px; border-left: 1px solid var(--border-soft); }
-.upscaler-card-footer p { color: var(--muted); font-size: 9.5px; line-height: 1.6; }
+.upscaler-details { min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding-left: 20px; }
+.upscaler-details p { color: var(--muted); font-size: 9.5px; line-height: 1.6; }
 .upscaler-card-footer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .button.upscaler-download-button { flex-shrink: 0; min-height: 27px; padding: 4px 8px; gap: 6px; font-size: 9.5px; }
 .settings-upscaler .upscaler-download-button { margin-left: 0; }
