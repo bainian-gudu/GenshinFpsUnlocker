@@ -66,6 +66,19 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
+  <!-- 超分辨率替换组件（OptiScaler.dll + nvngx_dlss.dll）随宿主发布到 upscaler/ 子目录 -->
+  <ItemGroup>
+    <Content Include="upscaler\OptiScaler.dll" Condition="Exists('upscaler\OptiScaler.dll')">
+      <Link>upscaler\OptiScaler.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="upscaler\nvngx_dlss.dll" Condition="Exists('upscaler\nvngx_dlss.dll')">
+      <Link>upscaler\nvngx_dlss.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
   <!-- Web UI 构建产物（Vite singlefile）随宿主发布 -->
   <ItemGroup>
     <Content Include="..\Ui\dist\**\*" Condition="Exists('..\Ui\dist\index.html')">

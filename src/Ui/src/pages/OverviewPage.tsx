@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Download, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
 import { FpsControl } from '../components/FpsControl';
 import { PageHeading, ToggleRow } from '../components/ui';
@@ -8,7 +8,7 @@ import { PageHeading, ToggleRow } from '../components/ui';
 export function OverviewPage({ app }: { app: AppState }) {
   const {
     native, config, setModal, launchState, statusText, attachedPid, isElevated, needsAdmin, elevating,
-    effectiveEnabled, readiness, upscaler, navigate, updateConfig, restartElevated, handleLaunch, downloadDlssRuntime, downloadingDlss, openUpscalerFolder,
+    effectiveEnabled, readiness, upscaler, navigate, updateConfig, restartElevated, handleLaunch,
   } = app;
 
   return (
@@ -34,9 +34,9 @@ export function OverviewPage({ app }: { app: AppState }) {
               <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>使用 OptiScaler 将 FSR 2.0 替换为 DLSS。</p></div>
               <span className="feature-status">{upscaler.status}</span>
             </div>
-            <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '组件未齐全时保存开关，准备好代理后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
+            <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
           </div>
-          <div className="upscaler-details"><p>{upscaler.proxyPresent ? '已检测到 OptiScaler.dll；' : '未检测到 OptiScaler.dll，请先放入代理组件；'}进入游戏后按 Insert，查看“FSR 2.X → DLSS”和持续增长的 FrameCount。</p><div className="upscaler-card-footer-actions">{native && !upscaler.proxyPresent && <button className="button button-secondary upscaler-download-button" type="button" onClick={() => void openUpscalerFolder()}><FolderOpen size={13} />打开组件目录</button>}{native && <button className="button button-secondary upscaler-download-button" type="button" onClick={() => void downloadDlssRuntime()} disabled={downloadingDlss || upscaler.dlssRuntimePresent}>{downloadingDlss ? <LoaderCircle size={13} className="spin" /> : <Download size={13} />}{downloadingDlss ? '下载中…' : upscaler.dlssRuntimePresent ? 'Runtime 已存在' : '下载 Runtime'}</button>}</div></div>
+          <div className="upscaler-details"><p>OptiScaler.dll 与 nvngx_dlss.dll 均已随程序内置，无需额外下载或手动放入。进入游戏后按 Insert，查看“FSR 2.X → DLSS”和持续增长的 FrameCount。</p></div>
         </section>
       </motion.div>
       <motion.section className={`game-launch-panel ${launchState !== 'idle' || attachedPid > 0 ? 'session-active' : ''}`} aria-label="游戏与启动" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>

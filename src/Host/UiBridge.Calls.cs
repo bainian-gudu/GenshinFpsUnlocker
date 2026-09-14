@@ -130,25 +130,6 @@ internal sealed partial class UiBridge
                 catch (Exception ex) { throw new InvalidOperationException(ex.Message); }
                 return Task.FromResult<object?>(true);
             }
-
-            case "downloadDlssRuntime":
-                return DownloadDlssRuntimeAsync();
-
-            case "openUpscalerFolder":
-            {
-                try
-                {
-                    Directory.CreateDirectory(AppPaths.UpscalerDirectory);
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = AppPaths.UpscalerDirectory,
-                        UseShellExecute = true,
-                    });
-                }
-                catch (Exception ex) { throw new InvalidOperationException("无法打开超分组件目录：" + ex.Message, ex); }
-                return Task.FromResult<object?>(true);
-            }
-
             case "getLogs":
                 return Task.FromResult<object?>(ReadRecentLogs());
 
@@ -263,9 +244,4 @@ internal sealed partial class UiBridge
         }
     }
 
-    private async Task<object?> DownloadDlssRuntimeAsync()
-    {
-        var result = await _service.DownloadDlssRuntimeAsync(CancellationToken.None);
-        return new { ok = result.Ok, message = result.Message, state = BuildStateObject() };
-    }
 }

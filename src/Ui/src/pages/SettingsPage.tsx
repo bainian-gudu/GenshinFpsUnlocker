@@ -20,9 +20,9 @@ function NumberSetting({ title, description, value, min, max, unit, onChange }: 
   return <div className="setting-row"><div><span className="row-title">{title}</span><p className={error ? 'field-error' : ''}>{error ? `请输入 ${min} 至 ${max} 之间的整数` : description}</p></div><div className="number-setting"><input aria-label={title} type="number" min={min} max={max} value={draft} aria-invalid={error} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{unit}</span></div></div>;
 }
 
-export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative, isElevated, onRestartElevated, elevating, upscaler, onDownloadDlss, downloadingDlss }: {
+export function SettingsPage({ config, updateConfig, onPath, onExport, onImport, onReset, onUninstall, busy, isNative, isElevated, onRestartElevated, elevating, upscaler }: {
   config: UnlockerConfig; updateConfig: UpdateConfig; onPath: () => void; onExport: () => void; onImport: () => void; onReset: () => void; onUninstall?: () => void; busy: boolean; isNative?: boolean;
-  isElevated?: boolean; onRestartElevated?: () => void; elevating?: boolean; upscaler: UpscalerState; onDownloadDlss: () => void; downloadingDlss: boolean;
+  isElevated?: boolean; onRestartElevated?: () => void; elevating?: boolean; upscaler: UpscalerState;
 }) {
   const [tab, setTab] = useState<'game' | 'behavior' | 'advanced'>('game');
   const tabs = [{ id: 'game', label: '游戏与解锁', icon: SlidersHorizontal }, { id: 'behavior', label: '启动与行为', icon: Settings2 }, { id: 'advanced', label: '高级设置', icon: FileJson }] as const;
@@ -66,12 +66,8 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
         </section>
         <section className="control-panel settings-control settings-upscaler"><div className="panel-heading"><h2><Sparkles size={18} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
           <ToggleRow title="启用 FSR 2.0 → DLSS" description={upscaler.status} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} />
-          <div className="setting-row upscaler-quality-row"><div><span className="row-title">超分辨率挡位</span><p>选择 DLSS 输出质量；组件不可用时仅保存偏好。</p></div><select className="select-input" aria-label="超分辨率挡位" value={config.upscalerQuality} onChange={(event) => updateConfig('upscalerQuality', event.target.value as UpscalerQuality)}><option value="nativeAA">DLAA</option><option value="quality">质量</option><option value="balanced">均衡</option><option value="performance">性能</option><option value="ultraPerformance">超高性能</option></select></div>
-          <p className="settings-small-note"><Info size={14} />替换功能与帧率解锁、反虚化注入独立运行。组件未齐全时可先保存开关；进入游戏后按 Insert，看到“FSR 2.X → DLSS”且 FrameCount 持续增长即可确认。</p>
-          {isNative && <button className="button button-secondary upscaler-download-button" type="button" onClick={onDownloadDlss} disabled={downloadingDlss || upscaler.dlssRuntimePresent}>
-            {downloadingDlss ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}
-            {downloadingDlss ? '下载中…' : upscaler.dlssRuntimePresent ? 'DLSS Runtime 已存在' : '下载 DLSS Runtime'}
-          </button>}
+          <div className="setting-row upscaler-quality-row"><div><span className="row-title">超分辨率挡位</span><p>选择 DLSS 输出质量；未设置游戏路径时仅保存偏好。</p></div><select className="select-input" aria-label="超分辨率挡位" value={config.upscalerQuality} onChange={(event) => updateConfig('upscalerQuality', event.target.value as UpscalerQuality)}><option value="nativeAA">DLAA</option><option value="quality">质量</option><option value="balanced">均衡</option><option value="performance">性能</option><option value="ultraPerformance">超高性能</option></select></div>
+          <p className="settings-small-note"><Info size={14} />替换功能与帧率解锁、反虚化注入独立运行。所需组件已随程序内置。进入游戏后按 Insert，看到“FSR 2.X → DLSS”且 FrameCount 持续增长即可确认。</p>
         </section>
         <section className="control-panel settings-path-panel"><div className="panel-heading"><h2><FolderOpen size={18} />游戏安装位置</h2><button className="text-button" onClick={onPath} disabled={busy}>更改路径<ChevronRight size={15} /></button></div><p className="path-display">{config.gamePath || '尚未设置游戏路径'}</p><p className="input-help">请选择游戏本体，而非米哈游启动器。支持国服和国际服客户端。</p></section>
       </>}

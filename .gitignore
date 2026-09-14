@@ -23,6 +23,9 @@ config.json
 *.exe
 *.pdb
 !third_party/**
+# 随项目分发的超分辨率组件（OptiScaler.dll + nvngx_dlss.dll），不属于构建产物
+!src/Host/upscaler/OptiScaler.dll
+!src/Host/upscaler/nvngx_dlss.dll
 
 # OS / editor
 .arena/

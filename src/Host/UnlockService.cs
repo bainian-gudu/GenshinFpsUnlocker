@@ -116,15 +116,6 @@ internal sealed partial class UnlockService : IDisposable
         SyncUpscalerConfiguration();
     }
 
-    public async Task<UpscalerReplacement.DownloadResult> DownloadDlssRuntimeAsync(CancellationToken token)
-    {
-        // UI 页面切换不打断后台下载，退出宿主时则必须取消，避免继续写入组件文件。
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _cts.Token);
-        var result = await _upscaler.DownloadDlssRuntimeAsync(linked.Token).ConfigureAwait(false);
-        if (!_disposed) Raise(forceUi: true);
-        return result;
-    }
-
     /// <summary>
     /// 将目标 FPS 与有效开关推入共享内存。
     /// 默认 400ms 内相同值不重复写，降低 IPC 与日志噪声；force=true 立即推送。

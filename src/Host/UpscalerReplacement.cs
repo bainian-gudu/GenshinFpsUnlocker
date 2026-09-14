@@ -1,29 +1,23 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Net.Http;
-using System.Security.Cryptography;
 
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
 /// 超分辨率替换组件的能力检测。
 /// 该组件只负责管理独立代理与运行库，不参与 FPS/反虚化注入。
+/// OptiScaler.dll 和 nvngx_dlss.dll 均已随项目分发，构建工作流会在文件缺失时自动下载。
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
-    private const string DlssRuntimeUrl =
-        "https://raw.githubusercontent.com/NVIDIA/DLSS/374959484e79a640feaba44c93ac8cfb0a03f5b5/lib/Windows_x86_64/rel/nvngx_dlss.dll";
-    private const string DlssRuntimeSha256 = "3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983";
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
     private readonly object _sync = new();
-    private readonly SemaphoreSlim _downloadGate = new(1, 1);
     private Capability _capability = Inspect(null);
     private bool _enabled;
     private int _activePid;
     private string _status = "组件未检测";
     private string _quality = AppConfig.DefaultUpscalerQuality;
-    // 保存最近一次配置的游戏路径。下载运行库完成后重新检测时必须沿用该路径，
-    // 否则 Inspect(null) 会把「已设置游戏路径」错误地显示为未设置。
+    // 保存最近一次配置的游戏路径。
+    // Inspect(null) 会把「已设置游戏路径」错误地显示为未设置。
     private string? _gamePath;
     private DateTime _nextAttemptUtc = DateTime.MinValue;
     private int _attemptedPid;
@@ -222,71 +216,6 @@ internal sealed class UpscalerReplacement : IDisposable
         lock (_sync) StopProxyLocked();
     }
 
-    public async Task<DownloadResult> DownloadDlssRuntimeAsync(CancellationToken token)
-    {
-        var temporary = AppPaths.DlssRuntimePath + ".download";
-        var entered = false;
-        try
-        {
-            if (!await _downloadGate.WaitAsync(0, token).ConfigureAwait(false))
-                return new DownloadResult(false, "下载已在进行中");
-            entered = true;
-
-            Directory.CreateDirectory(AppPaths.UpscalerDirectory);
-            using var response = await Http.GetAsync(
-                DlssRuntimeUrl, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            await using (var source = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
-            await using (var target = new FileStream(
-                temporary, FileMode.Create, FileAccess.Write, FileShare.None,
-                128 * 1024, useAsync: true))
-            {
-                await source.CopyToAsync(target, token).ConfigureAwait(false);
-            }
-
-            string hash;
-            // 先关闭校验文件句柄，再替换目标文件。Windows 下打开的句柄会阻止
-            // File.Move(overwrite:true)，此前下载成功后仍可能报告“文件被占用”。
-            await using (var verify = new FileStream(
-                temporary, FileMode.Open, FileAccess.Read, FileShare.Read,
-                128 * 1024, useAsync: true))
-            {
-                hash = Convert.ToHexString(await SHA256.HashDataAsync(verify, token).ConfigureAwait(false))
-                    .ToLowerInvariant();
-            }
-            if (!hash.Equals(DlssRuntimeSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("DLSS Runtime 校验失败");
-
-            File.Move(temporary, AppPaths.DlssRuntimePath, overwrite: true);
-            AppLog.Info("DLSS Runtime 下载并校验完成");
-            lock (_sync)
-            {
-                _capability = Inspect(_gamePath);
-                if (_enabled) _status = _capability.Status;
-            }
-            return new DownloadResult(true, "DLSS Runtime 已下载并通过校验");
-        }
-        catch (OperationCanceledException)
-        {
-            return new DownloadResult(false, "下载已取消");
-        }
-        catch (Exception ex)
-        {
-            AppLog.Warn("DLSS Runtime 下载失败: " + ex.Message);
-            return new DownloadResult(false, "下载失败：" + ex.Message);
-        }
-        finally
-        {
-            // 无论取消、校验失败还是替换成功，都清理残留临时文件；成功时
-            // File.Move 已经移走它，Delete 会安静地忽略不存在的路径。
-            if (entered)
-            {
-                try { File.Delete(temporary); } catch { /* 清理失败不影响结果反馈 */ }
-                _downloadGate.Release();
-            }
-        }
-    }
-
     private void StopProxyLocked()
     {
         if (_activePid == 0) return;
@@ -306,7 +235,7 @@ internal sealed class UpscalerReplacement : IDisposable
         var status = !proxyExists
             ? proxyError
             : !runtimeExists
-                ? "缺少用户提供的 DLSS Runtime"
+                ? "缺少 nvngx_dlss.dll（随项目分发，请检查安装目录 upscaler 是否完整）"
                 : !gameConfigured
                     ? "请先设置游戏路径"
                 : "组件已就绪，等待原神启动";
@@ -322,7 +251,7 @@ internal sealed class UpscalerReplacement : IDisposable
     /// <summary>检查代理是否为可加载的 x64 PE DLL，避免仅凭同名空文件误判就绪。</summary>
     private static bool IsValidProxy(string path, out string error)
     {
-        error = "缺少超分辨率代理组件（请放入 x64 OptiScaler.dll）";
+        error = "缺少 OptiScaler.dll（随项目分发，请检查安装目录 upscaler 是否完整）";
         if (!PathUtil.ExistsFile(path)) return false;
         try
         {
@@ -530,5 +459,4 @@ internal sealed class UpscalerReplacement : IDisposable
         bool GameConfigured,
         string Status);
 
-    internal sealed record DownloadResult(bool Ok, string Message);
 }

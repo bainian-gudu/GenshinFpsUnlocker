@@ -37,6 +37,58 @@ $hostSelfContained = [bool]$SelfContained
 $hostLabel = if ($hostSelfContained) { "self-contained" } else { "framework-dependent" }
 Write-Host "==> Host publish mode: $hostLabel" -ForegroundColor Cyan
 
+# ---------------------------------------------------------------------------
+# 超分辨率替换组件：OptiScaler.dll + nvngx_dlss.dll
+# 如果项目源码中未包含这些文件（例如 CI 上 checkout 时 .gitignore 了大文件），
+# 则从各自的 GitHub 仓库自动下载最新版本。
+# ---------------------------------------------------------------------------
+$upscalerDir = Join-Path $Root "src/Host/upscaler"
+New-Item -ItemType Directory -Force -Path $upscalerDir | Out-Null
+
+$optiScalerDll = Join-Path $upscalerDir "OptiScaler.dll"
+if (-not (Test-Path $optiScalerDll)) {
+    Write-Host "==> Downloading OptiScaler.dll (latest release)" -ForegroundColor Cyan
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/optiscaler/OptiScaler/releases/latest" -UseBasicParsing
+        $asset = $release.assets | Where-Object { $_.name -match '\.7z$' } | Select-Object -First 1
+        if (-not $asset) { throw "No .7z asset found in latest release" }
+        Write-Host "    Release: $($release.tag_name)  Asset: $($asset.name)" -ForegroundColor DarkGray
+        $optiArchive = Join-Path $upscalerDir $asset.name
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $optiArchive -UseBasicParsing
+        $sevenZip = Get-Command 7z -ErrorAction SilentlyContinue
+        if (-not $sevenZip) { $sevenZip = Get-Command "C:\Program Files\7-Zip\7z.exe" -ErrorAction SilentlyContinue }
+        if ($sevenZip) {
+            & $sevenZip.Source e $optiArchive "-o$upscalerDir" OptiScaler.dll -y | Out-Null
+        } else {
+            Write-Warning "7z not found; cannot extract OptiScaler.dll from .7z archive"
+        }
+        Remove-Item $optiArchive -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Warning "Failed to download OptiScaler.dll: $_"
+    }
+    if (Test-Path $optiScalerDll) {
+        Write-Host "    OptiScaler.dll: $([math]::Round((Get-Item $optiScalerDll).Length / 1MB, 2)) MB" -ForegroundColor Green
+    } else {
+        Write-Warning "OptiScaler.dll not available — upscaler replacement will not work"
+    }
+} else {
+    Write-Host "    OptiScaler.dll: present ($([math]::Round((Get-Item $optiScalerDll).Length / 1MB, 2)) MB)" -ForegroundColor Green
+}
+
+$dlssDll = Join-Path $upscalerDir "nvngx_dlss.dll"
+if (-not (Test-Path $dlssDll)) {
+    Write-Host "==> Downloading nvngx_dlss.dll (NVIDIA DLSS, main branch)" -ForegroundColor Cyan
+    $dlssUrl = "https://raw.githubusercontent.com/NVIDIA/DLSS/main/lib/Windows_x86_64/rel/nvngx_dlss.dll"
+    try {
+        Invoke-WebRequest -Uri $dlssUrl -OutFile $dlssDll -UseBasicParsing
+        Write-Host "    nvngx_dlss.dll: $([math]::Round((Get-Item $dlssDll).Length / 1MB, 2)) MB" -ForegroundColor Green
+    } catch {
+        Write-Warning "Failed to download nvngx_dlss.dll: $_"
+    }
+} else {
+    Write-Host "    nvngx_dlss.dll: present ($([math]::Round((Get-Item $dlssDll).Length / 1MB, 2)) MB)" -ForegroundColor Green
+}
+
 Write-Host "==> Building Web UI (Vite)" -ForegroundColor Cyan
 $uiDir = Join-Path $Root "src/Ui"
 $uiDist = Join-Path $uiDir "dist/index.html"
@@ -120,6 +172,19 @@ if (Test-Path (Join-Path $uiDistDir "index.html")) {
     Write-Warning "src/Ui/dist missing after build — host may fail to load UI"
 }
 
+
+# 确保超分辨率组件在 publish 输出中（csproj Content 可能因路径/条件漏拷）
+$upscalerOutDir = Join-Path $dist "upscaler"
+New-Item -ItemType Directory -Force -Path $upscalerOutDir | Out-Null
+foreach ($upscalerFile in @("OptiScaler.dll", "nvngx_dlss.dll")) {
+    $src = Join-Path $upscalerDir $upscalerFile
+    if (Test-Path $src) {
+        Copy-Item $src (Join-Path $upscalerOutDir $upscalerFile) -Force
+    }
+}
+if (Test-Path (Join-Path $upscalerOutDir "OptiScaler.dll")) {
+    Write-Host "    Upscaler components copied -> $upscalerOutDir" -ForegroundColor Green
+}
 
 foreach ($extra in @("LICENSE", "USER_AGREEMENT.txt", "config.example.json")) {
     $p = Join-Path $Root $extra
