@@ -396,6 +396,15 @@ export function useAppState() {
     }
   }
 
+  async function openUpscalerFolder() {
+    if (!native) return;
+    try {
+      await nativeInvoke('openUpscalerFolder');
+    } catch (error) {
+      notify('无法打开组件目录', error instanceof Error ? error.message : '未知错误', 'error');
+    }
+  }
+
   async function savePath(path: string) {
     if (native) {
       const state = await nativeInvoke<any>('setGamePath', { path });
@@ -448,7 +457,7 @@ export function useAppState() {
     attachedPid, currentFps, isElevated, needsAdmin, elevating, upscaler, version, effectiveEnabled, readiness,
     importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, beginLaunch,
     restartElevated, startUninstall, handleLaunch, exportConfig, importConfig, exportLogs,
-    savePath, browsePath, autoLocatePath, downloadDlssRuntime, downloadingDlss,
+    savePath, browsePath, autoLocatePath, openUpscalerFolder, downloadDlssRuntime, downloadingDlss,
   };
 }
 

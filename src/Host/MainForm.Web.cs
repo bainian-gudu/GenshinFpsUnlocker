@@ -18,8 +18,7 @@ internal sealed partial class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            // WebView2 是独立的原生子窗口，初始化期间必须隐藏它，
-            // 否则 WinForms 覆盖面板可能被 WebView2 的 HWND 压住。
+            // 导航完成前保留原生加载层，完成后再显示 WebView2。
             Visible = false,
             // 透明背景交给窗口亚克力层；深色主题切换时会同步为不透明色。
             DefaultBackgroundColor = Color.FromArgb(0, UiStyle.UiLightBg),
@@ -33,10 +32,11 @@ internal sealed partial class MainForm : Form
     /// <summary>创建冷启动加载层；普通启动提前创建，确保 WebView2 初始化期间文字可见。</summary>
     private void EnsureLoadingSurface()
     {
+        _webReady = false;
+        UiStyle.ApplyBackdrop(this, UiStyle.IsUiDark);
         if (_webLoadingSurface is not null)
         {
-            // 普通启动会先创建加载层，随后才加入 WebView2；后加入的控件
-            // 默认位于顶层，因此每次复用时都要重新置顶，避免文字被遮住。
+            // 复用加载层时恢复其可见性和层级。
             _webLoadingSurface.Visible = true;
             _webLoadingSurface.BringToFront();
             return;
@@ -44,13 +44,14 @@ internal sealed partial class MainForm : Form
         _webLoadingSurface = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(0xB8, UiStyle.UiLightBg),
+            // 原生加载层使用实体底色，亚克力由 Web 页面就绪后接管。
+            BackColor = UiStyle.IsUiDark ? UiStyle.UiDarkBg : UiStyle.UiLightBg,
         };
         _webLoadingText = new Label
         {
             Dock = DockStyle.Fill,
             Text = "正在加载界面…",
-            ForeColor = UiStyle.UiLightText,
+            ForeColor = UiStyle.IsUiDark ? UiStyle.UiDarkText : UiStyle.UiLightText,
             Font = UiStyle.UiFont,
             TextAlign = ContentAlignment.MiddleCenter,
         };
@@ -110,6 +111,7 @@ internal sealed partial class MainForm : Form
             _webView.BringToFront();
             HideWebLoadingSurface();
             _webReady = true;
+            UiStyle.ApplyBackdrop(this, UiStyle.IsUiDark);
             _bridge.PushState();
             AppLog.Info("Web UI ready");
         };
@@ -171,6 +173,8 @@ internal sealed partial class MainForm : Form
     /// </summary>
     private void ShowNativeFallbackUi(string reason)
     {
+        _webReady = false;
+        UiStyle.ApplyBackdrop(this, UiStyle.IsUiDark);
         HideWebLoadingSurface();
         try { _webView.Visible = false; } catch { /* ignore */ }
 
@@ -283,7 +287,7 @@ internal sealed partial class MainForm : Form
                 {
                     _webLoadingSurface.BackColor = dark
                         ? UiStyle.UiDarkBg
-                        : Color.FromArgb(0xB8, UiStyle.UiLightBg);
+                        : UiStyle.UiLightBg;
                     _webLoadingText.ForeColor = dark ? UiStyle.UiDarkText : UiStyle.UiLightText;
                 }
                 catch { /* ignore */ }

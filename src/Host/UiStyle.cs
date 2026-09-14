@@ -303,17 +303,20 @@ internal static class UiStyle
         catch { /* ignore */ }
     }
 
-    /// <summary>为浅色主题启用透明亚克力背景；不支持时保留普通背景。</summary>
+    /// <summary>仅为已就绪的浅色 Web 主界面启用亚克力；原生界面保留普通合成。</summary>
     public static void ApplyBackdrop(Form form, bool dark)
     {
         try
         {
             if (!form.IsHandleCreated) return;
+            // GDI 控件不会提供亚克力合成需要的像素 alpha。加载层、原生兜底及
+            // 其它 WinForms 窗口必须关闭亚克力，WebView2 的合成表面就绪后再启用。
+            var useAcrylic = !dark && form is MainForm { IsWebContentReady: true };
             var policy = new AccentPolicy
             {
-                AccentState = dark ? ACCENT_DISABLED : ACCENT_ENABLE_ACRYLICBLURBEHIND,
+                AccentState = useAcrylic ? ACCENT_ENABLE_ACRYLICBLURBEHIND : ACCENT_DISABLED,
                 // AABBGGRR：约 85% 的浅色前景，保留足够的材质透出效果。
-                GradientColor = dark ? 0 : unchecked((int)0xD9FBF7F8),
+                GradientColor = useAcrylic ? unchecked((int)0xD9FBF7F8) : 0,
             };
             var size = Marshal.SizeOf<AccentPolicy>();
             var ptr = Marshal.AllocHGlobal(size);

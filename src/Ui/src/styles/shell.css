@@ -93,7 +93,8 @@
 :root[data-theme='light'] .toggle:not(.is-on) { background: #d5cedf; border-color: #d5cedf; }
 :root[data-theme='light'] .toggle:not(.is-on) > span { background: #fff; }
 .fps-panel { min-height: 280px; padding-bottom: 15px; }
-.upscaler-card { padding-bottom: 16px; }
+.upscaler-card { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr); column-gap: 20px; padding-bottom: 16px; }
+.upscaler-card-main { min-width: 0; }
 .upscaler-card .panel-heading { margin-bottom: 15px; }
 .feature-badge { padding: 3px 7px; border: 1px solid var(--accent-border); border-radius: 4px; color: var(--accent); font-size: 9px; white-space: nowrap; }
 .upscaler-card-body { display: flex; align-items: center; gap: 12px; min-height: 54px; }
@@ -106,8 +107,9 @@
 .upscaler-card .upscaler-quick-toggle .toggle-row { min-height: 58px; }
 .feature-status { flex-shrink: 0; color: var(--muted); font-size: 10px; }
 .upscaler-card .feature-status { max-width: 42%; white-space: normal; text-align: right; overflow-wrap: anywhere; }
-.upscaler-card-footer { display: flex; align-items: center; gap: 10px; margin: 9px 0 0; padding-top: 9px; border-top: 1px solid var(--border-soft); }
-.upscaler-card-footer p { flex: 1; color: var(--muted); font-size: 9.5px; line-height: 1.6; }
+.upscaler-card-footer { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; min-width: 0; padding-left: 20px; border-left: 1px solid var(--border-soft); }
+.upscaler-card-footer p { color: var(--muted); font-size: 9.5px; line-height: 1.6; }
+.upscaler-card-footer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .button.upscaler-download-button { flex-shrink: 0; min-height: 27px; padding: 4px 8px; gap: 6px; font-size: 9.5px; }
 .settings-upscaler .upscaler-download-button { margin-left: 0; }
 .fps-fields { margin: 0; padding: 0; border: 0; min-width: 0; transition: opacity .2s; }

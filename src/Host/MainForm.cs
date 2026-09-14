@@ -19,6 +19,8 @@ internal sealed partial class MainForm : Form
     private bool _reallyExit;
     private bool _syncingUi;
     private bool _webReady;
+    /// <summary>仅 WebView2 已接管客户区绘制时允许启用亚克力。</summary>
+    internal bool IsWebContentReady => _webReady;
     private bool _suppressResizeHide;
     /// <summary>正在执行最小化→托盘，防止 Resize 重入导致闪烁/连弹。</summary>
     private bool _hidingToTray;

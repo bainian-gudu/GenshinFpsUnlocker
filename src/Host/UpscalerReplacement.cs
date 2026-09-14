@@ -27,6 +27,8 @@ internal sealed class UpscalerReplacement : IDisposable
     private string? _gamePath;
     private DateTime _nextAttemptUtc = DateTime.MinValue;
     private int _attemptedPid;
+    private DateTime _nextVerificationUtc = DateTime.MinValue;
+    private DateTime _proxyInjectUtc = DateTime.MinValue;
 
     public Snapshot State
     {
@@ -92,7 +94,11 @@ internal sealed class UpscalerReplacement : IDisposable
                 _status = _capability.Available ? "等待原神启动" : _capability.Status;
                 return;
             }
-            if (_activePid == pid.Value) return;
+            if (_activePid == pid.Value)
+            {
+                VerifyProxyActivityLocked();
+                return;
+            }
             StopProxyLocked();
             _capability = Inspect(gamePath);
             if (!_capability.Available)
@@ -132,6 +138,7 @@ internal sealed class UpscalerReplacement : IDisposable
                     _activePid = pid.Value;
                     _attemptedPid = pid.Value;
                     _nextAttemptUtc = DateTime.MinValue;
+                    _proxyInjectUtc = DateTime.UtcNow;
                     _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），请查看 OptiScaler.log 确认 FSR2 调用";
                     AppLog.Info($"upscaler proxy injected pid={pid.Value} quality={_quality}");
                 }
@@ -228,16 +235,17 @@ internal sealed class UpscalerReplacement : IDisposable
         if (_activePid == 0) return;
         AppLog.Info($"upscaler replacement stopped pid={_activePid}");
         _activePid = 0;
+        _proxyInjectUtc = DateTime.MinValue;
     }
 
     private static Capability Inspect(string? gamePath)
     {
-        var proxyExists = PathUtil.ExistsFile(AppPaths.UpscalerProxyPath);
+        var proxyExists = IsValidProxy(AppPaths.UpscalerProxyPath, out var proxyError);
         var runtimeExists = PathUtil.ExistsFile(AppPaths.DlssRuntimePath);
         var gameConfigured = GameLocator.IsValidGameExe(gamePath);
 
         var status = !proxyExists
-            ? "缺少超分辨率代理组件"
+            ? proxyError
             : !runtimeExists
                 ? "缺少用户提供的 DLSS Runtime"
                 : !gameConfigured
@@ -250,6 +258,32 @@ internal sealed class UpscalerReplacement : IDisposable
             DlssRuntimePresent: runtimeExists,
             GameConfigured: gameConfigured,
             Status: status);
+    }
+
+    /// <summary>检查代理是否为可加载的 x64 PE DLL，避免仅凭同名空文件误判就绪。</summary>
+    private static bool IsValidProxy(string path, out string error)
+    {
+        error = "缺少超分辨率代理组件（请放入 x64 OptiScaler.dll）";
+        if (!PathUtil.ExistsFile(path)) return false;
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (stream.Length < 4096) { error = "超分辨率代理组件文件过小或已损坏"; return false; }
+            Span<byte> dos = stackalloc byte[64];
+            if (stream.Read(dos) != dos.Length || dos[0] != 'M' || dos[1] != 'Z')
+            { error = "超分辨率代理组件不是有效的 Windows DLL"; return false; }
+            var peOffset = BitConverter.ToInt32(dos[0x3c..0x40]);
+            if (peOffset < 0 || peOffset > stream.Length - 6)
+            { error = "超分辨率代理组件 PE 头无效"; return false; }
+            stream.Position = peOffset;
+            Span<byte> pe = stackalloc byte[6];
+            if (stream.Read(pe) != pe.Length || pe[0] != 'P' || pe[1] != 'E'
+                || pe[2] != 0 || pe[3] != 0 || BitConverter.ToUInt16(pe[4..6]) != 0x8664)
+            { error = "超分辨率代理组件不是 x64 DLL"; return false; }
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception ex) { error = "无法读取超分辨率代理组件：" + ex.Message; return false; }
     }
 
     /// <summary>写入 OptiScaler 的独立配置，使 FSR2 输入走 DLSS 输出。</summary>
@@ -294,6 +328,55 @@ internal sealed class UpscalerReplacement : IDisposable
         "nativeAA" => "DLAA",
         _ => "质量",
     };
+
+    /// <summary>
+    /// 根据 OptiScaler 日志更新可理解的运行状态。模块加载和 Feature 初始化
+    /// 不能单独证明每帧替换成功，只有 Evaluate 成功记录才显示“已确认”。
+    /// </summary>
+    private void VerifyProxyActivityLocked()
+    {
+        if (DateTime.UtcNow < _nextVerificationUtc)
+            return;
+        _nextVerificationUtc = DateTime.UtcNow.AddSeconds(2);
+
+        var candidates = new List<string> { Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.log") };
+        var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(gameDirectory))
+            candidates.Add(Path.Combine(gameDirectory, "OptiScaler.log"));
+        var logPath = candidates.FirstOrDefault(PathUtil.ExistsFile);
+        if (logPath is null)
+            return;
+
+        try
+        {
+            var info = new FileInfo(logPath);
+            if (_proxyInjectUtc != DateTime.MinValue && info.LastWriteTimeUtc < _proxyInjectUtc.AddSeconds(-2))
+                return; // 旧日志中的 Evaluate 成功不能证明本次游戏已替换。
+            var length = Math.Min(info.Length, 128 * 1024);
+            using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            stream.Seek(-length, SeekOrigin.End);
+            using var reader = new StreamReader(stream);
+            var tail = reader.ReadToEnd();
+            if (tail.Contains("_EvaluateFeature ok!", StringComparison.OrdinalIgnoreCase))
+            {
+                _status = $"超分辨率替换已确认（Evaluate 成功，{QualityLabel(_quality)}）";
+            }
+            else if (tail.Contains("_EvaluateFeature result", StringComparison.OrdinalIgnoreCase)
+                     || tail.Contains("_EvaluateFeature is nullptr", StringComparison.OrdinalIgnoreCase))
+            {
+                _status = "代理已加载，但 Evaluate 失败，请检查 OptiScaler 日志";
+            }
+            else if (tail.Contains("Creating DLSS feature", StringComparison.OrdinalIgnoreCase)
+                     || tail.Contains("init successful", StringComparison.OrdinalIgnoreCase))
+            {
+                _status = "DLSS 功能已创建，等待实际渲染调用";
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug("读取 OptiScaler 日志失败: " + ex.Message);
+        }
+    }
 
     internal sealed record Snapshot(
         bool Enabled,

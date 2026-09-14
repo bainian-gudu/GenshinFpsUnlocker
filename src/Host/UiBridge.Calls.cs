@@ -134,6 +134,21 @@ internal sealed partial class UiBridge
             case "downloadDlssRuntime":
                 return DownloadDlssRuntimeAsync();
 
+            case "openUpscalerFolder":
+            {
+                try
+                {
+                    Directory.CreateDirectory(AppPaths.UpscalerDirectory);
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = AppPaths.UpscalerDirectory,
+                        UseShellExecute = true,
+                    });
+                }
+                catch (Exception ex) { throw new InvalidOperationException("无法打开超分组件目录：" + ex.Message, ex); }
+                return Task.FromResult<object?>(true);
+            }
+
             case "getLogs":
                 return Task.FromResult<object?>(ReadRecentLogs());
 
