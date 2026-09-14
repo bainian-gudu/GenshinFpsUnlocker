@@ -49,6 +49,7 @@ internal sealed partial class UnlockService
                     {
                         SetAttached(0);
                         Volatile.Write(ref _injectAttemptedPid, 0);
+                        Volatile.Write(ref _needsAdminHint, 0);
                         _injectFailStreak = 0;
                         SetStatus("游戏已退出 — 继续后台等待");
                         AppLog.Info("game process exited");
@@ -170,6 +171,14 @@ internal sealed partial class UnlockService
                 AppLog.Info($"inject begin pid={process.Id} stub={_stubPath}");
                 if (!DllInjector.TryInject(process, _stubPath, out var error))
                 {
+                    // 标准用户启动时不要预先显示 UAC 提示；只有实际收到拒绝访问
+                    // 才提示一次，避免每次重启软件都要求重新授权管理员权限。
+                    if (error.Contains("(5)", StringComparison.OrdinalIgnoreCase)
+                        || error.Contains("拒绝", StringComparison.OrdinalIgnoreCase)
+                        || error.Contains("Access denied", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Volatile.Write(ref _needsAdminHint, 1);
+                    }
                     _injectFailStreak++;
                     var backoff = Math.Min(60, 5 * _injectFailStreak);
                     _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(backoff);
@@ -183,6 +192,7 @@ internal sealed partial class UnlockService
                 }
 
                 _injectFailStreak = 0;
+                Volatile.Write(ref _needsAdminHint, 0);
                 _nextInjectAttemptUtc = DateTime.MinValue;
                 AppLog.Info($"inject OK pid={process.Id}, waiting stub ready…");
                 Volatile.Write(ref _injectAttemptedPid, process.Id);

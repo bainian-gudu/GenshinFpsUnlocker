@@ -21,6 +21,8 @@ internal sealed partial class UnlockService : IDisposable
     private int _injectAttemptedPid;
     /// <summary>连续注入失败次数，用于指数退避。</summary>
     private int _injectFailStreak;
+    /// <summary>最近一次注入确实因权限被拒绝，才提示用户提权。</summary>
+    private int _needsAdminHint;
     private string _statusText = "空闲 — 等待游戏启动";
     private string _gamePathStatus = "";
     private bool _disposed;
@@ -41,6 +43,7 @@ internal sealed partial class UnlockService : IDisposable
     public string StatusText => Volatile.Read(ref _statusText);
     public string GamePathStatus => Volatile.Read(ref _gamePathStatus);
     public int AttachedPid => Volatile.Read(ref _attachedPid);
+    public bool NeedsAdminForUnlock => Volatile.Read(ref _needsAdminHint) != 0;
     public IpcStatus StubStatus => _ipc.Read().Status;
     public int CurrentFpsFeedback => _ipc.Read().CurrentFps;
 
