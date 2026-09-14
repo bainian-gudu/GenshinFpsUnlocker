@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, WandSparkles } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
 import { FpsControl } from '../components/FpsControl';
 import { PageHeading, ToggleRow } from '../components/ui';
@@ -20,7 +20,18 @@ export function OverviewPage({ app }: { app: AppState }) {
         <motion.div className="hero-copy" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}><h2>Genshin FPS Unlocker</h2><h3>让每一帧，都不被设限。</h3><p>更高帧率，更自在的冒险。以你喜欢的节奏，探索提瓦特。</p><button className="hero-guide" onClick={() => navigate('guide')}>初次使用？从这里开始<ArrowRight size={14} /></button></motion.div>
       </section>
       <motion.div className="overview-controls" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
-        <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
+        <div className="overview-left-stack">
+          <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
+          <section className="control-panel upscaler-card" aria-label="超分辨率替换">
+            <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
+            <div className="upscaler-card-body">
+              <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
+              <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>独立代理组件正在适配原神渲染接口，完成验证后可在这里启用。</p></div>
+              <span className="feature-status">准备中</span>
+            </div>
+            <p className="upscaler-card-note">需要 NVIDIA RTX 显卡、兼容驱动和用户提供的官方 DLSS Runtime；不会改变帧率解锁与反虚化注入。</p>
+          </section>
+        </div>
         <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows"><ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后自动应用设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} /><ToggleRow icon={WandSparkles} title="反角色虚化" description="镜头拉近时角色不再透明化" checked={config.antiBlurPerspective} onChange={(value) => updateConfig('antiBlurPerspective', value)} /><ToggleRow icon={WandSparkles} title="移除水下马赛克" description="角色入水时不再显示马赛克虚化" checked={config.antiBlurDiveMosaic} onChange={(value) => updateConfig('antiBlurDiveMosaic', value)} /><ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后在后台运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} /><ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后下次启动直接进托盘；关窗/最小化始终会藏到托盘" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} /></div></section>
       </motion.div>
       <motion.section className={`game-launch-panel ${launchState !== 'idle' || attachedPid > 0 ? 'session-active' : ''}`} aria-label="游戏与启动" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
