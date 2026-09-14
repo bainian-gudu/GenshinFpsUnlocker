@@ -29,6 +29,8 @@ internal sealed class UpscalerReplacement : IDisposable
     private int _attemptedPid;
     private DateTime _nextVerificationUtc = DateTime.MinValue;
     private DateTime _proxyInjectUtc = DateTime.MinValue;
+    private string? _forwardedLogPath;
+    private long _forwardedLogOffset;
 
     public Snapshot State
     {
@@ -139,6 +141,7 @@ internal sealed class UpscalerReplacement : IDisposable
                     _attemptedPid = pid.Value;
                     _nextAttemptUtc = DateTime.MinValue;
                     _proxyInjectUtc = DateTime.UtcNow;
+                    InitializeOptiScalerLogForwardingLocked();
                     _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），请查看 OptiScaler.log 确认 FSR2 调用";
                     AppLog.Info($"upscaler proxy injected pid={pid.Value} quality={_quality}");
                 }
@@ -236,6 +239,8 @@ internal sealed class UpscalerReplacement : IDisposable
         AppLog.Info($"upscaler replacement stopped pid={_activePid}");
         _activePid = 0;
         _proxyInjectUtc = DateTime.MinValue;
+        _forwardedLogPath = null;
+        _forwardedLogOffset = 0;
     }
 
     private static Capability Inspect(string? gamePath)
@@ -350,6 +355,7 @@ internal sealed class UpscalerReplacement : IDisposable
         try
         {
             var info = new FileInfo(logPath);
+            ForwardOptiScalerLogLocked(logPath, info.Length);
             if (_proxyInjectUtc != DateTime.MinValue && info.LastWriteTimeUtc < _proxyInjectUtc.AddSeconds(-2))
                 return; // 旧日志中的 Evaluate 成功不能证明本次游戏已替换。
             var length = Math.Min(info.Length, 128 * 1024);
@@ -377,6 +383,73 @@ internal sealed class UpscalerReplacement : IDisposable
             AppLog.Debug("读取 OptiScaler 日志失败: " + ex.Message);
         }
     }
+
+    /// <summary>从代理注入时刻开始转发新增的关键日志，供软件运行日志统一查看。</summary>
+    private void InitializeOptiScalerLogForwardingLocked()
+    {
+        _forwardedLogPath = null;
+        _forwardedLogOffset = 0;
+        var candidates = new List<string>
+        {
+            Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.log"),
+        };
+        var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(gameDirectory))
+            candidates.Add(Path.Combine(gameDirectory, "OptiScaler.log"));
+        var path = candidates.FirstOrDefault(PathUtil.ExistsFile);
+        if (path is null) return;
+        try
+        {
+            _forwardedLogPath = path;
+            _forwardedLogOffset = new FileInfo(path).Length;
+        }
+        catch { /* 日志转发失败不影响代理注入 */ }
+    }
+
+    private void ForwardOptiScalerLogLocked(string path, long length)
+    {
+        try
+        {
+            if (!string.Equals(_forwardedLogPath, path, StringComparison.OrdinalIgnoreCase)
+                || length < _forwardedLogOffset)
+            {
+                _forwardedLogPath = path;
+                _forwardedLogOffset = 0;
+            }
+            if (length <= _forwardedLogOffset) return;
+
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            stream.Seek(_forwardedLogOffset, SeekOrigin.Begin);
+            using var reader = new StreamReader(stream);
+            var forwarded = 0;
+            while (forwarded < 32 && reader.ReadLine() is { } line)
+            {
+                if (line.Length == 0 || !IsRelevantOptiScalerLog(line)) continue;
+                var level = line.Contains("error", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("fail", StringComparison.OrdinalIgnoreCase)
+                    || line.Contains("nullptr", StringComparison.OrdinalIgnoreCase)
+                    ? "Warn" : "Info";
+                if (level == "Warn") AppLog.Warn("[OptiScaler] " + line);
+                else AppLog.Info("[OptiScaler] " + line);
+                forwarded++;
+            }
+            _forwardedLogOffset = length;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug("转发 OptiScaler 日志失败: " + ex.Message);
+        }
+    }
+
+    private static bool IsRelevantOptiScalerLog(string line) =>
+        line.Contains("Evaluate", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("DLSS", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("FSR", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("upscal", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("feature", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("init", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("error", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("fail", StringComparison.OrdinalIgnoreCase);
 
     internal sealed record Snapshot(
         bool Enabled,
