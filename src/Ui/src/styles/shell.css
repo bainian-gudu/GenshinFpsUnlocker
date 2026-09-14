@@ -79,6 +79,7 @@
 .hero-guide:hover svg { transform: translateX(4px); }
 .overview-controls { display: grid; grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr); gap: 20px; margin-top: 20px; }
 .overview-left-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.overview-right-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .control-panel { min-width: 0; padding: 20px 22px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 23px; margin-bottom: 10px; }
 .panel-heading h2 { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 500; line-height: 1.7; white-space: nowrap; }
@@ -100,14 +101,15 @@
 .upscaler-card-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 8px; }
 .upscaler-card-copy { min-width: 0; flex: 1; }
 .upscaler-card-copy strong { display: block; color: var(--text); font-size: 12px; font-weight: 550; }
-.upscaler-card-copy p, .upscaler-card-note { color: var(--muted); font-size: 10px; line-height: 1.7; }
+.upscaler-card-copy p { color: var(--muted); font-size: 10px; line-height: 1.7; }
 .upscaler-card-copy p { margin-top: 3px; }
 .upscaler-card .upscaler-quick-toggle { margin-top: 9px; }
 .upscaler-card .upscaler-quick-toggle .toggle-row { min-height: 58px; }
 .feature-status { flex-shrink: 0; color: var(--muted); font-size: 10px; }
 .upscaler-card .feature-status { max-width: 42%; white-space: normal; text-align: right; overflow-wrap: anywhere; }
-.upscaler-card-note { margin: 13px 0 0 52px; padding-top: 11px; border-top: 1px solid var(--border-soft); }
-.upscaler-download-button { margin: 13px 0 0 52px; min-height: 30px; padding: 0 10px; font-size: 10px; }
+.upscaler-download-panel { padding: 16px 22px; }
+.upscaler-download-panel p { color: var(--muted); font-size: 10px; line-height: 1.7; }
+.upscaler-download-button { margin-top: 11px; min-height: 30px; padding: 0 10px; font-size: 10px; }
 .settings-upscaler .upscaler-download-button { margin-left: 0; }
 .fps-fields { margin: 0; padding: 0; border: 0; min-width: 0; transition: opacity .2s; }
 .fps-fields:disabled { opacity: .45; }

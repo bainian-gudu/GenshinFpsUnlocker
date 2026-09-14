@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
 
@@ -5,7 +7,7 @@ namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
 /// 超分辨率替换组件的能力检测。
-/// 该组件只负责发现独立代理与运行库，不参与 FPS/反虚化注入，也不向游戏进程写入任何内容。
+/// 该组件只负责管理独立代理与运行库，不参与 FPS/反虚化注入。
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
@@ -23,6 +25,8 @@ internal sealed class UpscalerReplacement : IDisposable
     // 保存最近一次配置的游戏路径。下载运行库完成后重新检测时必须沿用该路径，
     // 否则 Inspect(null) 会把「已设置游戏路径」错误地显示为未设置。
     private string? _gamePath;
+    private DateTime _nextAttemptUtc = DateTime.MinValue;
+    private int _attemptedPid;
 
     public Snapshot State
     {
@@ -41,6 +45,7 @@ internal sealed class UpscalerReplacement : IDisposable
         {
             _enabled = enabled;
             _gamePath = gamePath;
+            var previousQuality = _quality;
             if (!string.IsNullOrWhiteSpace(quality)
                 && AppConfig.UpscalerQualityValues.Contains(quality, StringComparer.OrdinalIgnoreCase))
             {
@@ -52,6 +57,13 @@ internal sealed class UpscalerReplacement : IDisposable
             {
                 StopProxyLocked();
                 _status = "替换功能已关闭";
+                return;
+            }
+            if (_activePid != 0 && !string.Equals(previousQuality, _quality, StringComparison.Ordinal))
+            {
+                // OptiScaler 在 DLL 加载时读取 ini，运行中的代理不能安全热重载。
+                // 保留当前会话，新的挡位从下一次游戏启动开始使用。
+                _status = $"挡位已更新为 {QualityLabel(_quality)}，下次启动游戏时生效";
                 return;
             }
             _status = _capability.Status;
@@ -74,6 +86,8 @@ internal sealed class UpscalerReplacement : IDisposable
             if (pid is null)
             {
                 StopProxyLocked();
+                _attemptedPid = 0;
+                _nextAttemptUtc = DateTime.MinValue;
                 _capability = Inspect(gamePath);
                 _status = _capability.Available ? "等待原神启动" : _capability.Status;
                 return;
@@ -81,8 +95,61 @@ internal sealed class UpscalerReplacement : IDisposable
             if (_activePid == pid.Value) return;
             StopProxyLocked();
             _capability = Inspect(gamePath);
-            // DX11/DX12 代理尚未接入时不能宣称替换已生效，也不能复用 FPS Stub 的附着状态。
-            _status = _capability.Status;
+            if (!_capability.Available)
+            {
+                _status = _capability.Status;
+                return;
+            }
+            if (_attemptedPid == pid.Value && DateTime.UtcNow < _nextAttemptUtc)
+                return;
+
+            if (!ModuleTrust.IsTrustworthy(AppPaths.UpscalerProxyPath, Path.GetFileName(AppPaths.UpscalerProxyPath),
+                    "超分辨率代理", out var trustError,
+                    elevatedHint: "请把程序安装到 Program Files 下，或退出管理员实例后以普通权限运行。"))
+            {
+                _status = trustError;
+                _attemptedPid = pid.Value;
+                _nextAttemptUtc = DateTime.UtcNow.AddSeconds(60);
+                return;
+            }
+
+            try
+            {
+                try
+                {
+                    EnsureOptiScalerConfigLocked();
+                }
+                catch (Exception configError)
+                {
+                    // 配置文件写入失败时仍尝试加载代理；代理内置默认值可继续工作，
+                    // 同时把原因记录下来，避免因安装目录只读而完全失去替换能力。
+                    AppLog.Warn("OptiScaler 配置写入失败，将使用现有配置: " + configError.Message);
+                }
+                using var process = Process.GetProcessById(pid.Value);
+                if (process.HasExited) return;
+                if (DllInjector.TryInject(process, AppPaths.UpscalerProxyPath, out var error, "超分辨率代理"))
+                {
+                    _activePid = pid.Value;
+                    _attemptedPid = pid.Value;
+                    _nextAttemptUtc = DateTime.MinValue;
+                    _status = $"超分辨率代理已注入 PID {pid.Value}（{QualityLabel(_quality)}）";
+                    AppLog.Info($"upscaler proxy injected pid={pid.Value} quality={_quality}");
+                }
+                else
+                {
+                    _attemptedPid = pid.Value;
+                    _nextAttemptUtc = DateTime.UtcNow.AddSeconds(15);
+                    _status = $"超分辨率代理注入失败：{error}";
+                    AppLog.Warn($"upscaler proxy injection failed pid={pid.Value}: {error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _attemptedPid = pid.Value;
+                _nextAttemptUtc = DateTime.UtcNow.AddSeconds(15);
+                _status = $"超分辨率代理注入失败：{ex.Message}";
+                AppLog.Warn("upscaler proxy injection exception: " + ex.Message);
+            }
         }
     }
 
@@ -175,15 +242,58 @@ internal sealed class UpscalerReplacement : IDisposable
                 ? "缺少用户提供的 DLSS Runtime"
                 : !gameConfigured
                     ? "请先设置游戏路径"
-                    : "组件已就绪，等待渲染接口适配";
+                : "组件已就绪，等待原神启动";
 
         return new Capability(
-            Available: false,
+            Available: proxyExists && runtimeExists && gameConfigured,
             ProxyPresent: proxyExists,
             DlssRuntimePresent: runtimeExists,
             GameConfigured: gameConfigured,
             Status: status);
     }
+
+    /// <summary>写入 OptiScaler 的独立配置，使 FSR2 输入走 DLSS 输出。</summary>
+    private void EnsureOptiScalerConfigLocked()
+    {
+        Directory.CreateDirectory(AppPaths.UpscalerDirectory);
+        var ratio = _quality switch
+        {
+            "balanced" => 1.7,
+            "performance" => 2.0,
+            "ultraPerformance" => 3.0,
+            "nativeAA" => 1.0,
+            _ => 1.5,
+        };
+        var ratioText = ratio.ToString("0.0", CultureInfo.InvariantCulture);
+        var text = "; 由原神帧率解锁生成，FSR2 输入使用 DLSS 输出\n"
+            + "[Upscalers]\n"
+            + "Dx11Upscaler=dlss\n"
+            + "Dx12Upscaler=dlss\n"
+            + "VulkanUpscaler=dlss\n\n"
+            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
+            + "[DLSS]\nEnabled=true\n\n"
+            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
+            + "[QualityOverrides]\nQualityRatioOverrideEnabled=true\n"
+            + $"QualityRatioDLAA={ratioText}\n"
+            + $"QualityRatioUltraQuality={ratioText}\n"
+            + $"QualityRatioQuality={ratioText}\n"
+            + $"QualityRatioBalanced={ratioText}\n"
+            + $"QualityRatioPerformance={ratioText}\n"
+            + $"QualityRatioUltraPerformance={ratioText}\n";
+        var path = Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.ini");
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
+        File.Move(temp, path, true);
+    }
+
+    private static string QualityLabel(string quality) => quality switch
+    {
+        "balanced" => "均衡",
+        "performance" => "性能",
+        "ultraPerformance" => "超高性能",
+        "nativeAA" => "DLAA",
+        _ => "质量",
+    };
 
     internal sealed record Snapshot(
         bool Enabled,

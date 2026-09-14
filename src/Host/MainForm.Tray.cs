@@ -14,6 +14,8 @@ internal sealed partial class MainForm
     private ToolStripMenuItem? _trayAutoWatchItem;
     private ToolStripMenuItem? _trayAntiBlurPerspectiveItem;
     private ToolStripMenuItem? _trayAntiBlurDiveMosaicItem;
+    private ToolStripMenuItem? _trayUpscalerEnabledItem;
+    private ToolStripMenuItem? _trayUpscalerQualityRoot;
     private ToolStripMenuItem? _trayFpsRoot;
     private ContextMenuStrip? _trayMenu;
     private Icon? _trayIconOwned;
@@ -118,6 +120,8 @@ internal sealed partial class MainForm
                     _trayAntiBlurPerspectiveItem.Checked = _config.AntiBlurPerspective;
                 if (_trayAntiBlurDiveMosaicItem is not null)
                     _trayAntiBlurDiveMosaicItem.Checked = _config.AntiBlurDiveMosaic;
+                if (_trayUpscalerEnabledItem is not null)
+                    _trayUpscalerEnabledItem.Checked = _config.UpscalerReplacementEnabled;
 
                 if (_trayFpsRoot is not null)
                 {
@@ -130,6 +134,15 @@ internal sealed partial class MainForm
                         var numPart = txt.Split(' ')[0];
                         if (int.TryParse(numPart, out var fps))
                             mi.Checked = fps == _config.TargetFps;
+                    }
+                }
+                if (_trayUpscalerQualityRoot is not null)
+                {
+                    _trayUpscalerQualityRoot.Text = $"超分挡位  ·  {UpscalerQualityLabel(_config.UpscalerQuality)}";
+                    foreach (ToolStripItem it in _trayUpscalerQualityRoot.DropDownItems)
+                    {
+                        if (it is ToolStripMenuItem mi && mi.Tag is string quality)
+                            mi.Checked = string.Equals(quality, _config.UpscalerQuality, StringComparison.OrdinalIgnoreCase);
                     }
                 }
                 UpdateTrayTip();
@@ -161,5 +174,14 @@ internal sealed partial class MainForm
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..(max - 1)] + "…";
+
+    private static string UpscalerQualityLabel(string quality) => quality switch
+    {
+        "nativeAA" => "DLAA",
+        "balanced" => "均衡",
+        "performance" => "性能",
+        "ultraPerformance" => "超高性能",
+        _ => "质量",
+    };
 
 }

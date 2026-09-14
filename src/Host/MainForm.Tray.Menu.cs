@@ -110,6 +110,29 @@ internal sealed partial class MainForm
         menu.Items.Add(_trayAntiBlurDiveMosaicItem);
         menu.Items.Add(MakeSep());
 
+        // —— 超分辨率替换组（独立于 FPS/反虚化注入）——
+        _trayUpscalerEnabledItem = MakeCheckItem(
+            "超分辨率替换",
+            _config.UpscalerReplacementEnabled,
+            "启动游戏后加载 OptiScaler 代理并将 FSR2 输出到 DLSS");
+        _trayUpscalerEnabledItem.CheckedChanged += (_, _) =>
+        {
+            if (_syncingUi) return;
+            _service.SetUpscalerReplacementEnabled(_trayUpscalerEnabledItem.Checked);
+            AfterTrayConfigChange("超分辨率替换");
+        };
+        menu.Items.Add(_trayUpscalerEnabledItem);
+
+        _trayUpscalerQualityRoot = new ToolStripMenuItem($"超分挡位  ·  {UpscalerQualityLabel(_config.UpscalerQuality)}")
+        {
+            ToolTipText = "选择 DLSS 输出质量挡位",
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+        BuildTrayUpscalerQualityItems();
+        menu.Items.Add(_trayUpscalerQualityRoot);
+        menu.Items.Add(MakeSep());
+
         // —— 退出 ——
         menu.Items.Add(MakeActionItem("退出", (_, _) =>
         {
@@ -207,6 +230,15 @@ internal sealed partial class MainForm
             _trayFpsRoot.DropDown.ForeColor = _trayMenu.ForeColor;
             // 子菜单（帧率预设）是独立的弹出窗口，圆角要单独设一次；可重复调用
             TrayMenuCorners.Apply(_trayFpsRoot.DropDown);
+        }
+        if (_trayUpscalerQualityRoot is not null)
+        {
+            foreach (ToolStripItem it in _trayUpscalerQualityRoot.DropDownItems)
+                StyleTrayItem(it, dark);
+            _trayUpscalerQualityRoot.DropDown.Renderer = new TrayMenuRenderer(dark);
+            _trayUpscalerQualityRoot.DropDown.BackColor = _trayMenu.BackColor;
+            _trayUpscalerQualityRoot.DropDown.ForeColor = _trayMenu.ForeColor;
+            TrayMenuCorners.Apply(_trayUpscalerQualityRoot.DropDown);
         }
 
         TrayMenuCorners.Apply(_trayMenu);
@@ -338,6 +370,40 @@ internal sealed partial class MainForm
         custom.Click += (_, _) => ShowCustomFpsDialog();
         _trayFpsRoot.DropDownItems.Add(custom);
 
+        try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
+    }
+
+    private void BuildTrayUpscalerQualityItems()
+    {
+        if (_trayUpscalerQualityRoot is null) return;
+        _trayUpscalerQualityRoot.DropDownItems.Clear();
+        var options = new[]
+        {
+            (Value: "nativeAA", Label: "DLAA"),
+            (Value: "quality", Label: "质量"),
+            (Value: "balanced", Label: "均衡"),
+            (Value: "performance", Label: "性能"),
+            (Value: "ultraPerformance", Label: "超高性能"),
+        };
+        foreach (var option in options)
+        {
+            var item = new ToolStripMenuItem(option.Label)
+            {
+                Tag = option.Value,
+                Checked = string.Equals(_config.UpscalerQuality, option.Value, StringComparison.OrdinalIgnoreCase),
+                CheckOnClick = false,
+                Padding = TrayItemPadding,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+            item.Click += (_, _) =>
+            {
+                _service.SetUpscalerQuality(option.Value);
+                PushUiAndRefreshTray();
+                var suffix = _service.UpscalerState.Active ? "，下次启动游戏时生效" : string.Empty;
+                ShowTrayBalloon("超分挡位", $"已设置为 {option.Label}{suffix}");
+            };
+            _trayUpscalerQualityRoot.DropDownItems.Add(item);
+        }
         try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
     }
 }

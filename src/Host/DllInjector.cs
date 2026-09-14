@@ -5,7 +5,7 @@ using System.Text;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 将 FpsUnlockerStub.dll 注入到游戏进程。
+/// 将受信任的原生模块注入到游戏进程。
 /// 主路径：CreateRemoteThread + LoadLibraryW（Unicode，中文目录可用）。
 /// 备用路径：SetWindowsHookEx（需导出 WndProc）。
 /// </summary>
@@ -14,7 +14,7 @@ internal static class DllInjector
     /// <summary>
     /// 尝试注入。成功返回 true；失败时 error 含中文说明。
     /// </summary>
-    public static bool TryInject(Process process, string dllPath, out string error)
+    public static bool TryInject(Process process, string dllPath, out string error, string moduleName = "Stub DLL")
     {
         error = string.Empty;
         var fullDll = PathUtil.Normalize(dllPath);
@@ -22,12 +22,12 @@ internal static class DllInjector
 
         if (!PathUtil.ExistsFile(fullDll))
         {
-            error = $"Stub DLL 不存在: {fullDll}";
+            error = $"{moduleName} 不存在: {fullDll}";
             AppLog.Error(error);
             return false;
         }
 
-        // 已加载的 Stub 通过共享内存的 None 请求重新初始化。
+        // 已加载的模块无需重复加载；FPS Stub 的状态由共享内存维护。
         // 重复 LoadLibrary 只会增加引用计数，不会再次执行 DllMain。
         if (IsModuleLoaded(process.Id, fullDll, Path.GetFileName(fullDll)))
             return true;
