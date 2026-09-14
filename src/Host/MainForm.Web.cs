@@ -94,10 +94,6 @@ internal sealed partial class MainForm : Form
             AppLog.Info("Web UI ready");
         };
 
-        // DOM 已完成且 React 脚本已执行时即可显示页面，不必等待图片等资源全部下载完。
-        // NavigationCompleted 仍负责最终状态同步和失败兜底。
-        core.DOMContentLoaded += (_, _) => HideWebLoadingSurface();
-
         core.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
