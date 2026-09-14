@@ -18,7 +18,8 @@ internal sealed partial class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            DefaultBackgroundColor = UiStyle.UiLightBg,
+            // 透明背景交给窗口亚克力层；深色主题切换时会同步为不透明色。
+            DefaultBackgroundColor = Color.FromArgb(0, UiStyle.UiLightBg),
         };
         _webEnvironmentTask = CreateWebEnvironmentAsync();
         Controls.Add(_webView);
@@ -26,7 +27,7 @@ internal sealed partial class MainForm : Form
         _webLoadingSurface = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = UiStyle.UiLightBg,
+            BackColor = Color.FromArgb(0xB8, UiStyle.UiLightBg),
         };
         _webLoadingText = new Label
         {
@@ -253,19 +254,25 @@ internal sealed partial class MainForm : Form
         {
             try
             {
+                // 顶层窗体保留可绘制底色，透明材质由窗口合成属性提供。
                 BackColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
                 try
                 {
-                    _webView.DefaultBackgroundColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+                    _webView.DefaultBackgroundColor = dark
+                        ? UiStyle.UiDarkBg
+                        : Color.FromArgb(0, UiStyle.UiLightBg);
                 }
                 catch { /* ignore */ }
                 try
                 {
-                    _webLoadingSurface.BackColor = dark ? UiStyle.UiDarkBg : UiStyle.UiLightBg;
+                    _webLoadingSurface.BackColor = dark
+                        ? UiStyle.UiDarkBg
+                        : Color.FromArgb(0xB8, UiStyle.UiLightBg);
                     _webLoadingText.ForeColor = dark ? UiStyle.UiDarkText : UiStyle.UiLightText;
                 }
                 catch { /* ignore */ }
                 UiStyle.ApplyTitleBarChrome(this, dark);
+                UiStyle.ApplyBackdrop(this, dark);
                 try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
             }
             catch (Exception ex) { AppLog.Debug("ApplyWebChromeTheme: " + ex.Message); }

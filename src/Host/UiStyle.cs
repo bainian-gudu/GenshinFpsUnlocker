@@ -4,7 +4,7 @@ using Microsoft.Win32;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 界面跟随系统：字体用 SystemFonts；主窗标题栏跟随 Web UI 深/浅色（与 #121319 / #f5f5f8 一致）。
+/// 界面跟随系统：字体用 SystemFonts；主窗标题栏跟随 Web UI 深/浅色。
 /// </summary>
 internal static class UiStyle
 {
@@ -137,7 +137,12 @@ internal static class UiStyle
         catch { /* ignore */ }
 
         ApplyTitleBarChrome(form, _uiDark);
-        form.HandleCreated += (_, _) => ApplyTitleBarChrome(form, _uiDark);
+        ApplyBackdrop(form, _uiDark);
+        form.HandleCreated += (_, _) =>
+        {
+            ApplyTitleBarChrome(form, _uiDark);
+            ApplyBackdrop(form, _uiDark);
+        };
     }
 
     /// <summary>
@@ -156,6 +161,7 @@ internal static class UiStyle
                     try
                     {
                         ApplyTitleBarChrome(f, dark);
+                        ApplyBackdrop(f, dark);
                         // 主窗客户区与 WebView 默认底对齐，避免露白/露黑边
                         if (f is MainForm)
                         {
@@ -219,8 +225,33 @@ internal static class UiStyle
     private const int DWMWA_CAPTION_COLOR = 35;
     private const int DWMWA_TEXT_COLOR = 36;
 
+    // Windows 10/11 的窗口合成：浅色主题使用透明亚克力，深色主题关闭额外合成。
+    private const int WCA_ACCENT = 19;
+    private const int ACCENT_DISABLED = 0;
+    private const int ACCENT_ENABLE_ACRYLICBLURBEHIND = 4;
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowCompositionAttribute")]
+    private static extern bool SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AccentPolicy
+    {
+        public int AccentState;
+        public int AccentFlags;
+        public int GradientColor;
+        public int AnimationId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowCompositionAttributeData
+    {
+        public int Attribute;
+        public IntPtr Data;
+        public int SizeOfData;
+    }
 
     /// <summary>RGB → COLORREF (0x00BBGGRR)。</summary>
     private static int ToColorRef(Color c) => c.R | (c.G << 8) | (c.B << 16);
@@ -270,6 +301,42 @@ internal static class UiStyle
             _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref border, sizeof(int));
         }
         catch { /* ignore */ }
+    }
+
+    /// <summary>为浅色主题启用透明亚克力背景；不支持时保留普通背景。</summary>
+    public static void ApplyBackdrop(Form form, bool dark)
+    {
+        try
+        {
+            if (!form.IsHandleCreated) return;
+            var policy = new AccentPolicy
+            {
+                AccentState = dark ? ACCENT_DISABLED : ACCENT_ENABLE_ACRYLICBLURBEHIND,
+                // AABBGGRR：约 85% 的浅色前景，保留足够的材质透出效果。
+                GradientColor = dark ? 0 : unchecked((int)0xD9FBF7F8),
+            };
+            var size = Marshal.SizeOf<AccentPolicy>();
+            var ptr = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.StructureToPtr(policy, ptr, false);
+                var data = new WindowCompositionAttributeData
+                {
+                    Attribute = WCA_ACCENT,
+                    Data = ptr,
+                    SizeOfData = size,
+                };
+                _ = SetWindowCompositionAttribute(form.Handle, ref data);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug("ApplyBackdrop: " + ex.Message);
+        }
     }
 
 }
