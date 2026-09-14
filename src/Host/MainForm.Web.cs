@@ -18,6 +18,9 @@ internal sealed partial class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
+            // WebView2 是独立的原生子窗口，初始化期间必须隐藏它，
+            // 否则 WinForms 覆盖面板可能被 WebView2 的 HWND 压住。
+            Visible = false,
             // 透明背景交给窗口亚克力层；深色主题切换时会同步为不透明色。
             DefaultBackgroundColor = Color.FromArgb(0, UiStyle.UiLightBg),
         };
@@ -102,6 +105,9 @@ internal sealed partial class MainForm : Form
                 catch { /* 窗体销毁阶段忽略 */ }
                 return;
             }
+            // 先显示已经完成导航的 WebView2，再移除加载面板，避免出现黑窗闪烁。
+            _webView.Visible = true;
+            _webView.BringToFront();
             HideWebLoadingSurface();
             _webReady = true;
             _bridge.PushState();

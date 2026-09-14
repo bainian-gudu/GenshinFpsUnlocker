@@ -132,7 +132,7 @@ internal sealed class UpscalerReplacement : IDisposable
                     _activePid = pid.Value;
                     _attemptedPid = pid.Value;
                     _nextAttemptUtc = DateTime.MinValue;
-                    _status = $"超分辨率代理已注入 PID {pid.Value}（{QualityLabel(_quality)}）";
+                    _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），请查看 OptiScaler.log 确认 FSR2 调用";
                     AppLog.Info($"upscaler proxy injected pid={pid.Value} quality={_quality}");
                 }
                 else
@@ -272,7 +272,7 @@ internal sealed class UpscalerReplacement : IDisposable
             + "VulkanUpscaler=dlss\n\n"
             + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
             + "[DLSS]\nEnabled=true\n\n"
-            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
+            + "[Log]\nLogToFile=true\nLogLevel=1\nLogFileName=OptiScaler.log\nSingleFile=true\n\n"
             + "[QualityOverrides]\nQualityRatioOverrideEnabled=true\n"
             + $"QualityRatioDLAA={ratioText}\n"
             + $"QualityRatioUltraQuality={ratioText}\n"
