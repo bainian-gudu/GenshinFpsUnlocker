@@ -71,7 +71,7 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "LoadLibraryExW")]
     public static extern IntPtr LoadLibraryEx(string lpLibFileName, IntPtr hFile, uint dwFlags);
 
-    // ---- 目标进程模块表（确认注入结果，不依赖被截断的线程退出码）----
+    // ---- 目标进程模块表（仅作辅助诊断；受保护进程可能拒绝枚举）----
     public const uint TH32CS_SNAPMODULE = 0x00000008;
     public const uint TH32CS_SNAPMODULE32 = 0x00000010;
     public static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);

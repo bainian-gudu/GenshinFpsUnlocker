@@ -143,20 +143,26 @@ internal static class DllInjector
                 return false;
             }
 
-            // 线程退出码只有 32 位，而 LoadLibraryW 返回的是 64 位 HMODULE：
-            // DLL 基址低 32 位恰好为 0 时（4 GiB 对齐）会误判成「注入失败」，
-            // 进而触发退避重试和备用 Hook 注入。退出码只写日志，
-            // 成败以「目标进程模块表里有没有这个 DLL」为准。
-            if (Native.GetExitCodeThread(hThread, out var exitCode))
+            // GetExitCodeThread 返回 LoadLibraryW 的低 32 位地址。
+            // 模块枚举在受保护进程中可能因权限或反作弊而失败，不能再把
+            // “模块表中找不到”当作注入失败；后续由 Stub IPC Ready 状态确认。
+            if (!Native.GetExitCodeThread(hThread, out var exitCode))
             {
-                AppLog.Debug($"LoadLibraryW 远程返回值低 32 位=0x{exitCode:X}");
+                error = $"GetExitCodeThread 失败 ({Marshal.GetLastWin32Error()})";
+                return false;
             }
 
-            if (!WaitForModuleInProcess(processId, dllPath, 3000))
+            AppLog.Debug($"LoadLibraryW 远程返回值低 32 位=0x{exitCode:X}");
+            if (exitCode == 0)
             {
-                error = $"目标进程模块表中未出现 {Path.GetFileName(dllPath)} — " +
-                        $"路径可能无法被游戏进程访问，或位数/权限不匹配: {dllPath}";
+                error = "LoadLibraryW 返回空地址，DLL 未能在目标进程加载";
                 return false;
+            }
+
+            if (!WaitForModuleInProcess(processId, dllPath, 1000))
+            {
+                AppLog.Warn($"注入线程已完成，但无法从模块表确认 {Path.GetFileName(dllPath)}；" +
+                            "改由 Stub IPC 状态确认");
             }
 
             return true;
@@ -220,16 +226,20 @@ internal static class DllInjector
             }
 
             // 触发一条消息（WM_NULL），促使系统把 DLL 映射进目标线程
-            Native.PostThreadMessage(threadId, 0, IntPtr.Zero, IntPtr.Zero);
+            if (!Native.PostThreadMessage(threadId, 0, IntPtr.Zero, IntPtr.Zero))
+            {
+                AppLog.Debug($"PostThreadMessage(WM_NULL) 失败 ({Marshal.GetLastWin32Error()})，" +
+                             "Hook 仍可能已在目标线程排队");
+            }
 
             // 给系统一点时间完成映射，再摘 Hook：早摘会导致目标进程拿不到 DLL 路径。
             // 本方法只在后台监视线程上调用，睡这一下不会卡 UI。
             Thread.Sleep(1500);
 
-            if (!WaitForModuleInProcess(process.Id, dllPath, 3000))
+            if (!WaitForModuleInProcess(process.Id, dllPath, 1000))
             {
-                error = $"Hook 注入后目标进程模块表中未出现 {Path.GetFileName(dllPath)}";
-                return false;
+                AppLog.Warn($"Hook 已安装但无法从模块表确认 {Path.GetFileName(dllPath)}；" +
+                            "改由 Stub IPC 状态确认");
             }
 
             return true;
