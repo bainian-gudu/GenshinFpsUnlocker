@@ -24,6 +24,13 @@ internal sealed partial class MainForm : Form
         _webEnvironmentTask = CreateWebEnvironmentAsync();
         Controls.Add(_webView);
 
+        EnsureLoadingSurface();
+    }
+
+    /// <summary>创建冷启动加载层；普通启动提前创建，确保 WebView2 初始化期间文字可见。</summary>
+    private void EnsureLoadingSurface()
+    {
+        if (_webLoadingSurface is not null) return;
         _webLoadingSurface = new Panel
         {
             Dock = DockStyle.Fill,

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Security.Principal;
 using Microsoft.Win32;
 
 namespace GenshinFpsUnlocker.Host;
@@ -20,6 +22,7 @@ internal static class Autostart
     private const string StartupApprovedRunKey =
         @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string ValueName = AppPaths.ProductName;
+    private const string ElevatedTaskName = "GenshinFpsUnlocker.AutoStart";
 
     public static bool IsEnabled()
     {
@@ -130,6 +133,85 @@ internal static class Autostart
     }
 
     public static void Remove() => SetEnabled(false);
+
+    /// <summary>
+    /// 为已授权的管理员进程创建最高权限登录任务。任务计划程序启动不会在登录时再次弹出 UAC。
+    /// </summary>
+    public static bool SyncElevatedTask(bool enabled)
+    {
+        try
+        {
+            var schtasks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe");
+            if (!PathUtil.ExistsFile(schtasks))
+            {
+                AppLog.Warn("未找到 schtasks.exe，无法配置管理员自启动任务");
+                return false;
+            }
+
+            if (!enabled)
+            {
+                RunSchtasks(schtasks, $"/Delete /TN \"{ElevatedTaskName}\" /F", out _);
+                AppLog.Info("管理员自启动任务已删除");
+                return true;
+            }
+
+            if (!Elevation.IsAdministrator())
+            {
+                AppLog.Warn("管理员自启动任务未同步：当前进程不是管理员");
+                return false;
+            }
+
+            var trustError = string.Empty;
+            if (!AppPaths.IsInstalledUnderProgramFiles() ||
+                !ModuleTrust.IsTrustworthy(AppPaths.ExePath, "GenshinFpsUnlocker.exe", "自启动程序", out trustError))
+            {
+                AppLog.Warn("管理员自启动任务被拒绝：" + (trustError ?? "程序目录未受保护"));
+                return false;
+            }
+
+            var userSid = WindowsIdentity.GetCurrent().User?.Value;
+            if (string.IsNullOrWhiteSpace(userSid)) return false;
+            var esc = System.Security.SecurityElement.Escape;
+            var xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n"
+                + "<Task xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n"
+                + $"  <Principals><Principal id=\"Author\"><UserId>{esc(userSid)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>\n"
+                + "  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>\n"
+                + $"  <Actions Context=\"Author\"><Exec><Command>{esc(AppPaths.ExePath)}</Command><Arguments>--autostart --elevated-task</Arguments><WorkingDirectory>{esc(AppPaths.ExeDirectory)}</WorkingDirectory></Exec></Actions>\n"
+                + "</Task>";
+            var xmlPath = Path.Combine(Path.GetTempPath(), AppPaths.ProductName + ".elevated-task.xml");
+            File.WriteAllText(xmlPath, xml, System.Text.Encoding.Unicode);
+            try
+            {
+                var ok = RunSchtasks(schtasks, $"/Create /TN \"{ElevatedTaskName}\" /XML \"{xmlPath}\" /F", out var output);
+                if (!ok) AppLog.Warn("管理员自启动任务创建失败: " + output);
+                else AppLog.Info("管理员自启动任务已同步");
+                return ok;
+            }
+            finally { try { File.Delete(xmlPath); } catch { /* ignore */ } }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Warn("SyncElevatedTask: " + ex.Message);
+            return false;
+        }
+    }
+
+    private static bool RunSchtasks(string fileName, string arguments, out string output)
+    {
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = arguments,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        });
+        if (process is null) { output = "进程启动失败"; return false; }
+        if (!process.WaitForExit(10000)) { try { process.Kill(); } catch { /* ignore */ } output = "执行超时"; return false; }
+        output = (process.StandardError.ReadToEnd() + " " + process.StandardOutput.ReadToEnd()).Trim();
+        return process.ExitCode == 0;
+    }
 
     public static string? GetCommand()
     {

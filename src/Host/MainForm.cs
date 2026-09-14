@@ -45,6 +45,7 @@ internal sealed partial class MainForm : Form
         _config = config;
         _service = service;
         _bridge = new UiBridge(config, service, this);
+        var startMinimized = startMinimizedOverride ?? _config.StartMinimized;
 
         Text = "原神帧率解锁 · Genshin FPS Unlocker";
         Width = 1180;
@@ -60,7 +61,7 @@ internal sealed partial class MainForm : Form
         // 启动进托盘：多管齐下防止「闪几秒再消失」
         // 1) SetVisibleCore 拒绝显示  2) 屏外+透明  3) TOOLWINDOW/NOACTIVATE
         // 4) 不等 Web 就绪，构造末尾即 FinishStartupToTray
-        if (startMinimizedOverride ?? _config.StartMinimized)
+        if (startMinimized)
         {
             _allowVisible = false;
             _startupTrayPending = true;
@@ -77,6 +78,9 @@ internal sealed partial class MainForm : Form
         }
         catch { /* ignore */ }
         UiStyle.ApplyToForm(this);
+
+        if (!startMinimized)
+            EnsureLoadingSurface();
 
         // 托盘必须先于 WebView2 控件和环境创建，登录阶段也要尽快显示。
         WireTrayFallback();

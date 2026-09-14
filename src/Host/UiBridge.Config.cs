@@ -33,7 +33,7 @@ internal sealed partial class UiBridge
             if (p["autoStartWithWindows"] is JsonNode auto)
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
             if (p["autoStartAsAdministrator"] is JsonNode autoAdmin)
-                _config.AutoStartAsAdministrator = autoAdmin.GetValue<bool>();
+                _service.SetAutoStartAsAdministrator(autoAdmin.GetValue<bool>());
             if (p["startMinimized"] is JsonNode min)
                 _config.StartMinimized = min.GetValue<bool>();
             if (p["debugLogging"] is JsonNode dbg)

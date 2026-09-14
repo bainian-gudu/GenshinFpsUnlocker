@@ -296,7 +296,16 @@ internal static class Program
 
         // 自启项同步：配置为真 → 指向当前 exe（路径漂移自愈）；
         // 配置读不到时不删除现有值，避免配置意外丢失导致「重启后自启失败」。
-        try { Autostart.SyncOnStartup(config.AutoStartWithWindows, config.LoadedFromDisk); }
+        try
+        {
+            if (config.AutoStartWithWindows && config.AutoStartAsAdministrator && Elevation.IsAdministrator()
+                && Autostart.SyncElevatedTask(true))
+                Autostart.SetEnabled(false);
+            else if (config.AutoStartWithWindows && config.AutoStartAsAdministrator)
+                AppLog.Info("管理员自启动任务保留现状：等待管理员实例同步");
+            else
+                Autostart.SyncOnStartup(config.AutoStartWithWindows, config.LoadedFromDisk);
+        }
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
         AppLog.Info($"autostart={config.AutoStartWithWindows} cmd={Autostart.GetCommand()}");
 

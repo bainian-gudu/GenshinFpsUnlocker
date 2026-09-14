@@ -190,8 +190,29 @@ internal sealed partial class UnlockService : IDisposable
     {
         _config.AutoStartWithWindows = enabled;
         _config.TrySave(out _);
-        Autostart.SetEnabled(enabled);
+        SyncAutostart();
         Raise(forceUi: true);
+    }
+
+    public void SetAutoStartAsAdministrator(bool enabled)
+    {
+        _config.AutoStartAsAdministrator = enabled;
+        _config.TrySave(out _);
+        SyncAutostart();
+        Raise(forceUi: true);
+    }
+
+    private void SyncAutostart()
+    {
+        if (_config.AutoStartWithWindows && _config.AutoStartAsAdministrator && Elevation.IsAdministrator()
+            && Autostart.SyncElevatedTask(true))
+        {
+            Autostart.SetEnabled(false);
+            return;
+        }
+        if (!_config.AutoStartWithWindows || !_config.AutoStartAsAdministrator)
+            Autostart.SyncElevatedTask(false);
+        Autostart.SetEnabled(_config.AutoStartWithWindows);
     }
 
     /// <summary>刷新游戏路径状态；配置无效且 autoLocateIfMissing 时自动多源查找。</summary>
@@ -286,11 +307,15 @@ internal sealed partial class UnlockService : IDisposable
         try
         {
             var path = PathUtil.Normalize(_config.GamePath!);
+            // 当前宿主已经是管理员时直接 CreateProcess，让子进程继承现有令牌。
+            // 一律交给 ShellExecute 会再次经过 Shell 的兼容性/UAC 判断，导致
+            // 用户已经授权后点击「启动游戏」仍重复弹窗。普通权限下保留
+            // ShellExecute，让游戏自身的 requireAdministrator 清单按系统规则提示。
             var psi = new ProcessStartInfo
             {
                 FileName = path,
                 WorkingDirectory = PathUtil.GetDirectoryNameSafe(path) ?? "",
-                UseShellExecute = true,
+                UseShellExecute = !Elevation.IsAdministrator(),
             };
             Process.Start(psi)?.Dispose();
             message = $"已启动: {path}";
