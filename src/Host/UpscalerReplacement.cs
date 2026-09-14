@@ -292,7 +292,9 @@ internal sealed class UpscalerReplacement : IDisposable
             + "Dx11Upscaler=dlss\n"
             + "Dx12Upscaler=dlss\n"
             + "VulkanUpscaler=dlss\n\n"
-            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
+            // OptiScaler 会把相对路径解析到游戏目录；运行库实际位于程序的
+            // upscaler 子目录，因此必须写绝对路径，避免只加载代理而找不到 DLSS。
+            + $"[Libraries]\nNvngxDlssPath={AppPaths.DlssRuntimePath}\n\n"
             + "[DLSS]\nEnabled=true\n\n"
             + "[Log]\nLogToFile=true\nLogLevel=1\nLogFileName=OptiScaler.log\nSingleFile=true\n\n"
             + "[QualityOverrides]\nQualityRatioOverrideEnabled=true\n"
@@ -355,7 +357,13 @@ internal sealed class UpscalerReplacement : IDisposable
             {
                 _status = "代理已加载，但 Evaluate 失败，请检查 OptiScaler 日志";
             }
+            else if (tail.Contains("nvngx_dlss.dll not found", StringComparison.OrdinalIgnoreCase)
+                     || tail.Contains("disabling DLSS", StringComparison.OrdinalIgnoreCase))
+            {
+                _status = "OptiScaler 已加载，但未找到 DLSS Runtime";
+            }
             else if (tail.Contains("Creating DLSS feature", StringComparison.OrdinalIgnoreCase)
+                     || tail.Contains("Enabling DLSS", StringComparison.OrdinalIgnoreCase)
                      || tail.Contains("init successful", StringComparison.OrdinalIgnoreCase))
             {
                 _status = "DLSS 功能已创建，等待实际渲染调用";

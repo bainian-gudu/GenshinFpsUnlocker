@@ -36,7 +36,6 @@ export function OverviewPage({ app }: { app: AppState }) {
             </div>
             <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
           </div>
-          <div className="upscaler-details"><p>OptiScaler.dll 与 nvngx_dlss.dll 均已随程序内置，无需额外下载或手动放入。进入游戏后按 Insert，查看“FSR 2.X → DLSS”和持续增长的 FrameCount。</p></div>
         </section>
       </motion.div>
       <motion.section className={`game-launch-panel ${launchState !== 'idle' || attachedPid > 0 ? 'session-active' : ''}`} aria-label="游戏与启动" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
