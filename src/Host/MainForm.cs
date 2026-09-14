@@ -40,7 +40,7 @@ internal sealed partial class MainForm : Form
     private CancellationTokenSource? _wakeCts;
     private System.Windows.Forms.Timer? _trayRecoveryTimer;
 
-    public MainForm(AppConfig config, UnlockService service)
+    public MainForm(AppConfig config, UnlockService service, bool? startMinimizedOverride = null)
     {
         _config = config;
         _service = service;
@@ -60,7 +60,7 @@ internal sealed partial class MainForm : Form
         // 启动进托盘：多管齐下防止「闪几秒再消失」
         // 1) SetVisibleCore 拒绝显示  2) 屏外+透明  3) TOOLWINDOW/NOACTIVATE
         // 4) 不等 Web 就绪，构造末尾即 FinishStartupToTray
-        if (_config.StartMinimized)
+        if (startMinimizedOverride ?? _config.StartMinimized)
         {
             _allowVisible = false;
             _startupTrayPending = true;

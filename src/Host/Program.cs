@@ -229,9 +229,6 @@ internal static class Program
 
         var config = earlyConfig ?? AppConfig.Load();
         AppLog.ApplyConfig(config);
-        // 提权重启需要本次显示主窗，但必须保留用户原先的托盘启动偏好。
-        var configuredStartMinimized = config.StartMinimized;
-
         for (var i = 0; i < args.Length; i++)
         {
             if ((args[i] is "--fps" or "-f") && i + 1 < args.Length && int.TryParse(args[i + 1], out var fps))
@@ -241,7 +238,7 @@ internal static class Program
             // 仅 --minimized / -m 强制启动进托盘；--autostart 跟随配置（默认显示窗，可勾选最小化）
             if (args[i] is "--minimized" or "-m")
                 config.StartMinimized = true;
-            if (args[i] is "--show" or "--no-minimize" or "--elevated-restart")
+            if (args[i] is "--show" or "--no-minimize")
                 config.StartMinimized = false;
             if (args[i] is "--master-off")
                 config.MasterEnabled = false;
@@ -322,13 +319,7 @@ internal static class Program
             catch (Exception ex) { AppLog.Warn("刷新快捷方式: " + ex.Message); }
         }
 
-        // --elevated-restart 的 false 只用于本次 MainForm，不能覆盖持久化设置。
-        var runtimeStartMinimized = config.StartMinimized;
-        if (elevatedRestart)
-            config.StartMinimized = configuredStartMinimized;
         if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
-        if (elevatedRestart)
-            config.StartMinimized = runtimeStartMinimized;
         AppLog.Info(
             $"config ok targetFps={config.TargetFps} master={config.MasterEnabled} " +
             $"enabled={config.Enabled} startMin={config.StartMinimized} data={AppPaths.DataDirectory}");
@@ -342,7 +333,7 @@ internal static class Program
             service = new UnlockService(config);
             service.Start();
             AppLog.Info("UnlockService 已启动 — 进入 UI 消息循环");
-            Application.Run(new MainForm(config, service));
+            Application.Run(new MainForm(config, service, elevatedRestart ? false : null));
         }
         finally
         {
