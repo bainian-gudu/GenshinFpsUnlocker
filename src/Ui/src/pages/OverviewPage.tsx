@@ -27,7 +27,7 @@ export function OverviewPage({ app }: { app: AppState }) {
               <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
               <div className="upscaler-card-body">
                 <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
-                <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>使用 OptiScaler Aurora 将 FSR 2.0 替换为 DLSS（代理以 dxgi.dll 部署到游戏目录，启动游戏时自动加载）。</p></div>
+                <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>开启后自动部署代理到游戏目录，启动游戏即可生效。</p></div>
                 <span className="feature-status">{upscaler.status}</span>
               </div>
               <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>

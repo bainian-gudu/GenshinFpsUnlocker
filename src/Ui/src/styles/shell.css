@@ -93,8 +93,8 @@
 .toggle.is-on > span { background: #f9f6ff; }
 :root[data-theme='light'] .toggle:not(.is-on) { background: #d5cedf; border-color: #d5cedf; }
 :root[data-theme='light'] .toggle:not(.is-on) > span { background: #fff; }
-.fps-panel { min-height: 280px; padding-bottom: 15px; }
-.upscaler-shape { position: relative; display: block; flex: 1 1 auto; min-width: 0; min-height: 190px; padding: 20px 22px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.fps-panel { padding-bottom: 15px; }
+.upscaler-shape { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; padding: 20px 22px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
 .upscaler-shape .upscaler-card { height: 100%; box-sizing: border-box; }
 .upscaler-card { min-width: 0; padding: 0; border: 0; background: transparent; }
 .upscaler-card .panel-heading { margin-bottom: 15px; }
@@ -138,10 +138,10 @@
 .fps-presets button:hover:not(:disabled) { border-color: var(--accent-border); color: var(--accent); transform: translateY(-1px); }
 .fps-presets button.selected { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); }
 .fps-feedback { min-height: 15px; color: var(--muted); font-size: 10px; line-height: 1.6; margin-top: 12px; }
-.quick-settings { min-height: 280px; height: 100%; box-sizing: border-box; padding-bottom: 14px; }
+.quick-settings { height: 100%; box-sizing: border-box; padding-bottom: 14px; }
 .quick-settings .panel-heading { margin-bottom: 10px; }
-.quick-settings-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
-.quick-settings-rows .toggle-row:nth-child(-n + 2) { border-top: 0; }
+.quick-settings-rows { display: flex; flex-direction: column; }
+.quick-settings-rows .toggle-row:first-child { border-top: 0; }
 .text-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: transparent; padding: 0; color: var(--accent); font-size: 11.5px; line-height: 1.7; font-weight: 400; transition: color .2s; }
 .text-button:hover { color: var(--accent-hover); }
 .text-button.muted { color: var(--muted); }

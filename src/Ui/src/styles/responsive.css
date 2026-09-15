@@ -7,7 +7,6 @@
   .hero-copy { padding-top: 34px; }
   .hero-copy h2 { font-size: 36px; }
   .overview-controls { margin-top: 24px; gap: 24px; }
-  .fps-panel, .quick-settings { min-height: 291px; }
   .game-launch-panel { margin-top: 24px; min-height: 102px; }
   .hero-guide { margin-top: 25px; }
 }
@@ -94,10 +93,7 @@
   .overview-controls, .settings-game-grid { grid-template-columns: minmax(0, 1fr); }
   .fps-monitor-hint { display: flex; font-size: 10px; }
   .fps-presets button > span { display: inline; font-size: 8px; }
-  .quick-settings { min-height: 255px; }
-  .quick-settings-rows { grid-template-columns: minmax(0, 1fr); }
-  .quick-settings-rows .toggle-row:nth-child(2) { border-top: 1px solid var(--border-soft); }
-  .quick-settings .quick-settings-rows .toggle-row { min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
+  .quick-settings-rows .toggle-row { min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
   .quick-settings .row-icon { display: block; width: 18px; }
   .quick-settings .toggle-row { min-height: 63px; }
   .toggle-row-copy p { font-size: 10.5px; }
@@ -181,14 +177,12 @@
   .hero-guide { margin-top: 20px; font-size: 10px; gap: 8px; }
   .overview-controls { gap: 16px; margin-top: 16px; }
   .control-panel { padding-left: 20px; padding-right: 20px; border-radius: 8px; }
-  .fps-panel { min-height: 281px; }
   .fps-monitor-hint { font-size: 9px; gap: 6px; }
   .fps-presets { gap: 6px; }
   .fps-presets button { font-size: 11px; }
   .fps-presets button > span { display: none; }
   .fps-feedback { font-size: 9px; }
   .toggle-row-copy p { font-size: 10px; }
-  .quick-settings { min-height: 250px; }
   .game-launch-panel { padding: 17px; margin-top: 16px; gap: 12px; border-radius: 8px; }
   .game-info-title { gap: 7px; }
   .game-info-title > h2 { font-size: 14px; }
