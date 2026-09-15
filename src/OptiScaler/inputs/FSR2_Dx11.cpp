@@ -389,6 +389,7 @@ static FfxErrorCode ffxFsr2GetRenderResolutionFromQualityMode_Dx11(uint32_t* ren
 }
 
 #include <atomic>
+#include <type_traits>
 
 // ---------------------------------------------------------------------------
 // GenshinFpsUnlocker patch: multi-module + pattern scan + deferred retry
@@ -419,7 +420,8 @@ static bool TryHookFSR2Dx11Exports(HMODULE mod, const char* label)
     auto tryOne = [&](auto& target, const char* name, auto hook)
     {
         if (target) return;
-        target = (decltype(target)) KernelBaseProxy::GetProcAddress_()(mod, name);
+        target = reinterpret_cast<std::remove_reference_t<decltype(target)>>(
+            KernelBaseProxy::GetProcAddress_()(mod, name));
         if (!target)
         {
             LOG_DEBUG("[{}] {}: not found", label, name);
