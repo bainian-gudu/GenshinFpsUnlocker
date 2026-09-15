@@ -343,7 +343,9 @@ internal sealed class UpscalerReplacement : IDisposable
             + "EnableFsr2Inputs=true\n"
             + "UseFsr2Inputs=true\n"
             + "UseFsr2Dx11Inputs=true\n"
-            + "Fsr2Pattern=false\n"
+            // 原神将 FSR2 静态链接到 UnityPlayer.dll，不导出 ffxFsr2* 符号，
+            // 必须开启内存模式扫描才能找到 FSR2 函数地址。
+            + "Fsr2Pattern=true\n"
             + "\n[Menu]\n"
             + "OverlayMenu=true\n"
             + "ShowFps=true\n"
