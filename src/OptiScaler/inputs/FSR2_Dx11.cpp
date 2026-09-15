@@ -389,25 +389,48 @@ static FfxErrorCode ffxFsr2GetRenderResolutionFromQualityMode_Dx11(uint32_t* ren
 }
 
 #include <atomic>
-#include <thread>
 
 // ---------------------------------------------------------------------------
 // GenshinFpsUnlocker patch: multi-module + pattern scan + deferred retry
 // ---------------------------------------------------------------------------
 static HMODULE FindModuleByName(const wchar_t* name) { return GetModuleHandleW(name); }
 
+static void ResetFSR2Dx11Targets()
+{
+    o_ffxFsr2ContextCreate_Dx11 = nullptr;
+    o_ffxFsr2ContextDispatch_Dx11 = nullptr;
+    o_ffxFsr2ContextDestroy_Dx11 = nullptr;
+    o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = nullptr;
+    o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = nullptr;
+    o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
+}
+
 static bool TryHookFSR2Dx11Exports(HMODULE mod, const char* label)
 {
     if (!mod) return false;
-    bool any = false;
-    DetourTransactionBegin();
+
+    if (DetourTransactionBegin() != NO_ERROR)
+    {
+        LOG_ERROR("[{}] DetourTransactionBegin failed", label);
+        return false;
+    }
     DetourUpdateThread(GetCurrentThread());
 
-    auto tryOne = [&](auto& target, const char* name, auto hook) {
+    auto tryOne = [&](auto& target, const char* name, auto hook)
+    {
         if (target) return;
-        target = (decltype(target))KernelBaseProxy::GetProcAddress_()(mod, name);
-        if (target) { DetourAttach(&(PVOID&)target, hook); any = true; }
-        LOG_DEBUG("[{}] {}: {:X}", label, name, (size_t)target);
+        target = (decltype(target)) KernelBaseProxy::GetProcAddress_()(mod, name);
+        if (!target)
+        {
+            LOG_DEBUG("[{}] {}: not found", label, name);
+            return;
+        }
+
+        const auto attachResult = DetourAttach(&(PVOID&) target, hook);
+        LOG_DEBUG("[{}] {}: {:X}, attach: {}", label, name, (size_t) target, attachResult);
+
+        if (attachResult != NO_ERROR)
+            target = nullptr;
     };
 
     tryOne(o_ffxFsr2ContextCreate_Dx11, "ffxFsr2ContextCreate", ffxFsr2ContextCreate_Dx11);
@@ -417,103 +440,175 @@ static bool TryHookFSR2Dx11Exports(HMODULE mod, const char* label)
     tryOne(o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11, "ffxFsr2GetRenderResolutionFromQualityMode", ffxFsr2GetRenderResolutionFromQualityMode_Dx11);
     tryOne(o_ffxFsr2GetJitterPhaseCount_Dx11, "ffxFsr2GetJitterPhaseCount", ffxFsr2GetJitterPhaseCount_Dx11);
 
-    if (DetourTransactionCommit() != NO_ERROR) {
-        LOG_ERROR("[{}] DetourTransactionCommit failed", label);
-        o_ffxFsr2ContextCreate_Dx11 = nullptr;
-        o_ffxFsr2ContextDispatch_Dx11 = nullptr;
-        o_ffxFsr2ContextDestroy_Dx11 = nullptr;
-        o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = nullptr;
-        o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = nullptr;
-        o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
+    if (!o_ffxFsr2ContextCreate_Dx11 || !o_ffxFsr2ContextDispatch_Dx11 || !o_ffxFsr2ContextDestroy_Dx11)
+    {
+        DetourTransactionAbort();
+        ResetFSR2Dx11Targets();
+        LOG_WARN("[{}] required FSR2 Dx11 exports not found", label);
         return false;
     }
-    return any;
+
+    if (DetourTransactionCommit() != NO_ERROR)
+    {
+        LOG_ERROR("[{}] DetourTransactionCommit failed", label);
+        ResetFSR2Dx11Targets();
+        return false;
+    }
+
+    LOG_INFO("[{}] FSR2 Dx11 exports hooked", label);
+    return true;
 }
 
 static bool TryHookFSR2Dx11ByPattern(HMODULE mod, const char* label)
 {
     if (!mod) return false;
-    bool any = false;
-    DetourTransactionBegin();
-    DetourUpdateThread(GetCurrentThread());
 
-    if (!o_ffxFsr2ContextCreate_Dx11) {
-        std::string_view p("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 40 48 8B FA 48 8B D9");
-        o_ffxFsr2ContextCreate_Dx11 = (PFN_ffxFsr2ContextCreate)scanner::GetAddress(mod, p, 0);
-        if (o_ffxFsr2ContextCreate_Dx11) { DetourAttach(&(PVOID&)o_ffxFsr2ContextCreate_Dx11, ffxFsr2ContextCreate_Dx11); any = true; }
-        LOG_DEBUG("[{}-pat] create: {:X}", label, (size_t)o_ffxFsr2ContextCreate_Dx11);
-    }
-    if (!o_ffxFsr2ContextDispatch_Dx11) {
-        std::string_view p("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 85 C9");
-        o_ffxFsr2ContextDispatch_Dx11 = (PFN_ffxFsr2ContextDispatch)scanner::GetAddress(mod, p, 0);
-        if (o_ffxFsr2ContextDispatch_Dx11) { DetourAttach(&(PVOID&)o_ffxFsr2ContextDispatch_Dx11, ffxFsr2ContextDispatch_Dx11); any = true; }
-        LOG_DEBUG("[{}-pat] dispatch: {:X}", label, (size_t)o_ffxFsr2ContextDispatch_Dx11);
-    }
-    if (!o_ffxFsr2ContextDestroy_Dx11) {
-        std::string_view p("48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 85 C9 74");
-        o_ffxFsr2ContextDestroy_Dx11 = (PFN_ffxFsr2ContextDestroy)scanner::GetAddress(mod, p, 0);
-        if (o_ffxFsr2ContextDestroy_Dx11) { DetourAttach(&(PVOID&)o_ffxFsr2ContextDestroy_Dx11, ffxFsr2ContextDestroy_Dx11); any = true; }
-        LOG_DEBUG("[{}-pat] destroy: {:X}", label, (size_t)o_ffxFsr2ContextDestroy_Dx11);
-    }
+    std::string_view createPattern("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 40 48 8B FA 48 8B D9");
+    std::string_view dispatchPattern("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 85 C9");
+    std::string_view destroyPattern("48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 85 C9 74");
 
-    if (DetourTransactionCommit() != NO_ERROR) {
-        o_ffxFsr2ContextCreate_Dx11 = nullptr;
-        o_ffxFsr2ContextDispatch_Dx11 = nullptr;
-        o_ffxFsr2ContextDestroy_Dx11 = nullptr;
+    auto create = (PFN_ffxFsr2ContextCreate) scanner::GetAddress(mod, createPattern, 0);
+    auto dispatch = (PFN_ffxFsr2ContextDispatch) scanner::GetAddress(mod, dispatchPattern, 0);
+    auto destroy = (PFN_ffxFsr2ContextDestroy) scanner::GetAddress(mod, destroyPattern, 0);
+
+    LOG_DEBUG("[{}-pat] create: {:X}, dispatch: {:X}, destroy: {:X}", label, (size_t) create, (size_t) dispatch,
+              (size_t) destroy);
+
+    if (!create || !dispatch || !destroy)
+        return false;
+
+    if (DetourTransactionBegin() != NO_ERROR)
+    {
+        LOG_ERROR("[{}-pat] DetourTransactionBegin failed", label);
         return false;
     }
-    return any;
+    DetourUpdateThread(GetCurrentThread());
+
+    const auto createAttach = DetourAttach(&(PVOID&) create, ffxFsr2ContextCreate_Dx11);
+    const auto dispatchAttach = DetourAttach(&(PVOID&) dispatch, ffxFsr2ContextDispatch_Dx11);
+    const auto destroyAttach = DetourAttach(&(PVOID&) destroy, ffxFsr2ContextDestroy_Dx11);
+
+    if (createAttach != NO_ERROR || dispatchAttach != NO_ERROR || destroyAttach != NO_ERROR)
+    {
+        DetourTransactionAbort();
+        LOG_WARN("[{}-pat] DetourAttach failed: create {}, dispatch {}, destroy {}", label, createAttach,
+                 dispatchAttach, destroyAttach);
+        return false;
+    }
+
+    if (DetourTransactionCommit() != NO_ERROR)
+    {
+        LOG_ERROR("[{}-pat] DetourTransactionCommit failed", label);
+        return false;
+    }
+
+    o_ffxFsr2ContextCreate_Dx11 = create;
+    o_ffxFsr2ContextDispatch_Dx11 = dispatch;
+    o_ffxFsr2ContextDestroy_Dx11 = destroy;
+
+    LOG_INFO("[{}-pat] FSR2 Dx11 pattern hooks installed", label);
+    return true;
 }
 
 static std::atomic<bool> _deferredScheduled{false};
+
+static bool HasUnityPlayerDllOnDisk()
+{
+    auto unityPath = Util::ExePath().remove_filename() / L"UnityPlayer.dll";
+    return GetFileAttributesW(unityPath.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+static bool TryHookFSR2Dx11Module(HMODULE mod, const char* label)
+{
+    if (TryHookFSR2Dx11Exports(mod, label))
+        return true;
+
+    if (!Config::Instance()->Fsr2Pattern.value_or_default())
+        return false;
+
+    LOG_INFO("[fsr2] pattern scanning {}", label);
+    spdlog::default_logger()->flush();
+    return TryHookFSR2Dx11ByPattern(mod, label);
+}
+
 static void DeferredHookThread()
 {
-    LOG_INFO("[deferred] FSR2 Dx11 retry thread started");
-    HMODULE unity = nullptr;
-    for (int i = 0; i < 60 && !unity; i++) { Sleep(500); unity = FindModuleByName(L"UnityPlayer.dll"); }
-    if (!unity) { LOG_WARN("[deferred] UnityPlayer.dll not found after 30s"); _deferredScheduled = false; return; }
-    LOG_INFO("[deferred] UnityPlayer.dll found, trying exports");
-    if (TryHookFSR2Dx11Exports(unity, "UnityPlayer-def")) { State::Instance().fsrHooks = true; _deferredScheduled = false; return; }
-    if (Config::Instance()->Fsr2Pattern.value_or_default()) {
-        LOG_INFO("[deferred] trying pattern on UnityPlayer.dll");
-        if (TryHookFSR2Dx11ByPattern(unity, "UnityPlayer-def")) { State::Instance().fsrHooks = true; _deferredScheduled = false; return; }
+    LOG_INFO("[fsr2] deferred hook worker started");
+    spdlog::default_logger()->flush();
+
+    // Never run Detours or pattern scans from DllMain. Besides the loader lock,
+    // YuanShen loads mhypbase.dll shortly after this module, so return promptly.
+    Sleep(1000);
+
+    const bool unityOnDisk = HasUnityPlayerDllOnDisk();
+
+    if (TryHookFSR2Dx11Exports(exeModule, "exe") ||
+        (!unityOnDisk && TryHookFSR2Dx11ByPattern(exeModule, "exe")))
+    {
+        State::Instance().fsrHooks = true;
+        _deferredScheduled = false;
+        return;
     }
-    LOG_WARN("[deferred] all deferred attempts failed");
+
+    if (auto unity = FindModuleByName(L"UnityPlayer.dll"))
+    {
+        Sleep(100);
+        if (TryHookFSR2Dx11Module(unity, "UnityPlayer"))
+        {
+            State::Instance().fsrHooks = true;
+            _deferredScheduled = false;
+            return;
+        }
+    }
+
+    for (int i = 0; i < 600 && !State::Instance().isShuttingDown; i++)
+    {
+        Sleep(100);
+
+        auto unity = FindModuleByName(L"UnityPlayer.dll");
+        if (!unity)
+            continue;
+
+        LOG_INFO("[fsr2] UnityPlayer.dll found, trying hooks");
+        spdlog::default_logger()->flush();
+        Sleep(100);
+
+        if (TryHookFSR2Dx11Module(unity, "UnityPlayer"))
+        {
+            State::Instance().fsrHooks = true;
+            _deferredScheduled = false;
+            return;
+        }
+
+        break;
+    }
+
+    LOG_WARN("[fsr2] all deferred hook attempts failed");
     _deferredScheduled = false;
+}
+
+static DWORD WINAPI DeferredHookThreadProc(LPVOID)
+{
+    DeferredHookThread();
+    return 0;
 }
 
 void HookFSR2Dx11ExeInputs()
 {
-    LOG_INFO("Trying to hook FSR2 Dx11 methods");
+    LOG_INFO("Scheduling deferred FSR2 Dx11 hook");
+    spdlog::default_logger()->flush();
 
-    // Phase 1: EXE exports
-    if (TryHookFSR2Dx11Exports(exeModule, "exe")) { State::Instance().fsrHooks = true; return; }
-
-    // Phase 2: UnityPlayer.dll exports
-    if (auto unity = FindModuleByName(L"UnityPlayer.dll")) {
-        LOG_INFO("UnityPlayer.dll found, trying exports");
-        if (TryHookFSR2Dx11Exports(unity, "UnityPlayer")) { State::Instance().fsrHooks = true; return; }
-    }
-
-    // Phase 3: Pattern scanning
-    if (Config::Instance()->Fsr2Pattern.value_or_default()) {
-        LOG_INFO("Fsr2Pattern: scanning exe");
-        if (TryHookFSR2Dx11ByPattern(exeModule, "exe")) { State::Instance().fsrHooks = true; return; }
-        if (auto unity = FindModuleByName(L"UnityPlayer.dll")) {
-            LOG_INFO("Fsr2Pattern: scanning UnityPlayer.dll");
-            if (TryHookFSR2Dx11ByPattern(unity, "UnityPlayer")) { State::Instance().fsrHooks = true; return; }
-        }
-    }
-
-    // Phase 4: Deferred retry
-    LOG_WARN("All immediate FSR2 Dx11 hooks failed, scheduling deferred retry");
-    o_ffxFsr2ContextCreate_Dx11 = nullptr;
-    o_ffxFsr2ContextDispatch_Dx11 = nullptr;
-    o_ffxFsr2ContextDestroy_Dx11 = nullptr;
-    o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = nullptr;
-    o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = nullptr;
-    o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
     bool expected = false;
-    if (_deferredScheduled.compare_exchange_strong(expected, true))
-        std::thread(DeferredHookThread).detach();
+    if (!_deferredScheduled.compare_exchange_strong(expected, true))
+        return;
+
+    HANDLE thread = CreateThread(nullptr, 0, DeferredHookThreadProc, nullptr, 0, nullptr);
+    if (!thread)
+    {
+        _deferredScheduled = false;
+        LOG_ERROR("Failed to create FSR2 Dx11 hook worker, error: {:X}", GetLastError());
+        return;
+    }
+
+    CloseHandle(thread);
 }
