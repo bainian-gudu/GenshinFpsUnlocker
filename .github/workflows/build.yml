@@ -175,6 +175,20 @@ jobs:
         with:
           arch: x64
 
+      - name: Build OptiScaler from source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Building OptiScaler (x64 Release) from src/OptiScaler/"
+          msbuild src\OptiScaler\OptiScaler.vcxproj `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:OutDir="$PWD\src\Host\upscaler\" `
+            /m /nologo /verbosity:minimal
+          $dll = "src\Host\upscaler\OptiScaler.dll"
+          if (-not (Test-Path $dll)) { throw "OptiScaler.dll not found after build" }
+          Write-Host "OptiScaler.dll built: $((Get-Item $dll).Length) bytes"
+
       - name: Build stub + host
         shell: pwsh
         env:

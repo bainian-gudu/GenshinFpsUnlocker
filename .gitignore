@@ -28,6 +28,13 @@ config.json
 !src/Host/upscaler/nvngx_dlss.dll
 !src/Host/upscaler/nvngx_dlssnr.dll
 
+# OptiScaler 源码中的 SDK 库和构建工具
+!src/OptiScaler/**/*.dll
+!src/OptiScaler/**/*.exe
+!src/OptiScaler/**/*.lib
+!src/OptiScaler/**/*.cso
+
+
 # OS / editor
 .arena/
 .cache/
