@@ -66,7 +66,7 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
-  <!-- 超分辨率替换组件（OptiScaler.dll + nvngx_dlss.dll）随宿主发布到 upscaler/ 子目录 -->
+  <!-- 超分辨率替换组件（OptiScaler.dll + DLSS 运行库）随宿主发布到 upscaler/ 子目录 -->
   <ItemGroup>
     <Content Include="upscaler\OptiScaler.dll" Condition="Exists('upscaler\OptiScaler.dll')">
       <Link>upscaler\OptiScaler.dll</Link>
@@ -75,6 +75,16 @@
     </Content>
     <Content Include="upscaler\nvngx_dlss.dll" Condition="Exists('upscaler\nvngx_dlss.dll')">
       <Link>upscaler\nvngx_dlss.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="upscaler\nvngx_dlssnr.dll" Condition="Exists('upscaler\nvngx_dlssnr.dll')">
+      <Link>upscaler\nvngx_dlssnr.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="upscaler\nvngx.dll_dlssnr.dll" Condition="Exists('upscaler\nvngx.dll_dlssnr.dll')">
+      <Link>upscaler\nvngx.dll_dlssnr.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

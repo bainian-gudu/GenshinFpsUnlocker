@@ -38,17 +38,35 @@ $hostLabel = if ($hostSelfContained) { "self-contained" } else { "framework-depe
 Write-Host "==> Host publish mode: $hostLabel" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
-# 超分辨率替换组件：OptiScaler.dll + nvngx_dlss.dll
-# 两个文件已随项目源码提交到 src/Host/upscaler/，此处仅做存在性校验。
+# 超分辨率替换组件：OptiScaler.dll + nvngx_dlss.dll + nvngx_dlssnr.dll + nvngx.dll_dlssnr.dll
+# nvngx_dlssnr.dll 由 Git LFS 管理；这里同时校验大小和 SHA-256，避免把 LFS 指针或残缺文件打进发布包。
 # ---------------------------------------------------------------------------
 $upscalerDir = Join-Path $Root "src/Host/upscaler"
-foreach ($required in @("OptiScaler.dll", "nvngx_dlss.dll")) {
-    $p = Join-Path $upscalerDir $required
-    if (Test-Path $p) {
-        Write-Host "    $required : $([math]::Round((Get-Item $p).Length / 1MB, 2)) MB" -ForegroundColor Green
-    } else {
+$requiredUpscalerFiles = @(
+    @{ Name = "OptiScaler.dll";   MinBytes = 1MB;   Sha256 = $null },
+    @{ Name = "nvngx_dlss.dll";   MinBytes = 10MB;  Sha256 = $null },
+    @{ Name = "nvngx_dlssnr.dll"; MinBytes = 100MB; Sha256 = "6eb209e764f39872625debd6abaf45e2bb6322f6f270f781f70c059ae30b3927" },
+    @{ Name = "nvngx.dll_dlssnr.dll"; MinBytes = 4KB; Sha256 = $null }
+)
+foreach ($required in $requiredUpscalerFiles) {
+    $p = Join-Path $upscalerDir $required.Name
+    if (-not (Test-Path -LiteralPath $p)) {
         throw "缺少超分辨率组件 $p — 请确认 src/Host/upscaler/ 下的 DLL 文件完整"
     }
+
+    $file = Get-Item -LiteralPath $p
+    if ($file.Length -lt $required.MinBytes) {
+        throw "超分辨率组件不完整：$p（$($file.Length) bytes，可能仍是 Git LFS 指针；请安装 Git LFS 后执行 git lfs pull）"
+    }
+
+    if ($required.Sha256) {
+        $hash = (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash
+        if ($hash -ne $required.Sha256) {
+            throw "超分辨率组件版本不匹配：$p（SHA-256=$hash，期望 $($required.Sha256)）"
+        }
+    }
+
+    Write-Host "    $($required.Name) : $([math]::Round($file.Length / 1MB, 2)) MB" -ForegroundColor Green
 }
 
 Write-Host "==> Building Web UI (Vite)" -ForegroundColor Cyan
@@ -138,15 +156,19 @@ if (Test-Path (Join-Path $uiDistDir "index.html")) {
 # 确保超分辨率组件在 publish 输出中（csproj Content 可能因路径/条件漏拷）
 $upscalerOutDir = Join-Path $dist "upscaler"
 New-Item -ItemType Directory -Force -Path $upscalerOutDir | Out-Null
-foreach ($upscalerFile in @("OptiScaler.dll", "nvngx_dlss.dll")) {
-    $src = Join-Path $upscalerDir $upscalerFile
+foreach ($required in $requiredUpscalerFiles) {
+    $src = Join-Path $upscalerDir $required.Name
     if (Test-Path $src) {
-        Copy-Item $src (Join-Path $upscalerOutDir $upscalerFile) -Force
+        Copy-Item $src (Join-Path $upscalerOutDir $required.Name) -Force
     }
 }
-if (Test-Path (Join-Path $upscalerOutDir "OptiScaler.dll")) {
-    Write-Host "    Upscaler components copied -> $upscalerOutDir" -ForegroundColor Green
+$missingCopied = @($requiredUpscalerFiles | Where-Object {
+    -not (Test-Path (Join-Path $upscalerOutDir $_.Name))
+})
+if ($missingCopied.Count -gt 0) {
+    throw "超分辨率组件未完整复制到 $upscalerOutDir：$($missingCopied.Name -join ', ')"
 }
+Write-Host "    Upscaler components copied -> $upscalerOutDir" -ForegroundColor Green
 
 foreach ($extra in @("LICENSE", "USER_AGREEMENT.txt", "config.example.json")) {
     $p = Join-Path $Root $extra

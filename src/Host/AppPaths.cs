@@ -56,6 +56,9 @@ internal static class AppPaths
     /// <summary>NVIDIA DLSS Neural Rendering（DLSS 5）运行库源文件（部署时复制到游戏目录）。</summary>
     public static string DlssNrRuntimePath => Path.Combine(UpscalerDirectory, "nvngx_dlssnr.dll");
 
+    /// <summary>OptiScaler DLSS Neural Rendering 转发器（部署时复制到游戏目录）。</summary>
+    public static string DlssNrForwarderPath => Path.Combine(UpscalerDirectory, "nvngx.dll_dlssnr.dll");
+
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");
 

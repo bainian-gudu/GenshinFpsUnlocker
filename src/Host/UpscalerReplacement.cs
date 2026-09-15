@@ -11,6 +11,10 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
+    private const long MinimumDlssRuntimeBytes = 16L * 1024 * 1024;
+    private const long MinimumDlssNrRuntimeBytes = 128L * 1024 * 1024;
+    private const long MinimumDlssNrForwarderBytes = 4L * 1024;
+
     /// <summary>代理 DLL 在游戏目录中的文件名（OptiScaler 标准 proxy 名称）。</summary>
     private const string ProxyDllFileName = "dxgi.dll";
 
@@ -166,7 +170,7 @@ internal sealed class UpscalerReplacement : IDisposable
 
     /// <summary>
     /// 将 OptiScaler Aurora 代理、DLSS 运行库和配置文件部署到游戏目录。
-    /// DLSS 5 模式额外部署 nvngx_dlssnr.dll（神经渲染模型）。
+    /// DLSS 5 模式额外部署 nvngx_dlssnr.dll（神经渲染模型）和 nvngx.dll_dlssnr.dll（转发器）。
     /// </summary>
     private void TryDeployLocked(string? gamePath)
     {
@@ -186,16 +190,19 @@ internal sealed class UpscalerReplacement : IDisposable
             var dlssDest = Path.Combine(gameDir, "nvngx_dlss.dll");
             SafeCopyFile(AppPaths.DlssRuntimePath, dlssDest);
 
-            // DLSS 5 模式：额外复制 nvngx_dlssnr.dll（Neural Rendering 模型）
+            // DLSS 5 模式：额外复制神经渲染模型与转发器
             var dlssNrDest = Path.Combine(gameDir, "nvngx_dlssnr.dll");
+            var dlssNrForwarderDest = Path.Combine(gameDir, "nvngx.dll_dlssnr.dll");
             if (IsDlss5Mode())
             {
                 SafeCopyFile(AppPaths.DlssNrRuntimePath, dlssNrDest);
+                SafeCopyFile(AppPaths.DlssNrForwarderPath, dlssNrForwarderDest);
             }
             else
             {
-                // 从 DLSS 5 切换到 DLSS 4 时清理多余的神经渲染 DLL
+                // 从 DLSS 5 切换到 DLSS 4 时清理多余的神经渲染组件
                 SafeDeleteFile(dlssNrDest);
+                SafeDeleteFile(dlssNrForwarderDest);
             }
 
             // 写入部署标记（记录部署时间和版本信息，供卸载时识别）
@@ -206,7 +213,10 @@ internal sealed class UpscalerReplacement : IDisposable
                 $"mode={_mode}\n" +
                 $"source_optiscaler={AppPaths.UpscalerProxyPath}\n" +
                 $"source_dlss={AppPaths.DlssRuntimePath}\n" +
-                (IsDlss5Mode() ? $"source_dlssnr={AppPaths.DlssNrRuntimePath}\n" : string.Empty),
+                (IsDlss5Mode()
+                    ? $"source_dlssnr={AppPaths.DlssNrRuntimePath}\n" +
+                      $"source_dlssnr_forwarder={AppPaths.DlssNrForwarderPath}\n"
+                    : string.Empty),
                 new System.Text.UTF8Encoding(false));
 
             _deployed = true;
@@ -240,6 +250,7 @@ internal sealed class UpscalerReplacement : IDisposable
             SafeDeleteFile(Path.Combine(gameDir, ProxyDllFileName));
             SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlss.dll"));
             SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlssnr.dll"));
+            SafeDeleteFile(Path.Combine(gameDir, "nvngx.dll_dlssnr.dll"));
             SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.ini"));
             SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.log"));
             SafeDeleteFile(markerPath);
@@ -295,9 +306,17 @@ internal sealed class UpscalerReplacement : IDisposable
     private static Capability Inspect(string? gamePath, string mode, string quality)
     {
         var proxyExists = IsValidProxy(AppPaths.UpscalerProxyPath, out var proxyError);
-        var runtimeExists = PathUtil.ExistsFile(AppPaths.DlssRuntimePath);
+        var runtimeFileExists = PathUtil.ExistsFile(AppPaths.DlssRuntimePath);
+        var runtimeExists = runtimeFileExists && IsRuntimeFileUsable(AppPaths.DlssRuntimePath, MinimumDlssRuntimeBytes);
         var isDlss5 = string.Equals(mode, "dlss5", StringComparison.OrdinalIgnoreCase);
-        var nrRuntimeExists = isDlss5 && PathUtil.ExistsFile(AppPaths.DlssNrRuntimePath);
+        var nrRuntimeFileExists = PathUtil.ExistsFile(AppPaths.DlssNrRuntimePath);
+        var nrRuntimeExists = isDlss5
+                              && nrRuntimeFileExists
+                              && IsRuntimeFileUsable(AppPaths.DlssNrRuntimePath, MinimumDlssNrRuntimeBytes);
+        var nrForwarderFileExists = PathUtil.ExistsFile(AppPaths.DlssNrForwarderPath);
+        var nrForwarderExists = isDlss5
+                                && nrForwarderFileExists
+                                && IsRuntimeFileUsable(AppPaths.DlssNrForwarderPath, MinimumDlssNrForwarderBytes);
         var gameConfigured = GameLocator.IsValidGameExe(gamePath);
 
         string status;
@@ -309,12 +328,23 @@ internal sealed class UpscalerReplacement : IDisposable
         }
         else if (!runtimeExists)
         {
-            status = "缺少 nvngx_dlss.dll（随项目分发，请检查安装目录 upscaler 是否完整）";
+            status = runtimeFileExists
+                ? "nvngx_dlss.dll 文件不完整（请检查安装目录 upscaler 是否完整）"
+                : "缺少 nvngx_dlss.dll（随项目分发，请检查安装目录 upscaler 是否完整）";
             available = false;
         }
         else if (isDlss5 && !nrRuntimeExists)
         {
-            status = "缺少 nvngx_dlssnr.dll（DLSS 5 神经渲染模型，请检查安装目录 upscaler 是否完整）";
+            status = nrRuntimeFileExists
+                ? "nvngx_dlssnr.dll 文件不完整（可能仍是 Git LFS 指针，请重新安装完整组件）"
+                : "缺少 nvngx_dlssnr.dll（DLSS 5 神经渲染模型，请检查安装目录 upscaler 是否完整）";
+            available = false;
+        }
+        else if (isDlss5 && !nrForwarderExists)
+        {
+            status = nrForwarderFileExists
+                ? "nvngx.dll_dlssnr.dll 文件不完整（请重新安装完整组件）"
+                : "缺少 nvngx.dll_dlssnr.dll（DLSS 5 转发器，请检查安装目录 upscaler 是否完整）";
             available = false;
         }
         else if (!gameConfigured)
@@ -335,6 +365,19 @@ internal sealed class UpscalerReplacement : IDisposable
             DlssNrRuntimePresent: nrRuntimeExists,
             GameConfigured: gameConfigured,
             Status: status);
+    }
+
+    private static bool IsRuntimeFileUsable(string path, long minimumBytes)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+            return file.Exists && file.Length >= minimumBytes;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsValidProxy(string path, out string error)
@@ -476,6 +519,11 @@ internal sealed class UpscalerReplacement : IDisposable
                      && tail.Contains("not found", StringComparison.OrdinalIgnoreCase))
             {
                 _status = "OptiScaler 已加载，但未找到 DLSS 5 神经渲染模型";
+            }
+            else if (isDlss5 && tail.Contains("nvngx.dll_dlssnr.dll", StringComparison.OrdinalIgnoreCase)
+                     && tail.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                _status = "OptiScaler 已加载，但未找到 DLSS 5 转发器";
             }
             else if (Fsr2HooksMissing(tail))
             {
