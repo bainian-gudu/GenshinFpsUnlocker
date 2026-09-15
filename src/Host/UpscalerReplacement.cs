@@ -6,7 +6,7 @@ namespace GenshinFpsUnlocker.Host;
 /// <summary>
 /// 超分辨率替换组件的能力检测。
 /// 该组件只负责管理独立代理与运行库，不参与 FPS/反虚化注入。
-/// OptiScaler.dll 和 nvngx_dlss.dll 均已随项目分发，构建工作流会在文件缺失时自动下载。
+/// 代理使用 OptiScaler Aurora 构建，OptiScaler.dll 和 nvngx_dlss.dll 均已随项目分发。
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
@@ -277,7 +277,7 @@ internal sealed class UpscalerReplacement : IDisposable
         catch (Exception ex) { error = "无法读取超分辨率代理组件：" + ex.Message; return false; }
     }
 
-    /// <summary>写入 OptiScaler 的独立配置，使 FSR2 输入走 DLSS 输出。</summary>
+    /// <summary>写入 OptiScaler Aurora 的独立配置，使 FSR2 输入走 DLSS 输出。</summary>
     private void EnsureOptiScalerConfigLocked()
     {
         Directory.CreateDirectory(AppPaths.UpscalerDirectory);
@@ -292,7 +292,7 @@ internal sealed class UpscalerReplacement : IDisposable
         var ratioText = ratio.ToString("0.0", CultureInfo.InvariantCulture);
         var chineseFontPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc");
-        var text = "; 由原神帧率解锁生成，FSR2 输入使用 DLSS 输出\n"
+        var text = "; 由原神帧率解锁生成（OptiScaler Aurora），FSR2 输入使用 DLSS 输出\n"
             + "[Upscalers]\n"
             + "Dx11Upscaler=dlss\n"
             + "Dx12Upscaler=dlss\n"
@@ -333,7 +333,7 @@ internal sealed class UpscalerReplacement : IDisposable
         var temp = path + ".tmp";
         File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
         File.Move(temp, path, true);
-        AppLog.Info($"OptiScaler 启动参数已写入：{QualityLabel(_quality)}、DX11 FSR2 输入检测、左下角性能叠加层");
+        AppLog.Info($"OptiScaler Aurora 启动参数已写入：{QualityLabel(_quality)}、DX11 FSR2 输入检测、左下角性能叠加层");
     }
 
     private static string QualityLabel(string quality) => quality switch
