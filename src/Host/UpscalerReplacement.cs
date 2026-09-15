@@ -324,7 +324,7 @@ internal sealed class UpscalerReplacement : IDisposable
         }
         else
         {
-            status = $"已就绪（{ModeLabel(mode)} {QualityLabel(_quality)}）";
+            status = $"已就绪（{ModeLabel(mode)} {QualityLabel(quality)}）";
             available = true;
         }
 
