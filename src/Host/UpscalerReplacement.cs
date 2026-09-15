@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
 
 namespace GenshinFpsUnlocker.Host;
 
@@ -22,6 +23,8 @@ internal sealed class UpscalerReplacement : IDisposable
     private const string DeployMarkerFileName = ".genshin-fps-unlocker-optiscaler";
 
     private readonly object _sync = new();
+    private readonly Dictionary<string, (long Length, DateTime LastWriteUtc, string Hash)> _sourceHashCache =
+        new(StringComparer.OrdinalIgnoreCase);
     private Capability _capability = Inspect(null, AppConfig.DefaultUpscalerMode, AppConfig.DefaultUpscalerQuality);
     private bool _enabled;
     private int _activePid;
@@ -179,48 +182,62 @@ internal sealed class UpscalerReplacement : IDisposable
 
         try
         {
-            // 写入 OptiScaler 配置（每次部署都更新，确保挡位和参数最新）
-            EnsureOptiScalerConfigLocked(gameDir);
+            var isDlss5 = IsDlss5Mode();
+            var manifest = ReadComponentManifest();
+            var markerPath = Path.Combine(gameDir, DeployMarkerFileName);
+            var marker = ReadKeyValueFile(markerPath);
+            var changed = false;
 
-            // 复制 OptiScaler.dll → dxgi.dll
             var proxyDest = Path.Combine(gameDir, ProxyDllFileName);
-            SafeCopyFile(AppPaths.UpscalerProxyPath, proxyDest);
-
-            // 复制 nvngx_dlss.dll（DLSS Super Resolution，两种模式都需要）
             var dlssDest = Path.Combine(gameDir, "nvngx_dlss.dll");
-            SafeCopyFile(AppPaths.DlssRuntimePath, dlssDest);
-
-            // DLSS 5 模式：额外复制神经渲染模型与转发器
             var dlssNrDest = Path.Combine(gameDir, "nvngx_dlssnr.dll");
             var dlssNrForwarderDest = Path.Combine(gameDir, "nvngx.dll_dlssnr.dll");
-            if (IsDlss5Mode())
+
+            // 只同步内容哈希变化（或目标缺失）的组件；宿主/UI 单独更新时清单不变，这里不会覆盖旧组件。
+            changed |= SyncComponent(manifest, marker, "OptiScaler.dll", AppPaths.UpscalerProxyPath, proxyDest);
+            changed |= SyncComponent(manifest, marker, "nvngx_dlss.dll", AppPaths.DlssRuntimePath, dlssDest);
+
+            if (isDlss5)
             {
-                SafeCopyFile(AppPaths.DlssNrRuntimePath, dlssNrDest);
-                SafeCopyFile(AppPaths.DlssNrForwarderPath, dlssNrForwarderDest);
+                changed |= SyncComponent(manifest, marker, "nvngx_dlssnr.dll", AppPaths.DlssNrRuntimePath, dlssNrDest);
+                changed |= SyncComponent(manifest, marker, "nvngx.dll_dlssnr.dll", AppPaths.DlssNrForwarderPath, dlssNrForwarderDest);
             }
             else
             {
-                // 从 DLSS 5 切换到 DLSS 4 时清理多余的神经渲染组件
-                SafeDeleteFile(dlssNrDest);
-                SafeDeleteFile(dlssNrForwarderDest);
+                changed |= RemoveComponent(marker, "nvngx_dlssnr.dll", dlssNrDest);
+                changed |= RemoveComponent(marker, "nvngx.dll_dlssnr.dll", dlssNrForwarderDest);
             }
 
-            // 写入部署标记（记录部署时间和版本信息，供卸载时识别）
-            var markerPath = Path.Combine(gameDir, DeployMarkerFileName);
-            File.WriteAllText(markerPath,
-                $"deployed={DateTime.UtcNow:O}\n" +
-                $"proxy={ProxyDllFileName}\n" +
-                $"mode={_mode}\n" +
-                $"source_optiscaler={AppPaths.UpscalerProxyPath}\n" +
-                $"source_dlss={AppPaths.DlssRuntimePath}\n" +
-                (IsDlss5Mode()
-                    ? $"source_dlssnr={AppPaths.DlssNrRuntimePath}\n" +
-                      $"source_dlssnr_forwarder={AppPaths.DlssNrForwarderPath}\n"
-                    : string.Empty),
-                new System.Text.UTF8Encoding(false));
+            if (!string.Equals(marker.GetValueOrDefault("mode"), _mode, StringComparison.OrdinalIgnoreCase))
+            {
+                marker["mode"] = _mode;
+                changed = true;
+            }
+
+            EnsureOptiScalerConfigLocked(gameDir);
+
+            if (changed || !File.Exists(markerPath))
+            {
+                marker["deployed"] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+                marker["proxy"] = ProxyDllFileName;
+                marker["source_optiscaler"] = AppPaths.UpscalerProxyPath;
+                marker["source_dlss"] = AppPaths.DlssRuntimePath;
+                if (isDlss5)
+                {
+                    marker["source_dlssnr"] = AppPaths.DlssNrRuntimePath;
+                    marker["source_dlssnr_forwarder"] = AppPaths.DlssNrForwarderPath;
+                }
+                else
+                {
+                    marker.Remove("source_dlssnr");
+                    marker.Remove("source_dlssnr_forwarder");
+                }
+                WriteKeyValueFile(markerPath, marker);
+            }
 
             _deployed = true;
-            AppLog.Info($"OptiScaler Aurora 已部署到游戏目录（{ModeLabel(_mode)}）：{gameDir}");
+            if (changed)
+                AppLog.Info($"OptiScaler Aurora 组件已同步到游戏目录（{ModeLabel(_mode)}）：{gameDir}");
         }
         catch (Exception ex)
         {
@@ -262,13 +279,13 @@ internal sealed class UpscalerReplacement : IDisposable
         }
     }
 
-    private static void SafeCopyFile(string source, string dest)
+    private static void SafeCopyFile(string source, string dest, bool force = false)
     {
         if (!File.Exists(source)) return;
-        // 只在源文件更新时才覆盖，避免游戏运行时写入冲突
-        if (File.Exists(dest))
+        var srcInfo = new FileInfo(source);
+        // 非强制模式只在源文件更新时才覆盖，避免游戏运行时重复写入。
+        if (!force && File.Exists(dest))
         {
-            var srcInfo = new FileInfo(source);
             var dstInfo = new FileInfo(dest);
             if (srcInfo.Length == dstInfo.Length
                 && srcInfo.LastWriteTimeUtc == dstInfo.LastWriteTimeUtc)
@@ -276,13 +293,132 @@ internal sealed class UpscalerReplacement : IDisposable
         }
         var temp = dest + ".tmp";
         File.Copy(source, temp, overwrite: true);
+        if (File.Exists(dest))
+        {
+            try { File.SetAttributes(dest, FileAttributes.Normal); } catch { /* ignore */ }
+        }
         File.Move(temp, dest, overwrite: true);
+        try { File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc); } catch { /* ignore */ }
     }
 
     private static void SafeDeleteFile(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
         catch { /* 文件可能被占用，忽略 */ }
+    }
+
+    private bool SyncComponent(
+        IReadOnlyDictionary<string, string> manifest,
+        IDictionary<string, string> marker,
+        string componentName,
+        string source,
+        string destination)
+    {
+        if (!File.Exists(source)) return false;
+
+        var hash = GetComponentHash(manifest, source, componentName);
+        var sourceInfo = new FileInfo(source);
+        var destInfo = new FileInfo(destination);
+        var markerKey = "hash_" + componentName;
+        var hasMarkerHash = marker.TryGetValue(markerKey, out var deployedHash);
+        var needsHashWrite = !hasMarkerHash
+                             || !string.Equals(deployedHash, hash, StringComparison.OrdinalIgnoreCase);
+        var unchanged = destInfo.Exists
+                        && destInfo.Length == sourceInfo.Length
+                        && ((hasMarkerHash
+                             && string.Equals(deployedHash, hash, StringComparison.OrdinalIgnoreCase))
+                            || (!hasMarkerHash
+                                && string.Equals(GetFileHashCached(destination), hash, StringComparison.OrdinalIgnoreCase)));
+
+        if (!unchanged)
+        {
+            SafeCopyFile(source, destination, force: true);
+            AppLog.Info($"OptiScaler 组件已更新：{componentName}");
+        }
+
+        marker[markerKey] = hash;
+        return !unchanged || needsHashWrite;
+    }
+
+    private static bool RemoveComponent(
+        IDictionary<string, string> marker,
+        string componentName,
+        string destination)
+    {
+        var existed = File.Exists(destination);
+        if (existed) SafeDeleteFile(destination);
+        var hadMarker = marker.Remove("hash_" + componentName);
+        return existed || hadMarker;
+    }
+
+    private string GetComponentHash(IReadOnlyDictionary<string, string> manifest, string path, string componentName)
+    {
+        if (manifest.TryGetValue(componentName, out var hash) && hash.Length == 64)
+            return hash;
+        return GetFileHashCached(path);
+    }
+
+    private string GetFileHashCached(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var info = new FileInfo(fullPath);
+        if (_sourceHashCache.TryGetValue(fullPath, out var cached)
+            && cached.Length == info.Length
+            && cached.LastWriteUtc == info.LastWriteTimeUtc)
+        {
+            return cached.Hash;
+        }
+
+        using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        _sourceHashCache[fullPath] = (info.Length, info.LastWriteTimeUtc, hash);
+        return hash;
+    }
+
+    private static Dictionary<string, string> ReadComponentManifest()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var path = AppPaths.UpscalerManifestPath;
+        if (!File.Exists(path)) return result;
+        foreach (var raw in File.ReadLines(path))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith(';')) continue;
+            var split = line.IndexOf('=');
+            if (split <= 0 || split == line.Length - 1) continue;
+            var name = line[..split].Trim();
+            var hash = line[(split + 1)..].Trim();
+            if (name.Length > 0 && hash.Length == 64) result[name] = hash;
+        }
+        return result;
+    }
+
+    private static Dictionary<string, string> ReadKeyValueFile(string path)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(path)) return result;
+        foreach (var raw in File.ReadLines(path))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith(';')) continue;
+            var split = line.IndexOf('=');
+            if (split <= 0) continue;
+            result[line[..split].Trim()] = line[(split + 1)..].Trim();
+        }
+        return result;
+    }
+
+    private static void WriteKeyValueFile(string path, IReadOnlyDictionary<string, string> values)
+    {
+        var lines = values.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => $"{kv.Key}={kv.Value}");
+        var temp = path + ".tmp";
+        File.WriteAllLines(temp, lines, new System.Text.UTF8Encoding(false));
+        if (File.Exists(path))
+        {
+            try { File.SetAttributes(path, FileAttributes.Normal); } catch { /* ignore */ }
+        }
+        File.Move(temp, path, true);
     }
 
     // -----------------------------------------------------------------------
@@ -450,6 +586,15 @@ internal sealed class UpscalerReplacement : IDisposable
             + (File.Exists(chineseFontPath) ? $"TTFFontPath={chineseFontPath}\n" : string.Empty)
             + "OverlaysUseTheme=true\n";
         var path = Path.Combine(gameDir, "OptiScaler.ini");
+        try
+        {
+            if (File.Exists(path) && string.Equals(File.ReadAllText(path), text, StringComparison.Ordinal))
+                return;
+        }
+        catch
+        {
+            // 读取失败时照常重写配置。
+        }
         var temp = path + ".tmp";
         File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
         File.Move(temp, path, true);

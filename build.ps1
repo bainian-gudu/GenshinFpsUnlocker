@@ -170,6 +170,20 @@ if ($missingCopied.Count -gt 0) {
 }
 Write-Host "    Upscaler components copied -> $upscalerOutDir" -ForegroundColor Green
 
+# 组件内容清单：运行时用它判断游戏目录里的旧组件是否需要替换。
+# 只更新宿主/UI 时，清单内容不变，部署逻辑不会触碰游戏目录里的组件。
+$manifestLines = foreach ($required in $requiredUpscalerFiles) {
+    $dest = Join-Path $upscalerOutDir $required.Name
+    $hash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$($required.Name)=$hash"
+}
+$manifestPath = Join-Path $upscalerOutDir "components.sha256"
+[System.IO.File]::WriteAllLines(
+    $manifestPath,
+    $manifestLines,
+    [System.Text.UTF8Encoding]::new($false))
+Write-Host "    Component manifest -> $manifestPath" -ForegroundColor Green
+
 foreach ($extra in @("LICENSE", "USER_AGREEMENT.txt", "config.example.json")) {
     $p = Join-Path $Root $extra
     if (Test-Path $p) {

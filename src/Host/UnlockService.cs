@@ -344,6 +344,8 @@ internal sealed partial class UnlockService : IDisposable
             // 一律交给 ShellExecute 会再次经过 Shell 的兼容性/UAC 判断，导致
             // 用户已经授权后点击「启动游戏」仍重复弹窗。普通权限下保留
             // ShellExecute，让游戏自身的 requireAdministrator 清单按系统规则提示。
+            // 先同步组件，确保新版本在游戏加载 dxgi/DLSS 组件之前落地。
+            _upscaler.Observe(null, path, _config.UpscalerQuality, _config.UpscalerMode);
             var psi = new ProcessStartInfo
             {
                 FileName = path,

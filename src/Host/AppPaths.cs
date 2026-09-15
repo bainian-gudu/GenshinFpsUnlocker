@@ -59,6 +59,9 @@ internal static class AppPaths
     /// <summary>OptiScaler DLSS Neural Rendering 转发器（部署时复制到游戏目录）。</summary>
     public static string DlssNrForwarderPath => Path.Combine(UpscalerDirectory, "nvngx.dll_dlssnr.dll");
 
+    /// <summary>随发布包分发的组件 SHA-256 清单，用于判断游戏目录里的旧组件是否需要更新。</summary>
+    public static string UpscalerManifestPath => Path.Combine(UpscalerDirectory, "components.sha256");
+
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");
 

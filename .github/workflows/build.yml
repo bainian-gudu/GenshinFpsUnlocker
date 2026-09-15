@@ -25,6 +25,11 @@ on:
         required: false
         default: false
         type: boolean
+      rebuild_optiscaler:
+        description: "强制重新编译 OptiScaler 与 DLSS NR 转发器（忽略缓存）"
+        required: false
+        default: false
+        type: boolean
 
 # 只需要 checkout 与上传 artifact，不需要写权限（与 devcheck.yml 一致）
 permissions:
@@ -177,7 +182,21 @@ jobs:
         with:
           arch: x64
 
+      # 组件源码没变就直接复用上次的 OptiScaler.dll / 转发器；只缓存这两个构建产物，
+      # 不缓存 166 MB 的 LFS 模型，模型始终由 checkout 的 lfs: true 提供。
+      # 缓存键包含全部 OptiScaler/外部依赖源码及本工作流，任一源码更新都会让键变化并触发重新编译。
+      - name: Cache OptiScaler components
+        if: ${{ !inputs.rebuild_optiscaler }}
+        id: optiscaler-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/Host/upscaler/OptiScaler.dll
+            src/Host/upscaler/nvngx.dll_dlssnr.dll
+          key: optiscaler-${{ runner.os }}-Release-${{ hashFiles('src/OptiScaler/**', 'src/external/**', '.github/workflows/build.yml') }}
+
       - name: Build OptiScaler from source
+        if: steps.optiscaler-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -207,6 +226,25 @@ jobs:
             throw "nvngx.dll_dlssnr.dll not found after build"
           }
           Write-Host "DLSS NR forwarder built: $((Get-Item -LiteralPath $forwarder).Length) bytes"
+
+      - name: Verify cached OptiScaler components
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $components = @{
+            "src\Host\upscaler\OptiScaler.dll" = 1MB
+            "src\Host\upscaler\nvngx.dll_dlssnr.dll" = 4KB
+          }
+          foreach ($entry in $components.GetEnumerator()) {
+            if (-not (Test-Path -LiteralPath $entry.Key)) {
+              throw "Missing OptiScaler component: $($entry.Key)"
+            }
+            $length = (Get-Item -LiteralPath $entry.Key).Length
+            if ($length -lt $entry.Value) {
+              throw "OptiScaler component is incomplete: $($entry.Key) ($length bytes)"
+            }
+            Write-Host "$($entry.Key): $length bytes"
+          }
 
       - name: Verify DLSS neural rendering payload
         shell: pwsh
@@ -254,6 +292,9 @@ jobs:
           $nrHash = (Get-FileHash -LiteralPath $nrDll -Algorithm SHA256).Hash
           if ($nrHash -ne "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927") {
             throw "dist upscaler DLSS NR hash mismatch: $nrHash"
+          }
+          if (-not (Test-Path -LiteralPath "dist\upscaler\components.sha256")) {
+            throw "Required component manifest missing: dist\upscaler\components.sha256"
           }
 
           $hasCore = (Test-Path "dist\coreclr.dll") -or (Test-Path "dist\hostfxr.dll")
