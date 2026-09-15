@@ -180,10 +180,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           Write-Host "Building OptiScaler (x64 Release) from src/OptiScaler/"
+          # SolutionDir 必须指向 src\ 才能让 vcxproj 里的
+          # $(SolutionDir)external\... 路径找到第三方头文件
+          $solDir = "$PWD\src\"
           msbuild src\OptiScaler\OptiScaler.vcxproj `
             /p:Configuration=Release `
             /p:Platform=x64 `
             /p:OutDir="$PWD\src\Host\upscaler\" `
+            /p:SolutionDir="$solDir" `
             /m /nologo /verbosity:minimal
           $dll = "src\Host\upscaler\OptiScaler.dll"
           if (-not (Test-Path $dll)) { throw "OptiScaler.dll not found after build" }
