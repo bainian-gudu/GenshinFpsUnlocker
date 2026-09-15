@@ -25,6 +25,8 @@ internal sealed class UpscalerReplacement : IDisposable
     private DateTime _proxyInjectUtc = DateTime.MinValue;
     private string? _forwardedLogPath;
     private long _forwardedLogOffset;
+    // 记录一次接口未识别告警，避免每次轮询重复刷屏。
+    private bool _fsrHookWarningLogged;
 
     public Snapshot State
     {
@@ -224,6 +226,7 @@ internal sealed class UpscalerReplacement : IDisposable
         _proxyInjectUtc = DateTime.MinValue;
         _forwardedLogPath = null;
         _forwardedLogOffset = 0;
+        _fsrHookWarningLogged = false;
     }
 
     private static Capability Inspect(string? gamePath)
@@ -287,6 +290,8 @@ internal sealed class UpscalerReplacement : IDisposable
             _ => 1.5,
         };
         var ratioText = ratio.ToString("0.0", CultureInfo.InvariantCulture);
+        var chineseFontPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc");
         var text = "; 由原神帧率解锁生成，FSR2 输入使用 DLSS 输出\n"
             + "[Upscalers]\n"
             + "Dx11Upscaler=dlss\n"
@@ -303,11 +308,32 @@ internal sealed class UpscalerReplacement : IDisposable
             + $"QualityRatioQuality={ratioText}\n"
             + $"QualityRatioBalanced={ratioText}\n"
             + $"QualityRatioPerformance={ratioText}\n"
-            + $"QualityRatioUltraPerformance={ratioText}\n";
+            + $"QualityRatioUltraPerformance={ratioText}\n"
+            // 原神当前使用 DirectX 11。OptiScaler 默认会走 DX12 FSR2 导出扫描，
+            // 日志中会出现所有 ffxFsr2* 地址为 0，导致代理虽加载却无法接管输入。
+            // 明确选择 DX11 输入检测；是否能接管仍取决于游戏是否暴露可识别接口。
+            + "\n[Inputs]\n"
+            + "EnableFsr2Inputs=true\n"
+            + "UseFsr2Inputs=true\n"
+            + "UseFsr2Dx11Inputs=true\n"
+            + "Fsr2Pattern=false\n"
+            // 统一使用左下角的简洁性能叠加层，并保留菜单入口；这些参数在每次
+            // 启动游戏前写入，避免沿用旧版本或其他游戏留下的配置。
+            + "\n[Menu]\n"
+            + "OverlayMenu=true\n"
+            + "ShowFps=true\n"
+            + "FpsOverlayPos=2\n"
+            + "FpsOverlayType=1\n"
+            + "FpsOverlayHorizontal=false\n"
+            + "FpsOverlayAlpha=0.85\n"
+            + "UseHQFont=true\n"
+            + (File.Exists(chineseFontPath) ? $"TTFFontPath={chineseFontPath}\n" : string.Empty)
+            + "OverlaysUseTheme=true\n";
         var path = Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.ini");
         var temp = path + ".tmp";
         File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
         File.Move(temp, path, true);
+        AppLog.Info($"OptiScaler 启动参数已写入：{QualityLabel(_quality)}、DX11 FSR2 输入检测、左下角性能叠加层");
     }
 
     private static string QualityLabel(string quality) => quality switch
@@ -362,6 +388,18 @@ internal sealed class UpscalerReplacement : IDisposable
             {
                 _status = "OptiScaler 已加载，但未找到 DLSS Runtime";
             }
+            else if (Fsr2HooksMissing(tail))
+            {
+                // OptiScaler 能加载并显示菜单并不代表已接管游戏的 FSR2。
+                // 原神将 FSR2 静态链接到 UnityPlayer 时不会导出标准 ffxFsr2* 符号，
+                // 此时只能明确提示兼容性问题，避免显示“替换成功”的误导状态。
+                _status = "代理已加载，但未检测到原神 FSR2 接口（当前版本可能不兼容）";
+                if (!_fsrHookWarningLogged)
+                {
+                    _fsrHookWarningLogged = true;
+                    AppLog.Warn("OptiScaler 未找到原神 FSR2 导出接口；已尝试 DX11 检测。若仍无 Evaluate 记录，当前游戏版本需要专用适配。");
+                }
+            }
             else if (tail.Contains("Creating DLSS feature", StringComparison.OrdinalIgnoreCase)
                      || tail.Contains("Enabling DLSS", StringComparison.OrdinalIgnoreCase)
                      || tail.Contains("init successful", StringComparison.OrdinalIgnoreCase))
@@ -380,6 +418,17 @@ internal sealed class UpscalerReplacement : IDisposable
         {
             AppLog.Debug("读取 OptiScaler 日志失败: " + ex.Message);
         }
+    }
+
+    private static bool Fsr2HooksMissing(string tail)
+    {
+        var dx11 = tail.Contains("Trying to hook FSR2 Dx11 methods", StringComparison.OrdinalIgnoreCase)
+            && tail.Contains("ffxFsr2ContextCreate_Dx11: 0", StringComparison.OrdinalIgnoreCase)
+            && tail.Contains("ffxFsr2ContextDispatch_Dx11: 0", StringComparison.OrdinalIgnoreCase);
+        var generic = tail.Contains("HookFSR2ExeInputs Trying to hook FSR2 methods", StringComparison.OrdinalIgnoreCase)
+            && tail.Contains("ffxFsr2ContextCreate_Dx12: 0", StringComparison.OrdinalIgnoreCase)
+            && tail.Contains("ffxFsr2ContextDispatch_Dx12: 0", StringComparison.OrdinalIgnoreCase);
+        return dx11 || generic;
     }
 
     /// <summary>从代理注入时刻开始转发新增的关键日志，供软件运行日志统一查看。</summary>
