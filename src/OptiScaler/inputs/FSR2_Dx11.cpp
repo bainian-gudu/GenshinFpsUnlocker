@@ -419,8 +419,12 @@ static bool TryHookFSR2Dx11Exports(HMODULE mod, const char* label)
 
     if (DetourTransactionCommit() != NO_ERROR) {
         LOG_ERROR("[{}] DetourTransactionCommit failed", label);
-        o_ffxFsr2ContextCreate_Dx11 = o_ffxFsr2ContextDispatch_Dx11 = o_ffxFsr2ContextDestroy_Dx11 = nullptr;
-        o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
+        o_ffxFsr2ContextCreate_Dx11 = nullptr;
+        o_ffxFsr2ContextDispatch_Dx11 = nullptr;
+        o_ffxFsr2ContextDestroy_Dx11 = nullptr;
+        o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = nullptr;
+        o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = nullptr;
+        o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
         return false;
     }
     return any;
@@ -453,7 +457,9 @@ static bool TryHookFSR2Dx11ByPattern(HMODULE mod, const char* label)
     }
 
     if (DetourTransactionCommit() != NO_ERROR) {
-        o_ffxFsr2ContextCreate_Dx11 = o_ffxFsr2ContextDispatch_Dx11 = o_ffxFsr2ContextDestroy_Dx11 = nullptr;
+        o_ffxFsr2ContextCreate_Dx11 = nullptr;
+        o_ffxFsr2ContextDispatch_Dx11 = nullptr;
+        o_ffxFsr2ContextDestroy_Dx11 = nullptr;
         return false;
     }
     return any;
@@ -501,8 +507,12 @@ void HookFSR2Dx11ExeInputs()
 
     // Phase 4: Deferred retry
     LOG_WARN("All immediate FSR2 Dx11 hooks failed, scheduling deferred retry");
-    o_ffxFsr2ContextCreate_Dx11 = o_ffxFsr2ContextDispatch_Dx11 = o_ffxFsr2ContextDestroy_Dx11 = nullptr;
-    o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
+    o_ffxFsr2ContextCreate_Dx11 = nullptr;
+    o_ffxFsr2ContextDispatch_Dx11 = nullptr;
+    o_ffxFsr2ContextDestroy_Dx11 = nullptr;
+    o_ffxFsr2GetUpscaleRatioFromQualityMode_Dx11 = nullptr;
+    o_ffxFsr2GetRenderResolutionFromQualityMode_Dx11 = nullptr;
+    o_ffxFsr2GetJitterPhaseCount_Dx11 = nullptr;
     bool expected = false;
     if (_deferredScheduled.compare_exchange_strong(expected, true))
         std::thread(DeferredHookThread).detach();

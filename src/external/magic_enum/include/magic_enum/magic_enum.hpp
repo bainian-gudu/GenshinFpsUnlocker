@@ -163,15 +163,57 @@ static_assert([] {
   return true;
 } (), "magic_enum::customize wchar_t is not compatible with ASCII.");
 
+namespace detail {
+    template<typename E, typename = void>
+    constexpr inline bool has_is_flags_adl = false;
+
+    template<typename E>
+    constexpr inline bool has_is_flags_adl < E, std::void_t<decltype(decltype(adl_magic_enum_define_range(E{}))::is_flags) > > = decltype(adl_magic_enum_define_range(E{}))::is_flags;
+
+    template<typename E, typename = void>
+    constexpr inline auto has_minmax_adl = std::pair<int, int>(MAGIC_ENUM_RANGE_MIN, MAGIC_ENUM_RANGE_MAX);
+
+    template<typename E>
+    constexpr inline auto has_minmax_adl < E, std::void_t<decltype(decltype(adl_magic_enum_define_range(E{}))::max), decltype(decltype(adl_magic_enum_define_range(E{}))::max) >> =
+        std::pair<int, int>(decltype(adl_magic_enum_define_range(E{}))::min, decltype(adl_magic_enum_define_range(E{}))::max);
+}
+
+
+
 namespace customize {
+
+template<auto... Vs>
+struct adl_info { static_assert(sizeof...(Vs) && !sizeof...(Vs), "adl_info parameter types must be either 2 ints exactly or 1 bool for the is_flgas"); };
+
+template<int Min, int Max>
+struct adl_info<Min, Max> {
+    static constexpr int min = Min;
+    static constexpr int max = Max;
+};
+
+template<bool IsFlags>
+struct adl_info<IsFlags> {
+    static constexpr bool is_flags = IsFlags;
+};
 
 // Enum value must be in range [MAGIC_ENUM_RANGE_MIN, MAGIC_ENUM_RANGE_MAX]. By default MAGIC_ENUM_RANGE_MIN = -128, MAGIC_ENUM_RANGE_MAX = 127.
 // If need another range for all enum types by default, redefine the macro MAGIC_ENUM_RANGE_MIN and MAGIC_ENUM_RANGE_MAX.
 // If need another range for specific enum type, add specialization enum_range for necessary enum type.
-template <typename E>
+template <typename E, typename = void>
 struct enum_range {
-  static constexpr int min = MAGIC_ENUM_RANGE_MIN;
-  static constexpr int max = MAGIC_ENUM_RANGE_MAX;
+    static constexpr int min = MAGIC_ENUM_RANGE_MIN;
+    static constexpr int max = MAGIC_ENUM_RANGE_MAX;
+};
+
+template <typename E>
+struct enum_range < E, decltype(void(adl_magic_enum_define_range(E{}))) > {
+    static constexpr int min = detail::has_minmax_adl<E>.first;
+    static constexpr int max = detail::has_minmax_adl<E>.second;
+    static constexpr bool is_flags = detail::has_is_flags_adl<E>;
+
+    static_assert(is_flags || min != MAGIC_ENUM_RANGE_MIN || max != MAGIC_ENUM_RANGE_MAX, 
+        "adl_magic_enum_define_range is declared for this enum but does not define any constants.\n"
+        "be sure that the member names are static and are not mispelled.");
 };
 
 static_assert(MAGIC_ENUM_RANGE_MAX > MAGIC_ENUM_RANGE_MIN, "MAGIC_ENUM_RANGE_MAX must be greater than MAGIC_ENUM_RANGE_MIN.");
@@ -332,19 +374,15 @@ constexpr std::size_t find(string_view str, char_type c) noexcept {
 }
 
 template <typename BinaryPredicate>
-constexpr bool is_default_predicate() noexcept {
-  return std::is_same_v<std::decay_t<BinaryPredicate>, std::equal_to<string_view::value_type>> ||
-         std::is_same_v<std::decay_t<BinaryPredicate>, std::equal_to<>>;
-}
+inline constexpr bool is_default_predicate_v = std::is_same_v<std::decay_t<BinaryPredicate>, std::equal_to<string_view::value_type>> || std::is_same_v<std::decay_t<BinaryPredicate>, std::equal_to<>>;
+
 
 template <typename BinaryPredicate>
-constexpr bool is_nothrow_invocable() {
-  return is_default_predicate<BinaryPredicate>() ||
-         std::is_nothrow_invocable_r_v<bool, BinaryPredicate, char_type, char_type>;
-}
+inline constexpr bool is_nothrow_invocable_v = is_default_predicate_v<BinaryPredicate> || std::is_nothrow_invocable_r_v<bool, BinaryPredicate, char_type, char_type>;
+
 
 template <typename BinaryPredicate>
-constexpr bool cmp_equal(string_view lhs, string_view rhs, [[maybe_unused]] BinaryPredicate&& p) noexcept(is_nothrow_invocable<BinaryPredicate>()) {
+constexpr bool cmp_equal(string_view lhs, string_view rhs, [[maybe_unused]] BinaryPredicate&& p) noexcept(is_nothrow_invocable_v<BinaryPredicate>) {
 #if defined(_MSC_VER) && _MSC_VER < 1920 && !defined(__clang__)
   // https://developercommunity.visualstudio.com/content/problem/360432/vs20178-regression-c-failed-in-test.html
   // https://developercommunity.visualstudio.com/content/problem/232218/c-constexpr-string-view.html
@@ -353,7 +391,7 @@ constexpr bool cmp_equal(string_view lhs, string_view rhs, [[maybe_unused]] Bina
   constexpr bool workaround = false;
 #endif
 
-  if constexpr (!is_default_predicate<BinaryPredicate>() || workaround) {
+  if constexpr (!is_default_predicate_v<BinaryPredicate> || workaround) {
     if (lhs.size() != rhs.size()) {
       return false;
     }
@@ -621,26 +659,37 @@ constexpr auto enum_name() noexcept {
 template <typename E, E V>
 inline constexpr auto enum_name_v = enum_name<E, V>();
 
+// CWG1766: Values outside the range of the values of an enumeration
+// https://reviews.llvm.org/D130058, https://reviews.llvm.org/D131307
+#if defined(__clang__) && __clang_major__ >= 16
+template <typename E, auto V, typename = void>
+inline constexpr bool is_enum_constexpr_static_cast_valid = false;
+template <typename E, auto V>
+inline constexpr bool is_enum_constexpr_static_cast_valid<E, V, std::void_t<std::integral_constant<E, static_cast<E>(V)>>> = true;
+#else
+template <typename, auto>
+inline constexpr bool is_enum_constexpr_static_cast_valid = true;
+#endif
+
 template <typename E, auto V>
 constexpr bool is_valid() noexcept {
-#if defined(__clang__) && __clang_major__ >= 16
-  // https://reviews.llvm.org/D130058, https://reviews.llvm.org/D131307
-  constexpr E v = __builtin_bit_cast(E, V);
-#else
-  constexpr E v = static_cast<E>(V);
-#endif
-  [[maybe_unused]] constexpr auto custom = customize::enum_name<E>(v);
-  static_assert(std::is_same_v<std::decay_t<decltype(custom)>, customize::customize_t>, "magic_enum::customize requires customize_t type.");
-  if constexpr (custom.first == customize::detail::customize_tag::custom_tag) {
-    constexpr auto name = custom.second;
-    static_assert(!name.empty(), "magic_enum::customize requires not empty string.");
-    return name.size() != 0;
-  } else if constexpr (custom.first == customize::detail::customize_tag::default_tag) {
+  if constexpr (is_enum_constexpr_static_cast_valid<E, V>) {
+    constexpr E v = static_cast<E>(V);
+    [[maybe_unused]] constexpr auto custom = customize::enum_name<E>(v);
+    static_assert(std::is_same_v<std::decay_t<decltype(custom)>, customize::customize_t>, "magic_enum::customize requires customize_t type.");
+    if constexpr (custom.first == customize::detail::customize_tag::custom_tag) {
+      constexpr auto name = custom.second;
+      static_assert(!name.empty(), "magic_enum::customize requires not empty string.");
+      return name.size() != 0;
+    } else if constexpr (custom.first == customize::detail::customize_tag::default_tag) {
 #if defined(MAGIC_ENUM_VS_2017_WORKAROUND)
-    return n<E, v>().size_ != 0;
+      return n<E, v>().size_ != 0;
 #else
-    return n<v>().size_ != 0;
+      return n<v>().size_ != 0;
 #endif
+    } else {
+      return false;
+    }
   } else {
     return false;
   }
@@ -1359,12 +1408,12 @@ template <typename E, detail::enum_subtype S = detail::subtype_v<E>>
 // Obtains enum value from name.
 // Returns optional with enum value.
 template <typename E, detail::enum_subtype S = detail::subtype_v<E>, typename BinaryPredicate = std::equal_to<>>
-[[nodiscard]] constexpr auto enum_cast(string_view value, [[maybe_unused]] BinaryPredicate p = {}) noexcept(detail::is_nothrow_invocable<BinaryPredicate>()) -> detail::enable_if_t<E, optional<std::decay_t<E>>, BinaryPredicate> {
+[[nodiscard]] constexpr auto enum_cast(string_view value, [[maybe_unused]] BinaryPredicate p = {}) noexcept(detail::is_nothrow_invocable_v<BinaryPredicate>) -> detail::enable_if_t<E, optional<std::decay_t<E>>, BinaryPredicate> {
   using D = std::decay_t<E>;
   static_assert(detail::is_reflected_v<D, S>, "magic_enum requires enum implementation and valid max and min.");
 
 #if defined(MAGIC_ENUM_ENABLE_HASH)
-  if constexpr (detail::is_default_predicate<BinaryPredicate>()) {
+  if constexpr (detail::is_default_predicate_v<BinaryPredicate>) {
     return detail::constexpr_switch<&detail::names_v<D, S>, detail::case_call_t::index>(
         [](std::size_t i) { return optional<D>{detail::values_v<D, S>[i]}; },
         value,
@@ -1408,7 +1457,7 @@ template <typename E, detail::enum_subtype S = detail::subtype_v<E>>
 
 // Checks whether enum contains enumerator with such name.
 template <typename E, detail::enum_subtype S = detail::subtype_v<E>, typename BinaryPredicate = std::equal_to<>>
-[[nodiscard]] constexpr auto enum_contains(string_view value, BinaryPredicate p = {}) noexcept(detail::is_nothrow_invocable<BinaryPredicate>()) -> detail::enable_if_t<E, bool, BinaryPredicate> {
+[[nodiscard]] constexpr auto enum_contains(string_view value, BinaryPredicate p = {}) noexcept(detail::is_nothrow_invocable_v<BinaryPredicate>) -> detail::enable_if_t<E, bool, BinaryPredicate> {
   using D = std::decay_t<E>;
 
   return static_cast<bool>(enum_cast<D, S>(value, std::move(p)));
