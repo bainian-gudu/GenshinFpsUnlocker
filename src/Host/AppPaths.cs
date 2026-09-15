@@ -44,13 +44,13 @@ internal static class AppPaths
 
     public static string StubDllPath => Path.Combine(ExeDirectory, StubDllFileName);
 
-    /// <summary>独立的超分辨率代理组件目录；与 FPS/反虚化 Stub 分开部署。</summary>
+    /// <summary>独立的超分辨率组件目录；包含 OptiScaler Aurora 和 DLSS 运行库源文件。</summary>
     public static string UpscalerDirectory => Path.Combine(ExeDirectory, "upscaler");
 
-    /// <summary>超分辨率代理入口（由后续 DX11/DX12 适配组件提供）。</summary>
+    /// <summary>OptiScaler Aurora 源文件（部署时复制为游戏目录的 dxgi.dll）。</summary>
     public static string UpscalerProxyPath => Path.Combine(UpscalerDirectory, "OptiScaler.dll");
 
-    /// <summary>NVIDIA DLSS Runtime，随项目分发（upscaler/nvngx_dlss.dll）。</summary>
+    /// <summary>NVIDIA DLSS Runtime 源文件（部署时复制到游戏目录）。</summary>
     public static string DlssRuntimePath => Path.Combine(UpscalerDirectory, "nvngx_dlss.dll");
 
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>

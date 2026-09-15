@@ -4,29 +4,31 @@ using System.Globalization;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 超分辨率替换组件的能力检测。
-/// 该组件只负责管理独立代理与运行库，不参与 FPS/反虚化注入。
-/// 代理使用 OptiScaler Aurora 构建，OptiScaler.dll 和 nvngx_dlss.dll 均已随项目分发。
+/// 超分辨率替换组件：按照 OptiScaler 标准部署方式适配原神。
+/// 将 OptiScaler Aurora 代理以 dxgi.dll 形式放入游戏目录，游戏启动时自然加载，
+/// 拦截 FSR2 调用并重定向到 DLSS。不再使用远程线程注入。
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
+    /// <summary>代理 DLL 在游戏目录中的文件名（OptiScaler 标准 proxy 名称）。</summary>
+    private const string ProxyDllFileName = "dxgi.dll";
+
+    /// <summary>部署标记文件，用于识别由本程序部署的文件。</summary>
+    private const string DeployMarkerFileName = ".genshin-fps-unlocker-optiscaler";
+
     private readonly object _sync = new();
     private Capability _capability = Inspect(null);
     private bool _enabled;
     private int _activePid;
     private string _status = "组件未检测";
     private string _quality = AppConfig.DefaultUpscalerQuality;
-    // 保存最近一次配置的游戏路径。
-    // Inspect(null) 会把「已设置游戏路径」错误地显示为未设置。
     private string? _gamePath;
-    private DateTime _nextAttemptUtc = DateTime.MinValue;
-    private int _attemptedPid;
     private DateTime _nextVerificationUtc = DateTime.MinValue;
-    private DateTime _proxyInjectUtc = DateTime.MinValue;
+    private DateTime _gameStartedUtc = DateTime.MinValue;
     private string? _forwardedLogPath;
     private long _forwardedLogOffset;
-    // 记录一次接口未识别告警，避免每次轮询重复刷屏。
     private bool _fsrHookWarningLogged;
+    private bool _deployed;
 
     public Snapshot State
     {
@@ -55,14 +57,13 @@ internal sealed class UpscalerReplacement : IDisposable
             _capability = Inspect(gamePath);
             if (!enabled)
             {
-                StopProxyLocked();
+                StopTrackingLocked();
+                TryRemoveDeploymentLocked(gamePath);
                 _status = "替换功能已关闭";
                 return;
             }
             if (_activePid != 0 && !string.Equals(previousQuality, _quality, StringComparison.Ordinal))
             {
-                // OptiScaler 在 DLL 加载时读取 ini，运行中的代理不能安全热重载。
-                // 保留当前会话，新的挡位从下一次游戏启动开始使用。
                 _status = $"挡位已更新为 {QualityLabel(_quality)}，下次启动游戏时生效";
                 return;
             }
@@ -70,7 +71,10 @@ internal sealed class UpscalerReplacement : IDisposable
         }
     }
 
-    /// <summary>独立观察原神 PID；游戏退出或关闭功能时停止当前替换会话。</summary>
+    /// <summary>
+    /// 独立观察原神 PID。
+    /// 游戏未运行时部署文件；游戏运行时检查 OptiScaler 日志确认替换状态。
+    /// </summary>
     public void Observe(int? pid, string? gamePath, string? quality = null)
     {
         lock (_sync)
@@ -82,148 +86,171 @@ internal sealed class UpscalerReplacement : IDisposable
                 _quality = AppConfig.UpscalerQualityValues.First(v =>
                     string.Equals(v, quality, StringComparison.OrdinalIgnoreCase));
             }
-            if (!_enabled) { StopProxyLocked(); return; }
-            if (pid is null)
+            if (!_enabled)
             {
-                StopProxyLocked();
-                _attemptedPid = 0;
-                _nextAttemptUtc = DateTime.MinValue;
-                _capability = Inspect(gamePath);
-                _status = _capability.Available ? "等待原神启动" : _capability.Status;
+                StopTrackingLocked();
+                TryRemoveDeploymentLocked(gamePath);
                 return;
             }
+
+            // 游戏未运行：确保文件已部署
+            if (pid is null)
+            {
+                StopTrackingLocked();
+                _capability = Inspect(gamePath);
+                if (_capability.Available)
+                {
+                    TryDeployLocked(gamePath);
+                    _status = _deployed ? "组件已部署，等待原神启动" : _capability.Status;
+                }
+                else
+                {
+                    _status = _capability.Status;
+                }
+                return;
+            }
+
+            // 游戏正在运行
             if (_activePid == pid.Value)
             {
                 VerifyProxyActivityLocked();
                 return;
             }
-            StopProxyLocked();
+
+            // 新游戏进程出现：确保已部署并标记为活动
+            StopTrackingLocked();
             _capability = Inspect(gamePath);
             if (!_capability.Available)
             {
                 _status = _capability.Status;
                 return;
             }
-            if (_attemptedPid == pid.Value && DateTime.UtcNow < _nextAttemptUtc)
-                return;
 
-            if (!ModuleTrust.IsTrustworthy(AppPaths.UpscalerProxyPath, Path.GetFileName(AppPaths.UpscalerProxyPath),
-                    "超分辨率代理", out var trustError,
-                    elevatedHint: "请把程序安装到 Program Files 下，或退出管理员实例后以普通权限运行。"))
-            {
-                _status = trustError;
-                _attemptedPid = pid.Value;
-                _nextAttemptUtc = DateTime.UtcNow.AddSeconds(60);
-                return;
-            }
-
-            try
-            {
-                try
-                {
-                    EnsureOptiScalerConfigLocked();
-                }
-                catch (Exception configError)
-                {
-                    // 配置文件写入失败时仍尝试加载代理；代理内置默认值可继续工作，
-                    // 同时把原因记录下来，避免因安装目录只读而完全失去替换能力。
-                    AppLog.Warn("OptiScaler 配置写入失败，将使用现有配置: " + configError.Message);
-                }
-                var injectStartedUtc = DateTime.UtcNow;
-                using var process = Process.GetProcessById(pid.Value);
-                if (process.HasExited) return;
-                if (DllInjector.TryInject(process, AppPaths.UpscalerProxyPath, out var error, "超分辨率代理", allowHookFallback: false))
-                {
-                    _activePid = pid.Value;
-                    _attemptedPid = pid.Value;
-                    _nextAttemptUtc = DateTime.MinValue;
-                    _proxyInjectUtc = DateTime.UtcNow;
-                    InitializeOptiScalerLogForwardingLocked();
-                    _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），请查看 OptiScaler.log 确认 FSR2 调用";
-                    AppLog.Info($"upscaler proxy injected pid={pid.Value} quality={_quality}");
-                }
-                else if (TryConfirmFreshOptiScalerLoadLocked(injectStartedUtc))
-                {
-                    // 某些游戏/安全软件会让远程线程返回值或模块枚举不可靠，
-                    // 但代理已经执行 DllMain 并写出了本次启动日志。以新日志作为成功凭据，
-                    // 避免把实际已加载的代理显示成注入失败。
-                    _activePid = pid.Value;
-                    _attemptedPid = pid.Value;
-                    _nextAttemptUtc = DateTime.MinValue;
-                    _proxyInjectUtc = injectStartedUtc;
-                    InitializeOptiScalerLogForwardingLocked();
-                    _status = $"代理已加载 PID {pid.Value}（{QualityLabel(_quality)}），等待渲染确认";
-                    AppLog.Warn($"upscaler proxy load confirmed by fresh OptiScaler.log despite injector result pid={pid.Value}");
-                }
-                else
-                {
-                    _attemptedPid = pid.Value;
-                    _nextAttemptUtc = DateTime.UtcNow.AddSeconds(15);
-                    _status = $"超分辨率代理注入失败：{error}";
-                    AppLog.Warn($"upscaler proxy injection failed pid={pid.Value}: {error}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _attemptedPid = pid.Value;
-                _nextAttemptUtc = DateTime.UtcNow.AddSeconds(15);
-                _status = $"超分辨率代理注入失败：{ex.Message}";
-                AppLog.Warn("upscaler proxy injection exception: " + ex.Message);
-            }
+            TryDeployLocked(gamePath);
+            _activePid = pid.Value;
+            _gameStartedUtc = DateTime.UtcNow;
+            InitializeOptiScalerLogForwardingLocked();
+            _status = _deployed
+                ? $"原神已启动 PID {pid.Value}（{QualityLabel(_quality)}），等待 OptiScaler 加载确认"
+                : "部署失败，请检查游戏目录写入权限";
+            AppLog.Info($"upscaler tracking pid={pid.Value} quality={_quality} deployed={_deployed}");
         }
-    }
-
-    /// <summary>
-    /// 注入器返回失败时，检查目标游戏目录是否刚刚生成了本次代理日志。
-    /// 这只作为超分代理的兜底确认，不能用于 FPS Stub。
-    /// </summary>
-    private bool TryConfirmFreshOptiScalerLoadLocked(DateTime sinceUtc)
-    {
-        var candidates = new List<string>
-        {
-            Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.log"),
-        };
-        var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
-        if (!string.IsNullOrWhiteSpace(gameDirectory))
-            candidates.Add(Path.Combine(gameDirectory, "OptiScaler.log"));
-
-        foreach (var path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            try
-            {
-                if (!PathUtil.ExistsFile(path)) continue;
-                var info = new FileInfo(path);
-                if (info.LastWriteTimeUtc < sinceUtc.AddSeconds(-2)) continue;
-                var length = Math.Min(info.Length, 128 * 1024);
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                stream.Seek(-length, SeekOrigin.End);
-                using var reader = new StreamReader(stream);
-                var text = reader.ReadToEnd();
-                if (text.Contains("OptiScaler v", StringComparison.OrdinalIgnoreCase)
-                    && (text.Contains("Setting DllPath", StringComparison.OrdinalIgnoreCase)
-                        || text.Contains("Running on", StringComparison.OrdinalIgnoreCase)
-                        || text.Contains("DLSS.Enabled", StringComparison.OrdinalIgnoreCase)))
-                    return true;
-            }
-            catch (Exception ex)
-            {
-                AppLog.Debug("确认 OptiScaler 新日志失败: " + ex.Message);
-            }
-        }
-        return false;
     }
 
     public void Dispose()
     {
-        lock (_sync) StopProxyLocked();
+        lock (_sync) StopTrackingLocked();
     }
 
-    private void StopProxyLocked()
+    // -----------------------------------------------------------------------
+    // 部署 / 移除
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// 将 OptiScaler Aurora 代理、DLSS 运行库和配置文件部署到游戏目录。
+    /// 游戏启动时会自动加载 dxgi.dll，无需远程线程注入。
+    /// </summary>
+    private void TryDeployLocked(string? gamePath)
+    {
+        var gameDir = Path.GetDirectoryName(gamePath ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(gameDir)) { _deployed = false; return; }
+
+        try
+        {
+            // 写入 OptiScaler 配置（每次部署都更新，确保挡位和参数最新）
+            EnsureOptiScalerConfigLocked(gameDir);
+
+            // 复制 OptiScaler.dll → dxgi.dll
+            var proxyDest = Path.Combine(gameDir, ProxyDllFileName);
+            SafeCopyFile(AppPaths.UpscalerProxyPath, proxyDest);
+
+            // 复制 nvngx_dlss.dll
+            var dlssDest = Path.Combine(gameDir, "nvngx_dlss.dll");
+            SafeCopyFile(AppPaths.DlssRuntimePath, dlssDest);
+
+            // 写入部署标记（记录部署时间和版本信息，供卸载时识别）
+            var markerPath = Path.Combine(gameDir, DeployMarkerFileName);
+            File.WriteAllText(markerPath,
+                $"deployed={DateTime.UtcNow:O}\n" +
+                $"proxy={ProxyDllFileName}\n" +
+                $"source_optiscaler={AppPaths.UpscalerProxyPath}\n" +
+                $"source_dlss={AppPaths.DlssRuntimePath}\n",
+                new System.Text.UTF8Encoding(false));
+
+            _deployed = true;
+            AppLog.Info($"OptiScaler Aurora 已部署到游戏目录：{gameDir}");
+        }
+        catch (Exception ex)
+        {
+            _deployed = false;
+            AppLog.Warn($"OptiScaler 部署失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>移除由本程序部署到游戏目录的文件。</summary>
+    private void TryRemoveDeploymentLocked(string? gamePath)
+    {
+        var gameDir = Path.GetDirectoryName(gamePath ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(gameDir)) return;
+
+        var markerPath = Path.Combine(gameDir, DeployMarkerFileName);
+        if (!File.Exists(markerPath)) return;
+
+        // 游戏运行时不能删除正在使用的 DLL
+        if (_activePid != 0)
+        {
+            try { Process.GetProcessById(_activePid); return; }
+            catch { /* 进程已退出，可以继续清理 */ }
+        }
+
+        try
+        {
+            SafeDeleteFile(Path.Combine(gameDir, ProxyDllFileName));
+            SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlss.dll"));
+            SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.ini"));
+            SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.log"));
+            SafeDeleteFile(markerPath);
+            AppLog.Info($"OptiScaler 已从游戏目录移除：{gameDir}");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"OptiScaler 移除部分失败：{ex.Message}");
+        }
+    }
+
+    private static void SafeCopyFile(string source, string dest)
+    {
+        if (!File.Exists(source)) return;
+        // 只在源文件更新时才覆盖，避免游戏运行时写入冲突
+        if (File.Exists(dest))
+        {
+            var srcInfo = new FileInfo(source);
+            var dstInfo = new FileInfo(dest);
+            if (srcInfo.Length == dstInfo.Length
+                && srcInfo.LastWriteTimeUtc == dstInfo.LastWriteTimeUtc)
+                return;
+        }
+        var temp = dest + ".tmp";
+        File.Copy(source, temp, overwrite: true);
+        File.Move(temp, dest, overwrite: true);
+    }
+
+    private static void SafeDeleteFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch { /* 文件可能被占用，忽略 */ }
+    }
+
+    // -----------------------------------------------------------------------
+    // 状态检测
+    // -----------------------------------------------------------------------
+
+    private void StopTrackingLocked()
     {
         if (_activePid == 0) return;
-        AppLog.Info($"upscaler replacement stopped pid={_activePid}");
+        AppLog.Info($"upscaler tracking stopped pid={_activePid}");
         _activePid = 0;
-        _proxyInjectUtc = DateTime.MinValue;
+        _gameStartedUtc = DateTime.MinValue;
         _forwardedLogPath = null;
         _forwardedLogOffset = 0;
         _fsrHookWarningLogged = false;
@@ -251,7 +278,6 @@ internal sealed class UpscalerReplacement : IDisposable
             Status: status);
     }
 
-    /// <summary>检查代理是否为可加载的 x64 PE DLL，避免仅凭同名空文件误判就绪。</summary>
     private static bool IsValidProxy(string path, out string error)
     {
         error = "缺少 OptiScaler.dll（随项目分发，请检查安装目录 upscaler 是否完整）";
@@ -259,28 +285,34 @@ internal sealed class UpscalerReplacement : IDisposable
         try
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            if (stream.Length < 4096) { error = "超分辨率代理组件文件过小或已损坏"; return false; }
+            if (stream.Length < 4096) { error = "OptiScaler 组件文件过小或已损坏"; return false; }
             Span<byte> dos = stackalloc byte[64];
             if (stream.Read(dos) != dos.Length || dos[0] != 'M' || dos[1] != 'Z')
-            { error = "超分辨率代理组件不是有效的 Windows DLL"; return false; }
+            { error = "OptiScaler 组件不是有效的 Windows DLL"; return false; }
             var peOffset = BitConverter.ToInt32(dos[0x3c..0x40]);
             if (peOffset < 0 || peOffset > stream.Length - 6)
-            { error = "超分辨率代理组件 PE 头无效"; return false; }
+            { error = "OptiScaler 组件 PE 头无效"; return false; }
             stream.Position = peOffset;
             Span<byte> pe = stackalloc byte[6];
             if (stream.Read(pe) != pe.Length || pe[0] != 'P' || pe[1] != 'E'
                 || pe[2] != 0 || pe[3] != 0 || BitConverter.ToUInt16(pe[4..6]) != 0x8664)
-            { error = "超分辨率代理组件不是 x64 DLL"; return false; }
+            { error = "OptiScaler 组件不是 x64 DLL"; return false; }
             error = string.Empty;
             return true;
         }
-        catch (Exception ex) { error = "无法读取超分辨率代理组件：" + ex.Message; return false; }
+        catch (Exception ex) { error = "无法读取 OptiScaler 组件：" + ex.Message; return false; }
     }
 
-    /// <summary>写入 OptiScaler Aurora 的独立配置，使 FSR2 输入走 DLSS 输出。</summary>
-    private void EnsureOptiScalerConfigLocked()
+    // -----------------------------------------------------------------------
+    // 配置文件
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// 将 OptiScaler Aurora 配置写入游戏目录。
+    /// 由于代理和运行库都在同一目录，使用相对路径即可。
+    /// </summary>
+    private void EnsureOptiScalerConfigLocked(string gameDir)
     {
-        Directory.CreateDirectory(AppPaths.UpscalerDirectory);
         var ratio = _quality switch
         {
             "balanced" => 1.7,
@@ -297,9 +329,7 @@ internal sealed class UpscalerReplacement : IDisposable
             + "Dx11Upscaler=dlss\n"
             + "Dx12Upscaler=dlss\n"
             + "VulkanUpscaler=dlss\n\n"
-            // OptiScaler 会把相对路径解析到游戏目录；运行库实际位于程序的
-            // upscaler 子目录，因此必须写绝对路径，避免只加载代理而找不到 DLSS。
-            + $"[Libraries]\nNvngxDlssPath={AppPaths.DlssRuntimePath}\n\n"
+            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
             + "[DLSS]\nEnabled=true\n\n"
             + "[Log]\nLogToFile=true\nLogLevel=1\nLogFileName=OptiScaler.log\nSingleFile=true\n\n"
             + "[QualityOverrides]\nQualityRatioOverrideEnabled=true\n"
@@ -309,16 +339,11 @@ internal sealed class UpscalerReplacement : IDisposable
             + $"QualityRatioBalanced={ratioText}\n"
             + $"QualityRatioPerformance={ratioText}\n"
             + $"QualityRatioUltraPerformance={ratioText}\n"
-            // 原神当前使用 DirectX 11。OptiScaler 默认会走 DX12 FSR2 导出扫描，
-            // 日志中会出现所有 ffxFsr2* 地址为 0，导致代理虽加载却无法接管输入。
-            // 明确选择 DX11 输入检测；是否能接管仍取决于游戏是否暴露可识别接口。
             + "\n[Inputs]\n"
             + "EnableFsr2Inputs=true\n"
             + "UseFsr2Inputs=true\n"
             + "UseFsr2Dx11Inputs=true\n"
             + "Fsr2Pattern=false\n"
-            // 统一使用左下角的简洁性能叠加层，并保留菜单入口；这些参数在每次
-            // 启动游戏前写入，避免沿用旧版本或其他游戏留下的配置。
             + "\n[Menu]\n"
             + "OverlayMenu=true\n"
             + "ShowFps=true\n"
@@ -329,11 +354,11 @@ internal sealed class UpscalerReplacement : IDisposable
             + "UseHQFont=true\n"
             + (File.Exists(chineseFontPath) ? $"TTFFontPath={chineseFontPath}\n" : string.Empty)
             + "OverlaysUseTheme=true\n";
-        var path = Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.ini");
+        var path = Path.Combine(gameDir, "OptiScaler.ini");
         var temp = path + ".tmp";
         File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
         File.Move(temp, path, true);
-        AppLog.Info($"OptiScaler Aurora 启动参数已写入：{QualityLabel(_quality)}、DX11 FSR2 输入检测、左下角性能叠加层");
+        AppLog.Info($"OptiScaler Aurora 配置已写入游戏目录：{QualityLabel(_quality)}、DX11 FSR2 输入检测");
     }
 
     private static string QualityLabel(string quality) => quality switch
@@ -345,30 +370,28 @@ internal sealed class UpscalerReplacement : IDisposable
         _ => "质量",
     };
 
-    /// <summary>
-    /// 根据 OptiScaler 日志更新可理解的运行状态。模块加载和 Feature 初始化
-    /// 不能单独证明每帧替换成功，只有 Evaluate 成功记录才显示“已确认”。
-    /// </summary>
+    // -----------------------------------------------------------------------
+    // 日志分析
+    // -----------------------------------------------------------------------
+
     private void VerifyProxyActivityLocked()
     {
         if (DateTime.UtcNow < _nextVerificationUtc)
             return;
         _nextVerificationUtc = DateTime.UtcNow.AddSeconds(2);
 
-        var candidates = new List<string> { Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.log") };
         var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
-        if (!string.IsNullOrWhiteSpace(gameDirectory))
-            candidates.Add(Path.Combine(gameDirectory, "OptiScaler.log"));
-        var logPath = candidates.FirstOrDefault(PathUtil.ExistsFile);
-        if (logPath is null)
-            return;
+        if (string.IsNullOrWhiteSpace(gameDirectory)) return;
+
+        var logPath = Path.Combine(gameDirectory, "OptiScaler.log");
+        if (!PathUtil.ExistsFile(logPath)) return;
 
         try
         {
             var info = new FileInfo(logPath);
             ForwardOptiScalerLogLocked(logPath, info.Length);
-            if (_proxyInjectUtc != DateTime.MinValue && info.LastWriteTimeUtc < _proxyInjectUtc.AddSeconds(-2))
-                return; // 旧日志中的 Evaluate 成功不能证明本次游戏已替换。
+            if (_gameStartedUtc != DateTime.MinValue && info.LastWriteTimeUtc < _gameStartedUtc.AddSeconds(-2))
+                return;
             var length = Math.Min(info.Length, 128 * 1024);
             using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             stream.Seek(-length, SeekOrigin.End);
@@ -390,9 +413,6 @@ internal sealed class UpscalerReplacement : IDisposable
             }
             else if (Fsr2HooksMissing(tail))
             {
-                // OptiScaler 能加载并显示菜单并不代表已接管游戏的 FSR2。
-                // 原神将 FSR2 静态链接到 UnityPlayer 时不会导出标准 ffxFsr2* 符号，
-                // 此时只能明确提示兼容性问题，避免显示“替换成功”的误导状态。
                 _status = "代理已加载，但未检测到原神 FSR2 接口（当前版本可能不兼容）";
                 if (!_fsrHookWarningLogged)
                 {
@@ -431,26 +451,20 @@ internal sealed class UpscalerReplacement : IDisposable
         return dx11 || generic;
     }
 
-    /// <summary>从代理注入时刻开始转发新增的关键日志，供软件运行日志统一查看。</summary>
     private void InitializeOptiScalerLogForwardingLocked()
     {
         _forwardedLogPath = null;
         _forwardedLogOffset = 0;
-        var candidates = new List<string>
-        {
-            Path.Combine(AppPaths.UpscalerDirectory, "OptiScaler.log"),
-        };
         var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
-        if (!string.IsNullOrWhiteSpace(gameDirectory))
-            candidates.Add(Path.Combine(gameDirectory, "OptiScaler.log"));
-        var path = candidates.FirstOrDefault(PathUtil.ExistsFile);
-        if (path is null) return;
+        if (string.IsNullOrWhiteSpace(gameDirectory)) return;
+        var path = Path.Combine(gameDirectory, "OptiScaler.log");
+        if (!PathUtil.ExistsFile(path)) return;
         try
         {
             _forwardedLogPath = path;
             _forwardedLogOffset = new FileInfo(path).Length;
         }
-        catch { /* 日志转发失败不影响代理注入 */ }
+        catch { /* 日志转发初始化失败不影响部署 */ }
     }
 
     private void ForwardOptiScalerLogLocked(string path, long length)
@@ -515,5 +529,4 @@ internal sealed class UpscalerReplacement : IDisposable
         bool DlssRuntimePresent,
         bool GameConfigured,
         string Status);
-
 }
