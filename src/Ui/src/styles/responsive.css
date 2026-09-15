@@ -95,6 +95,9 @@
   .fps-monitor-hint { display: flex; font-size: 10px; }
   .fps-presets button > span { display: inline; font-size: 8px; }
   .quick-settings { min-height: 255px; }
+  .quick-settings-rows { grid-template-columns: minmax(0, 1fr); }
+  .quick-settings-rows .toggle-row:nth-child(2) { border-top: 1px solid var(--border-soft); }
+  .quick-settings .quick-settings-rows .toggle-row { min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
   .quick-settings .row-icon { display: block; width: 18px; }
   .quick-settings .toggle-row { min-height: 63px; }
   .toggle-row-copy p { font-size: 10.5px; }

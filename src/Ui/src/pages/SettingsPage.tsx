@@ -73,7 +73,7 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
       </>}
       {tab === 'behavior' && <section className="control-panel setting-list"><div className="section-intro"><h2>更安静，也更顺手</h2><p>让解锁器融入你的游戏习惯，无需每次重复操作。</p></div>
         <ToggleRow title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行（普通权限，不弹 UAC）" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} />
-        <ToggleRow title="启动时自动以管理员权限运行" description="仅手动启动时请求 UAC；开机自启动保持普通权限，不弹授权窗口。需要提权时可点击「以管理员重新启动」" checked={config.autoStartAsAdministrator} onChange={(value) => updateConfig('autoStartAsAdministrator', value)} />
+        <ToggleRow title="启动时自动以管理员权限运行" description="手动启动请求 UAC；开机自启不提权。需要时可点击「以管理员重新启动」" checked={config.autoStartAsAdministrator} onChange={(value) => updateConfig('autoStartAsAdministrator', value)} />
         <ToggleRow title="启动后最小化到托盘" description="开启：下次启动直接进托盘。关闭主窗口或点最小化 → 始终进入托盘后台（托盘「退出」才结束）" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} />
         <ToggleRow title="启动时显示用户协议" description="每次手动启动时展示用户协议与安全声明" checked={config.showSafetyNoticeOnStartup} onChange={(value) => updateConfig('showSafetyNoticeOnStartup', value)} />
         {isNative && <ToggleRow title="隐藏管理员权限提醒" description="关闭后，概览页不再显示「以管理员重新启动」提示条" checked={config.suppressAdminHint} onChange={(value) => updateConfig('suppressAdminHint', value)} />}

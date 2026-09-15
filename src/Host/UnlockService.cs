@@ -233,14 +233,9 @@ internal sealed partial class UnlockService : IDisposable
 
     private void SyncAutostart()
     {
-        if (_config.AutoStartWithWindows && _config.AutoStartAsAdministrator && Elevation.IsAdministrator()
-            && Autostart.SyncElevatedTask(true))
-        {
-            Autostart.SetEnabled(false);
-            return;
-        }
-        if (!_config.AutoStartWithWindows || !_config.AutoStartAsAdministrator)
-            Autostart.SyncElevatedTask(false);
+        // 开机自启动固定走 HKCU\Run 普通权限；自动管理员只用于手动启动。
+        // 同时清理旧版本的高权限任务，防止登录时提权。
+        Autostart.SyncElevatedTask(false);
         Autostart.SetEnabled(_config.AutoStartWithWindows);
     }
 
