@@ -3,6 +3,10 @@
 #include <dxgi.h>
 #include <d3d12.h>
 
+#include <atomic>
+#include <memory>
+#include <optional>
+
 #include <magic_enum.hpp>
 #include "low_latency/ll_util.h"
 

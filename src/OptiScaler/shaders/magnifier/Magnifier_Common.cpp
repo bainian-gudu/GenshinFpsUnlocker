@@ -37,8 +37,8 @@ void Magnifier_Common::FilloutStruct(float Width, float Height, InternalMagnifie
     else
     {
         auto mouseScreenPos = OptiInput::GetMouseScreenPos();
-        internalStruct.CursorPosX = mouseScreenPos.x;
-        internalStruct.CursorPosY = mouseScreenPos.y;
+        internalStruct.CursorPosX = static_cast<float>(mouseScreenPos.x);
+        internalStruct.CursorPosY = static_cast<float>(mouseScreenPos.y);
 
         internalStruct.OffsetX = Config::Instance()->MagnifierCursorOffsetX.value_or_default();
         internalStruct.OffsetY = Config::Instance()->MagnifierCursorOffsetY.value_or_default();

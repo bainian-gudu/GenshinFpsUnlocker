@@ -134,6 +134,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpplatest</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4250 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -153,6 +154,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpplatest</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4250 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -174,6 +176,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpplatest</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4250 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -198,7 +201,7 @@
       <BuildStlModules>true</BuildStlModules>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
-      <AdditionalOptions>/w34996 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /w34996 /wd4250 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -212,6 +215,7 @@
       <StackCommitSize>
       </StackCommitSize>
       <AdditionalOptions>/ignore:4099</AdditionalOptions>
+      <IgnoreSpecificDefaultLibraries>LIBCMT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -235,7 +239,7 @@
       <BuildStlModules>true</BuildStlModules>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalOptions>/w34996 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /w34996 /wd4250 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -247,6 +251,7 @@
       <ModuleDefinitionFile>Source.def</ModuleDefinitionFile>
       <DelayLoadDLLs>vulkan-1.dll;dxgi.dll;d3d12.dll;D3DCOMPILER_47.dll</DelayLoadDLLs>
       <AdditionalOptions>/ignore:4099</AdditionalOptions>
+      <IgnoreSpecificDefaultLibraries>LIBCMT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
       <!-- 上游打包步骤依赖未随本仓库分发的运行库与安装脚本，
@@ -271,7 +276,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalOptions>/w34996 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /w34996 /wd4250 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -283,6 +288,7 @@
       <ModuleDefinitionFile>Source.def</ModuleDefinitionFile>
       <DelayLoadDLLs>vulkan-1.dll;dxgi.dll;d3d12.dll;D3DCOMPILER_47.dll</DelayLoadDLLs>
       <AdditionalOptions>/ignore:4099</AdditionalOptions>
+      <IgnoreSpecificDefaultLibraries>LIBCMT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
       <Command>powershell -Command "$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'; $fileName = '$(OutDir)OptiScaler_' + $timestamp + '.7z'; $backupFileName = '$(OutDir)OptiScaler_' + $timestamp + '_Backup.7z'; &amp; '7z.exe' a -t7z $fileName '$(TargetPath)'; &amp; '7z.exe' a -t7z $backupFileName '$(OutDir)$(TargetName).*'"</Command>
