@@ -58,7 +58,7 @@ internal sealed partial class UnlockService
     private void ObserveUpscaler(int? pid)
     {
         var before = _upscaler.State;
-        _upscaler.Observe(pid, _config.GamePath, _config.UpscalerQuality);
+        _upscaler.Observe(pid, _config.GamePath, _config.UpscalerQuality, _config.UpscalerMode);
         if (before != _upscaler.State && !_disposed)
             Raise(forceUi: true);
     }

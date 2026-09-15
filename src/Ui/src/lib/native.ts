@@ -1,4 +1,4 @@
-import type { LogEntry, LogLevel, Page, UnlockerConfig, UpscalerQuality } from './config';
+import type { LogEntry, LogLevel, Page, UnlockerConfig, UpscalerQuality, UpscalerMode } from './config';
 import { asPage, DEFAULT_CONFIG, parseConfig } from './config';
 
 export type NativeState = {
@@ -25,8 +25,10 @@ export type UpscalerState = {
   available: boolean;
   proxyPresent: boolean;
   dlssRuntimePresent: boolean;
+  dlssNrRuntimePresent: boolean;
   gameConfigured: boolean;
   quality: UpscalerQuality;
+  mode: UpscalerMode;
   status: string;
 };
 
@@ -141,10 +143,14 @@ function normalizeState(raw: any): NativeState {
       available: Boolean(raw.upscaler?.available),
       proxyPresent: Boolean(raw.upscaler?.proxyPresent),
       dlssRuntimePresent: Boolean(raw.upscaler?.dlssRuntimePresent),
+      dlssNrRuntimePresent: Boolean(raw.upscaler?.dlssNrRuntimePresent),
       gameConfigured: Boolean(raw.upscaler?.gameConfigured),
       quality: (['quality', 'balanced', 'performance', 'ultraPerformance', 'nativeAA'].includes(raw.upscaler?.quality)
         ? raw.upscaler.quality
         : config.upscalerQuality) as UpscalerQuality,
+      mode: (['dlss4', 'dlss5'].includes(raw.upscaler?.mode)
+        ? raw.upscaler.mode
+        : config.upscalerMode) as UpscalerMode,
       status: String(raw.upscaler?.status ?? '组件未检测'),
     },
     version: String(raw.version ?? '1.0.0'),

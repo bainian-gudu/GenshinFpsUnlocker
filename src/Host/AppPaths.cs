@@ -50,8 +50,11 @@ internal static class AppPaths
     /// <summary>OptiScaler Aurora 源文件（部署时复制为游戏目录的 dxgi.dll）。</summary>
     public static string UpscalerProxyPath => Path.Combine(UpscalerDirectory, "OptiScaler.dll");
 
-    /// <summary>NVIDIA DLSS Runtime 源文件（部署时复制到游戏目录）。</summary>
+    /// <summary>NVIDIA DLSS Super Resolution Runtime 源文件（部署时复制到游戏目录）。</summary>
     public static string DlssRuntimePath => Path.Combine(UpscalerDirectory, "nvngx_dlss.dll");
+
+    /// <summary>NVIDIA DLSS Neural Rendering（DLSS 5）运行库源文件（部署时复制到游戏目录）。</summary>
+    public static string DlssNrRuntimePath => Path.Combine(UpscalerDirectory, "nvngx_dlssnr.dll");
 
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");

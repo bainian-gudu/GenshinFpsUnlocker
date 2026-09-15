@@ -2,7 +2,6 @@
 # 没有这个文件，windows-latest 上 prettier --check 必挂（runner 的 git 默认
 # core.autocrlf=true）。完整来龙去脉：tools/devcheck/README.md「跨平台的坑」。
 * text=auto eol=lf
-
 # 明确声明二进制，避免被当成文本做换行转换（text=auto 一般能自动识别，
 # 这里对容易被误判的类型兜底）
 *.png binary
@@ -28,7 +27,7 @@
 *.mp3 binary
 *.mp4 binary
 *.wav binary
-
 # 万一以后加入 Windows 批处理：cmd.exe 解析 CRLF 最稳，不要被上面的规则改成 LF
 *.bat text eol=crlf
 *.cmd text eol=crlf
+src/Host/upscaler/nvngx_dlssnr.dll filter=lfs diff=lfs merge=lfs -text

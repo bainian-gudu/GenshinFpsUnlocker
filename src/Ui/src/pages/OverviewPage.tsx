@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
+import type { UpscalerMode } from '../lib/config';
 import { FpsControl } from '../components/FpsControl';
 import { PageHeading, ToggleRow } from '../components/ui';
 
@@ -27,10 +28,11 @@ export function OverviewPage({ app }: { app: AppState }) {
               <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
               <div className="upscaler-card-body">
                 <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
-                <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS</strong><p>开启后自动部署代理到游戏目录，启动游戏即可生效。</p></div>
+                <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS{config.upscalerMode === 'dlss5' ? ' 5' : ' 4'}</strong><p>{config.upscalerMode === 'dlss5' ? '超分辨率 + 神经渲染，开启后部署代理与 NR 模型到游戏目录。' : '标准超分辨率，开启后自动部署代理到游戏目录，启动游戏即可生效。'}</p></div>
                 <span className="feature-status">{upscaler.status}</span>
               </div>
               <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
+              <div className="setting-row upscaler-mode-row"><div><span className="row-title">DLSS 版本</span><p>{config.upscalerMode === 'dlss5' ? 'DLSS 5：超分辨率 + AI 神经渲染（需 RTX 50 或兼容 DLL）' : 'DLSS 4：标准 AI 超分辨率，兼容性最广'}</p></div><select className="select-input" aria-label="DLSS 版本" value={config.upscalerMode} onChange={(event) => updateConfig('upscalerMode', event.target.value as UpscalerMode)}><option value="dlss4">DLSS 4 · 超分辨率</option><option value="dlss5">DLSS 5 · 超分辨率 + 神经渲染</option></select></div>
             </div>
           </section>
         </div>

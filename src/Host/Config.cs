@@ -15,6 +15,9 @@ internal sealed partial class AppConfig
     public static readonly string[] UpscalerQualityValues =
         ["quality", "balanced", "performance", "ultraPerformance", "nativeAA"];
 
+    public const string DefaultUpscalerMode = "dlss4";
+    public static readonly string[] UpscalerModeValues = ["dlss4", "dlss5"];
+
     /// <summary>目标帧率上限（1–540，默认 120）。</summary>
     public int TargetFps { get; set; } = 120;
 
@@ -41,6 +44,9 @@ internal sealed partial class AppConfig
 
     /// <summary>超分辨率质量挡位：quality、balanced、performance、ultraPerformance 或 nativeAA。</summary>
     public string UpscalerQuality { get; set; } = DefaultUpscalerQuality;
+
+    /// <summary>DLSS 版本模式：dlss4（标准超分辨率）或 dlss5（叠加神经渲染）。</summary>
+    public string UpscalerMode { get; set; } = DefaultUpscalerMode;
 
     /// <summary>
     /// 启动时是否最小化到系统托盘。
@@ -153,6 +159,11 @@ internal sealed partial class AppConfig
         else
             UpscalerQuality = UpscalerQualityValues.First(v =>
                 string.Equals(v, UpscalerQuality, StringComparison.OrdinalIgnoreCase));
+        if (!UpscalerModeValues.Contains(UpscalerMode, StringComparer.OrdinalIgnoreCase))
+            UpscalerMode = DefaultUpscalerMode;
+        else
+            UpscalerMode = UpscalerModeValues.First(v =>
+                string.Equals(v, UpscalerMode, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(LogLevel)) LogLevel = "Debug";
         if (!string.IsNullOrWhiteSpace(GamePath))
         {

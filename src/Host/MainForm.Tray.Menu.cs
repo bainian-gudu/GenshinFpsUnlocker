@@ -123,6 +123,15 @@ internal sealed partial class MainForm
         };
         menu.Items.Add(_trayUpscalerEnabledItem);
 
+        _trayUpscalerModeRoot = new ToolStripMenuItem($"DLSS 版本  ·  {UpscalerModeLabel(_config.UpscalerMode)}")
+        {
+            ToolTipText = "切换 DLSS 4（标准超分辨率）或 DLSS 5（超分辨率 + 神经渲染）",
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+        BuildTrayUpscalerModeItems();
+        menu.Items.Add(_trayUpscalerModeRoot);
+
         _trayUpscalerQualityRoot = new ToolStripMenuItem($"超分挡位  ·  {UpscalerQualityLabel(_config.UpscalerQuality)}")
         {
             ToolTipText = "选择 DLSS 输出质量挡位",
@@ -230,6 +239,15 @@ internal sealed partial class MainForm
             _trayFpsRoot.DropDown.ForeColor = _trayMenu.ForeColor;
             // 子菜单（帧率预设）是独立的弹出窗口，圆角要单独设一次；可重复调用
             TrayMenuCorners.Apply(_trayFpsRoot.DropDown);
+        }
+        if (_trayUpscalerModeRoot is not null)
+        {
+            foreach (ToolStripItem it in _trayUpscalerModeRoot.DropDownItems)
+                StyleTrayItem(it, dark);
+            _trayUpscalerModeRoot.DropDown.Renderer = new TrayMenuRenderer(dark);
+            _trayUpscalerModeRoot.DropDown.BackColor = _trayMenu.BackColor;
+            _trayUpscalerModeRoot.DropDown.ForeColor = _trayMenu.ForeColor;
+            TrayMenuCorners.Apply(_trayUpscalerModeRoot.DropDown);
         }
         if (_trayUpscalerQualityRoot is not null)
         {
@@ -370,6 +388,37 @@ internal sealed partial class MainForm
         custom.Click += (_, _) => ShowCustomFpsDialog();
         _trayFpsRoot.DropDownItems.Add(custom);
 
+        try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
+    }
+
+    private void BuildTrayUpscalerModeItems()
+    {
+        if (_trayUpscalerModeRoot is null) return;
+        _trayUpscalerModeRoot.DropDownItems.Clear();
+        var options = new[]
+        {
+            (Value: "dlss4", Label: "DLSS 4 · 超分辨率"),
+            (Value: "dlss5", Label: "DLSS 5 · 超分辨率 + 神经渲染"),
+        };
+        foreach (var option in options)
+        {
+            var item = new ToolStripMenuItem(option.Label)
+            {
+                Tag = option.Value,
+                Checked = string.Equals(_config.UpscalerMode, option.Value, StringComparison.OrdinalIgnoreCase),
+                CheckOnClick = false,
+                Padding = TrayItemPadding,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+            item.Click += (_, _) =>
+            {
+                _service.SetUpscalerMode(option.Value);
+                PushUiAndRefreshTray();
+                var suffix = _service.UpscalerState.Active ? "，下次启动游戏时生效" : string.Empty;
+                ShowTrayBalloon("DLSS 版本", $"已设置为 {option.Label}{suffix}");
+            };
+            _trayUpscalerModeRoot.DropDownItems.Add(item);
+        }
         try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
     }
 

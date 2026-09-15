@@ -103,7 +103,7 @@ internal sealed partial class UnlockService : IDisposable
     public void SyncUpscalerConfiguration()
     {
         _config.Sanitize();
-        _upscaler.SetEnabled(_config.UpscalerReplacementEnabled, _config.GamePath, _config.UpscalerQuality);
+        _upscaler.SetEnabled(_config.UpscalerReplacementEnabled, _config.GamePath, _config.UpscalerQuality, _config.UpscalerMode);
         Raise(forceUi: true);
     }
 
@@ -111,6 +111,15 @@ internal sealed partial class UnlockService : IDisposable
     public void SetUpscalerQuality(string quality)
     {
         _config.UpscalerQuality = quality;
+        _config.Sanitize();
+        _config.TrySave(out _);
+        SyncUpscalerConfiguration();
+    }
+
+    /// <summary>设置 DLSS 版本模式（dlss4 / dlss5）并立即刷新独立组件。</summary>
+    public void SetUpscalerMode(string mode)
+    {
+        _config.UpscalerMode = mode;
         _config.Sanitize();
         _config.TrySave(out _);
         SyncUpscalerConfiguration();

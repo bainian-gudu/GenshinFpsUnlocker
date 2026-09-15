@@ -34,6 +34,8 @@ internal sealed partial class UiBridge
                 _service.SetUpscalerReplacementEnabled(upscaler.GetValue<bool>());
             if (p["upscalerQuality"] is JsonNode quality)
                 _service.SetUpscalerQuality(quality.GetValue<string>());
+            if (p["upscalerMode"] is JsonNode mode)
+                _service.SetUpscalerMode(mode.GetValue<string>());
             if (p["autoStartWithWindows"] is JsonNode auto)
                 _service.SetAutoStartWithWindows(auto.GetValue<bool>());
             if (p["autoStartAsAdministrator"] is JsonNode autoAdmin)
@@ -92,6 +94,9 @@ internal sealed partial class UiBridge
         if (root.TryGetProperty("upscalerQuality", out var quality)
             && quality.ValueKind == JsonValueKind.String)
             _config.UpscalerQuality = quality.GetString() ?? AppConfig.DefaultUpscalerQuality;
+        if (root.TryGetProperty("upscalerMode", out var mode)
+            && mode.ValueKind == JsonValueKind.String)
+            _config.UpscalerMode = mode.GetString() ?? AppConfig.DefaultUpscalerMode;
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
         SetBool(root, "autoStartAsAdministrator", v => _config.AutoStartAsAdministrator = v);
@@ -134,6 +139,7 @@ internal sealed partial class UiBridge
         to.AntiBlurDiveMosaic = from.AntiBlurDiveMosaic;
         to.UpscalerReplacementEnabled = from.UpscalerReplacementEnabled;
         to.UpscalerQuality = from.UpscalerQuality;
+        to.UpscalerMode = from.UpscalerMode;
         to.MasterEnabled = from.MasterEnabled;
         to.AutoWatch = from.AutoWatch;
         to.StartMinimized = from.StartMinimized;
@@ -173,6 +179,7 @@ internal sealed partial class UiBridge
         antiBlurDiveMosaic = _config.AntiBlurDiveMosaic,
         upscalerReplacementEnabled = _config.UpscalerReplacementEnabled,
         upscalerQuality = _config.UpscalerQuality,
+        upscalerMode = _config.UpscalerMode,
         startMinimized = _config.StartMinimized,
         autoStartWithWindows = _config.AutoStartWithWindows,
         autoStartAsAdministrator = _config.AutoStartAsAdministrator,

@@ -15,6 +15,7 @@ internal sealed partial class MainForm
     private ToolStripMenuItem? _trayAntiBlurPerspectiveItem;
     private ToolStripMenuItem? _trayAntiBlurDiveMosaicItem;
     private ToolStripMenuItem? _trayUpscalerEnabledItem;
+    private ToolStripMenuItem? _trayUpscalerModeRoot;
     private ToolStripMenuItem? _trayUpscalerQualityRoot;
     private ToolStripMenuItem? _trayFpsRoot;
     private ContextMenuStrip? _trayMenu;
@@ -150,6 +151,15 @@ internal sealed partial class MainForm
                             mi.Checked = fps == _config.TargetFps;
                     }
                 }
+                if (_trayUpscalerModeRoot is not null)
+                {
+                    _trayUpscalerModeRoot.Text = $"DLSS 版本  ·  {UpscalerModeLabel(_config.UpscalerMode)}";
+                    foreach (ToolStripItem it in _trayUpscalerModeRoot.DropDownItems)
+                    {
+                        if (it is ToolStripMenuItem mi && mi.Tag is string mode)
+                            mi.Checked = string.Equals(mode, _config.UpscalerMode, StringComparison.OrdinalIgnoreCase);
+                    }
+                }
                 if (_trayUpscalerQualityRoot is not null)
                 {
                     _trayUpscalerQualityRoot.Text = $"超分挡位  ·  {UpscalerQualityLabel(_config.UpscalerQuality)}";
@@ -196,6 +206,12 @@ internal sealed partial class MainForm
         "performance" => "性能",
         "ultraPerformance" => "超高性能",
         _ => "质量",
+    };
+
+    private static string UpscalerModeLabel(string mode) => mode switch
+    {
+        "dlss5" => "DLSS 5",
+        _ => "DLSS 4",
     };
 
 }

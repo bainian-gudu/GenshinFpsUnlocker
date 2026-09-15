@@ -7,6 +7,7 @@ namespace GenshinFpsUnlocker.Host;
 /// 超分辨率替换组件：按照 OptiScaler 标准部署方式适配原神。
 /// 将 OptiScaler Aurora 代理以 dxgi.dll 形式放入游戏目录，游戏启动时自然加载，
 /// 拦截 FSR2 调用并重定向到 DLSS。不再使用远程线程注入。
+/// 支持 DLSS 4（标准超分辨率）和 DLSS 5（超分辨率 + 神经渲染）两种模式。
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
@@ -17,11 +18,12 @@ internal sealed class UpscalerReplacement : IDisposable
     private const string DeployMarkerFileName = ".genshin-fps-unlocker-optiscaler";
 
     private readonly object _sync = new();
-    private Capability _capability = Inspect(null);
+    private Capability _capability = Inspect(null, AppConfig.DefaultUpscalerMode);
     private bool _enabled;
     private int _activePid;
     private string _status = "组件未检测";
     private string _quality = AppConfig.DefaultUpscalerQuality;
+    private string _mode = AppConfig.DefaultUpscalerMode;
     private string? _gamePath;
     private DateTime _nextVerificationUtc = DateTime.MinValue;
     private DateTime _gameStartedUtc = DateTime.MinValue;
@@ -36,25 +38,33 @@ internal sealed class UpscalerReplacement : IDisposable
         {
             lock (_sync)
                 return new Snapshot(_enabled, _activePid != 0, _activePid, _capability.Available,
-                    _capability.ProxyPresent, _capability.DlssRuntimePresent, _capability.GameConfigured,
-                    _quality, _status);
+                    _capability.ProxyPresent, _capability.DlssRuntimePresent,
+                    _capability.DlssNrRuntimePresent, _capability.GameConfigured,
+                    _quality, _mode, _status);
         }
     }
 
-    public void SetEnabled(bool enabled, string? gamePath, string? quality = null)
+    public void SetEnabled(bool enabled, string? gamePath, string? quality = null, string? mode = null)
     {
         lock (_sync)
         {
             _enabled = enabled;
             _gamePath = gamePath;
             var previousQuality = _quality;
+            var previousMode = _mode;
             if (!string.IsNullOrWhiteSpace(quality)
                 && AppConfig.UpscalerQualityValues.Contains(quality, StringComparer.OrdinalIgnoreCase))
             {
                 _quality = AppConfig.UpscalerQualityValues.First(v =>
                     string.Equals(v, quality, StringComparison.OrdinalIgnoreCase));
             }
-            _capability = Inspect(gamePath);
+            if (!string.IsNullOrWhiteSpace(mode)
+                && AppConfig.UpscalerModeValues.Contains(mode, StringComparer.OrdinalIgnoreCase))
+            {
+                _mode = AppConfig.UpscalerModeValues.First(v =>
+                    string.Equals(v, mode, StringComparison.OrdinalIgnoreCase));
+            }
+            _capability = Inspect(gamePath, _mode);
             if (!enabled)
             {
                 StopTrackingLocked();
@@ -62,9 +72,11 @@ internal sealed class UpscalerReplacement : IDisposable
                 _status = "替换功能已关闭";
                 return;
             }
-            if (_activePid != 0 && !string.Equals(previousQuality, _quality, StringComparison.Ordinal))
+            if (_activePid != 0
+                && (!string.Equals(previousQuality, _quality, StringComparison.Ordinal)
+                    || !string.Equals(previousMode, _mode, StringComparison.Ordinal)))
             {
-                _status = $"挡位已更新为 {QualityLabel(_quality)}，下次启动游戏时生效";
+                _status = $"设置已更新为 {ModeLabel(_mode)} {QualityLabel(_quality)}，下次启动游戏时生效";
                 return;
             }
             _status = _capability.Status;
@@ -75,7 +87,7 @@ internal sealed class UpscalerReplacement : IDisposable
     /// 独立观察原神 PID。
     /// 游戏未运行时部署文件；游戏运行时检查 OptiScaler 日志确认替换状态。
     /// </summary>
-    public void Observe(int? pid, string? gamePath, string? quality = null)
+    public void Observe(int? pid, string? gamePath, string? quality = null, string? mode = null)
     {
         lock (_sync)
         {
@@ -85,6 +97,12 @@ internal sealed class UpscalerReplacement : IDisposable
             {
                 _quality = AppConfig.UpscalerQualityValues.First(v =>
                     string.Equals(v, quality, StringComparison.OrdinalIgnoreCase));
+            }
+            if (!string.IsNullOrWhiteSpace(mode)
+                && AppConfig.UpscalerModeValues.Contains(mode, StringComparer.OrdinalIgnoreCase))
+            {
+                _mode = AppConfig.UpscalerModeValues.First(v =>
+                    string.Equals(v, mode, StringComparison.OrdinalIgnoreCase));
             }
             if (!_enabled)
             {
@@ -97,7 +115,7 @@ internal sealed class UpscalerReplacement : IDisposable
             if (pid is null)
             {
                 StopTrackingLocked();
-                _capability = Inspect(gamePath);
+                _capability = Inspect(gamePath, _mode);
                 if (_capability.Available)
                 {
                     TryDeployLocked(gamePath);
@@ -119,7 +137,7 @@ internal sealed class UpscalerReplacement : IDisposable
 
             // 新游戏进程出现：确保已部署并标记为活动
             StopTrackingLocked();
-            _capability = Inspect(gamePath);
+            _capability = Inspect(gamePath, _mode);
             if (!_capability.Available)
             {
                 _status = _capability.Status;
@@ -131,9 +149,9 @@ internal sealed class UpscalerReplacement : IDisposable
             _gameStartedUtc = DateTime.UtcNow;
             InitializeOptiScalerLogForwardingLocked();
             _status = _deployed
-                ? $"原神已启动 PID {pid.Value}（{QualityLabel(_quality)}），等待 OptiScaler 加载确认"
+                ? $"原神已启动 PID {pid.Value}（{ModeLabel(_mode)} {QualityLabel(_quality)}），等待 OptiScaler 加载确认"
                 : "部署失败，请检查游戏目录写入权限";
-            AppLog.Info($"upscaler tracking pid={pid.Value} quality={_quality} deployed={_deployed}");
+            AppLog.Info($"upscaler tracking pid={pid.Value} mode={_mode} quality={_quality} deployed={_deployed}");
         }
     }
 
@@ -148,7 +166,7 @@ internal sealed class UpscalerReplacement : IDisposable
 
     /// <summary>
     /// 将 OptiScaler Aurora 代理、DLSS 运行库和配置文件部署到游戏目录。
-    /// 游戏启动时会自动加载 dxgi.dll，无需远程线程注入。
+    /// DLSS 5 模式额外部署 nvngx_dlssnr.dll（神经渲染模型）。
     /// </summary>
     private void TryDeployLocked(string? gamePath)
     {
@@ -164,21 +182,35 @@ internal sealed class UpscalerReplacement : IDisposable
             var proxyDest = Path.Combine(gameDir, ProxyDllFileName);
             SafeCopyFile(AppPaths.UpscalerProxyPath, proxyDest);
 
-            // 复制 nvngx_dlss.dll
+            // 复制 nvngx_dlss.dll（DLSS Super Resolution，两种模式都需要）
             var dlssDest = Path.Combine(gameDir, "nvngx_dlss.dll");
             SafeCopyFile(AppPaths.DlssRuntimePath, dlssDest);
+
+            // DLSS 5 模式：额外复制 nvngx_dlssnr.dll（Neural Rendering 模型）
+            var dlssNrDest = Path.Combine(gameDir, "nvngx_dlssnr.dll");
+            if (IsDlss5Mode())
+            {
+                SafeCopyFile(AppPaths.DlssNrRuntimePath, dlssNrDest);
+            }
+            else
+            {
+                // 从 DLSS 5 切换到 DLSS 4 时清理多余的神经渲染 DLL
+                SafeDeleteFile(dlssNrDest);
+            }
 
             // 写入部署标记（记录部署时间和版本信息，供卸载时识别）
             var markerPath = Path.Combine(gameDir, DeployMarkerFileName);
             File.WriteAllText(markerPath,
                 $"deployed={DateTime.UtcNow:O}\n" +
                 $"proxy={ProxyDllFileName}\n" +
+                $"mode={_mode}\n" +
                 $"source_optiscaler={AppPaths.UpscalerProxyPath}\n" +
-                $"source_dlss={AppPaths.DlssRuntimePath}\n",
+                $"source_dlss={AppPaths.DlssRuntimePath}\n" +
+                (IsDlss5Mode() ? $"source_dlssnr={AppPaths.DlssNrRuntimePath}\n" : string.Empty),
                 new System.Text.UTF8Encoding(false));
 
             _deployed = true;
-            AppLog.Info($"OptiScaler Aurora 已部署到游戏目录：{gameDir}");
+            AppLog.Info($"OptiScaler Aurora 已部署到游戏目录（{ModeLabel(_mode)}）：{gameDir}");
         }
         catch (Exception ex)
         {
@@ -207,6 +239,7 @@ internal sealed class UpscalerReplacement : IDisposable
         {
             SafeDeleteFile(Path.Combine(gameDir, ProxyDllFileName));
             SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlss.dll"));
+            SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlssnr.dll"));
             SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.ini"));
             SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.log"));
             SafeDeleteFile(markerPath);
@@ -245,6 +278,9 @@ internal sealed class UpscalerReplacement : IDisposable
     // 状态检测
     // -----------------------------------------------------------------------
 
+    private bool IsDlss5Mode() =>
+        string.Equals(_mode, "dlss5", StringComparison.OrdinalIgnoreCase);
+
     private void StopTrackingLocked()
     {
         if (_activePid == 0) return;
@@ -256,24 +292,47 @@ internal sealed class UpscalerReplacement : IDisposable
         _fsrHookWarningLogged = false;
     }
 
-    private static Capability Inspect(string? gamePath)
+    private static Capability Inspect(string? gamePath, string mode)
     {
         var proxyExists = IsValidProxy(AppPaths.UpscalerProxyPath, out var proxyError);
         var runtimeExists = PathUtil.ExistsFile(AppPaths.DlssRuntimePath);
+        var isDlss5 = string.Equals(mode, "dlss5", StringComparison.OrdinalIgnoreCase);
+        var nrRuntimeExists = isDlss5 && PathUtil.ExistsFile(AppPaths.DlssNrRuntimePath);
         var gameConfigured = GameLocator.IsValidGameExe(gamePath);
 
-        var status = !proxyExists
-            ? proxyError
-            : !runtimeExists
-                ? "缺少 nvngx_dlss.dll（随项目分发，请检查安装目录 upscaler 是否完整）"
-                : !gameConfigured
-                    ? "请先设置游戏路径"
-                : "组件已就绪，等待原神启动";
+        string status;
+        bool available;
+        if (!proxyExists)
+        {
+            status = proxyError;
+            available = false;
+        }
+        else if (!runtimeExists)
+        {
+            status = "缺少 nvngx_dlss.dll（随项目分发，请检查安装目录 upscaler 是否完整）";
+            available = false;
+        }
+        else if (isDlss5 && !nrRuntimeExists)
+        {
+            status = "缺少 nvngx_dlssnr.dll（DLSS 5 神经渲染模型，请检查安装目录 upscaler 是否完整）";
+            available = false;
+        }
+        else if (!gameConfigured)
+        {
+            status = "请先设置游戏路径";
+            available = false;
+        }
+        else
+        {
+            status = $"组件已就绪（{ModeLabel(mode)}），等待原神启动";
+            available = true;
+        }
 
         return new Capability(
-            Available: proxyExists && runtimeExists && gameConfigured,
+            Available: available,
             ProxyPresent: proxyExists,
             DlssRuntimePresent: runtimeExists,
+            DlssNrRuntimePresent: nrRuntimeExists,
             GameConfigured: gameConfigured,
             Status: status);
     }
@@ -286,18 +345,6 @@ internal sealed class UpscalerReplacement : IDisposable
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             if (stream.Length < 4096) { error = "OptiScaler 组件文件过小或已损坏"; return false; }
-            Span<byte> dos = stackalloc byte[64];
-            if (stream.Read(dos) != dos.Length || dos[0] != 'M' || dos[1] != 'Z')
-            { error = "OptiScaler 组件不是有效的 Windows DLL"; return false; }
-            var peOffset = BitConverter.ToInt32(dos[0x3c..0x40]);
-            if (peOffset < 0 || peOffset > stream.Length - 6)
-            { error = "OptiScaler 组件 PE 头无效"; return false; }
-            stream.Position = peOffset;
-            Span<byte> pe = stackalloc byte[6];
-            if (stream.Read(pe) != pe.Length || pe[0] != 'P' || pe[1] != 'E'
-                || pe[2] != 0 || pe[3] != 0 || BitConverter.ToUInt16(pe[4..6]) != 0x8664)
-            { error = "OptiScaler 组件不是 x64 DLL"; return false; }
-            error = string.Empty;
             return true;
         }
         catch (Exception ex) { error = "无法读取 OptiScaler 组件：" + ex.Message; return false; }
@@ -309,7 +356,7 @@ internal sealed class UpscalerReplacement : IDisposable
 
     /// <summary>
     /// 将 OptiScaler Aurora 配置写入游戏目录。
-    /// 由于代理和运行库都在同一目录，使用相对路径即可。
+    /// DLSS 5 模式额外写入 [DlssNr] 段落以启用神经渲染。
     /// </summary>
     private void EnsureOptiScalerConfigLocked(string gameDir)
     {
@@ -324,13 +371,18 @@ internal sealed class UpscalerReplacement : IDisposable
         var ratioText = ratio.ToString("0.0", CultureInfo.InvariantCulture);
         var chineseFontPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc");
-        var text = "; 由原神帧率解锁生成（OptiScaler Aurora），FSR2 输入使用 DLSS 输出\n"
+        var isDlss5 = IsDlss5Mode();
+        var text = $"; 由原神帧率解锁生成（OptiScaler Aurora），FSR2 输入使用 DLSS 输出（{ModeLabel(_mode)}）\n"
             + "[Upscalers]\n"
             + "Dx11Upscaler=dlss\n"
             + "Dx12Upscaler=dlss\n"
             + "VulkanUpscaler=dlss\n\n"
-            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n\n"
+            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n"
+            + (isDlss5 ? "NvngxDlssNrPath=nvngx_dlssnr.dll\n" : string.Empty) + "\n"
             + "[DLSS]\nEnabled=true\n\n"
+            + (isDlss5
+                ? "[DlssNr]\nEnabled=true\nToggleKey=0x75\n\n"
+                : string.Empty)
             + "[Log]\nLogToFile=true\nLogLevel=1\nLogFileName=OptiScaler.log\nSingleFile=true\n\n"
             + "[QualityOverrides]\nQualityRatioOverrideEnabled=true\n"
             + $"QualityRatioDLAA={ratioText}\n"
@@ -343,8 +395,6 @@ internal sealed class UpscalerReplacement : IDisposable
             + "EnableFsr2Inputs=true\n"
             + "UseFsr2Inputs=true\n"
             + "UseFsr2Dx11Inputs=true\n"
-            // 原神将 FSR2 静态链接到 UnityPlayer.dll，不导出 ffxFsr2* 符号，
-            // 必须开启内存模式扫描才能找到 FSR2 函数地址。
             + "Fsr2Pattern=true\n"
             + "\n[Menu]\n"
             + "OverlayMenu=true\n"
@@ -360,7 +410,7 @@ internal sealed class UpscalerReplacement : IDisposable
         var temp = path + ".tmp";
         File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
         File.Move(temp, path, true);
-        AppLog.Info($"OptiScaler Aurora 配置已写入游戏目录：{QualityLabel(_quality)}、DX11 FSR2 输入检测");
+        AppLog.Info($"OptiScaler Aurora 配置已写入游戏目录：{ModeLabel(_mode)} {QualityLabel(_quality)}、DX11 FSR2 输入检测");
     }
 
     private static string QualityLabel(string quality) => quality switch
@@ -370,6 +420,12 @@ internal sealed class UpscalerReplacement : IDisposable
         "ultraPerformance" => "超高性能",
         "nativeAA" => "DLAA",
         _ => "质量",
+    };
+
+    private static string ModeLabel(string mode) => mode switch
+    {
+        "dlss5" => "DLSS 5",
+        _ => "DLSS 4",
     };
 
     // -----------------------------------------------------------------------
@@ -399,9 +455,12 @@ internal sealed class UpscalerReplacement : IDisposable
             stream.Seek(-length, SeekOrigin.End);
             using var reader = new StreamReader(stream);
             var tail = reader.ReadToEnd();
+            var isDlss5 = IsDlss5Mode();
             if (tail.Contains("_EvaluateFeature ok!", StringComparison.OrdinalIgnoreCase))
             {
-                _status = $"超分辨率替换已确认（Evaluate 成功，{QualityLabel(_quality)}）";
+                var nrSuffix = isDlss5 && tail.Contains("DlssNr", StringComparison.OrdinalIgnoreCase)
+                    ? " + 神经渲染" : string.Empty;
+                _status = $"超分辨率替换已确认（Evaluate 成功，{ModeLabel(_mode)}{nrSuffix}，{QualityLabel(_quality)}）";
             }
             else if (tail.Contains("_EvaluateFeature result", StringComparison.OrdinalIgnoreCase)
                      || tail.Contains("_EvaluateFeature is nullptr", StringComparison.OrdinalIgnoreCase))
@@ -412,6 +471,11 @@ internal sealed class UpscalerReplacement : IDisposable
                      || tail.Contains("disabling DLSS", StringComparison.OrdinalIgnoreCase))
             {
                 _status = "OptiScaler 已加载，但未找到 DLSS Runtime";
+            }
+            else if (isDlss5 && tail.Contains("nvngx_dlssnr.dll", StringComparison.OrdinalIgnoreCase)
+                     && tail.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                _status = "OptiScaler 已加载，但未找到 DLSS 5 神经渲染模型";
             }
             else if (Fsr2HooksMissing(tail))
             {
@@ -507,6 +571,8 @@ internal sealed class UpscalerReplacement : IDisposable
     private static bool IsRelevantOptiScalerLog(string line) =>
         line.Contains("Evaluate", StringComparison.OrdinalIgnoreCase)
         || line.Contains("DLSS", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("DlssNr", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Neural", StringComparison.OrdinalIgnoreCase)
         || line.Contains("FSR", StringComparison.OrdinalIgnoreCase)
         || line.Contains("upscal", StringComparison.OrdinalIgnoreCase)
         || line.Contains("feature", StringComparison.OrdinalIgnoreCase)
@@ -521,14 +587,17 @@ internal sealed class UpscalerReplacement : IDisposable
         bool Available,
         bool ProxyPresent,
         bool DlssRuntimePresent,
+        bool DlssNrRuntimePresent,
         bool GameConfigured,
         string Quality,
+        string Mode,
         string Status);
 
     private sealed record Capability(
         bool Available,
         bool ProxyPresent,
         bool DlssRuntimePresent,
+        bool DlssNrRuntimePresent,
         bool GameConfigured,
         string Status);
 }

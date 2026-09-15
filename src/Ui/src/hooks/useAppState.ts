@@ -52,8 +52,10 @@ export function useAppState() {
     available: false,
     proxyPresent: false,
     dlssRuntimePresent: false,
+    dlssNrRuntimePresent: false,
     gameConfigured: false,
     quality: 'quality',
+    mode: 'dlss4',
     status: '组件未检测',
   });
   const [version, setVersion] = useState('1.0.0');
