@@ -18,7 +18,7 @@ internal sealed class UpscalerReplacement : IDisposable
     private const string DeployMarkerFileName = ".genshin-fps-unlocker-optiscaler";
 
     private readonly object _sync = new();
-    private Capability _capability = Inspect(null, AppConfig.DefaultUpscalerMode);
+    private Capability _capability = Inspect(null, AppConfig.DefaultUpscalerMode, AppConfig.DefaultUpscalerQuality);
     private bool _enabled;
     private int _activePid;
     private string _status = "组件未检测";
@@ -64,7 +64,7 @@ internal sealed class UpscalerReplacement : IDisposable
                 _mode = AppConfig.UpscalerModeValues.First(v =>
                     string.Equals(v, mode, StringComparison.OrdinalIgnoreCase));
             }
-            _capability = Inspect(gamePath, _mode);
+            _capability = Inspect(gamePath, _mode, _quality);
             if (!enabled)
             {
                 StopTrackingLocked();
@@ -115,11 +115,11 @@ internal sealed class UpscalerReplacement : IDisposable
             if (pid is null)
             {
                 StopTrackingLocked();
-                _capability = Inspect(gamePath, _mode);
+                _capability = Inspect(gamePath, _mode, _quality);
                 if (_capability.Available)
                 {
                     TryDeployLocked(gamePath);
-                    _status = _deployed ? "组件已部署，等待原神启动" : _capability.Status;
+                    _status = _deployed ? $"已就绪（{ModeLabel(_mode)} {QualityLabel(_quality)}）" : _capability.Status;
                 }
                 else
                 {
@@ -137,7 +137,7 @@ internal sealed class UpscalerReplacement : IDisposable
 
             // 新游戏进程出现：确保已部署并标记为活动
             StopTrackingLocked();
-            _capability = Inspect(gamePath, _mode);
+            _capability = Inspect(gamePath, _mode, _quality);
             if (!_capability.Available)
             {
                 _status = _capability.Status;
@@ -292,7 +292,7 @@ internal sealed class UpscalerReplacement : IDisposable
         _fsrHookWarningLogged = false;
     }
 
-    private static Capability Inspect(string? gamePath, string mode)
+    private static Capability Inspect(string? gamePath, string mode, string quality)
     {
         var proxyExists = IsValidProxy(AppPaths.UpscalerProxyPath, out var proxyError);
         var runtimeExists = PathUtil.ExistsFile(AppPaths.DlssRuntimePath);
@@ -324,7 +324,7 @@ internal sealed class UpscalerReplacement : IDisposable
         }
         else
         {
-            status = $"组件已就绪（{ModeLabel(mode)}），等待原神启动";
+            status = $"已就绪（{ModeLabel(mode)} {QualityLabel(_quality)}）";
             available = true;
         }
 
@@ -479,11 +479,11 @@ internal sealed class UpscalerReplacement : IDisposable
             }
             else if (Fsr2HooksMissing(tail))
             {
-                _status = "代理已加载，但未检测到原神 FSR2 接口（当前版本可能不兼容）";
+                _status = $"代理已加载（{ModeLabel(_mode)}），FSR2 接口尚未拦截，进入游戏场景后可能生效";
                 if (!_fsrHookWarningLogged)
                 {
                     _fsrHookWarningLogged = true;
-                    AppLog.Warn("OptiScaler 未找到原神 FSR2 导出接口；已尝试 DX11 检测。若仍无 Evaluate 记录，当前游戏版本需要专用适配。");
+                    AppLog.Warn("OptiScaler 初始化时未找到原神 FSR2 接口（UnityPlayer.dll 可能尚未加载）；进入游戏场景后若仍无 Evaluate 记录，当前游戏版本需要专用适配。");
                 }
             }
             else if (tail.Contains("Creating DLSS feature", StringComparison.OrdinalIgnoreCase)
