@@ -32,6 +32,122 @@ function Write-Bad  { param([string]$Text) Write-Host "   $Text" -ForegroundColo
 
 function Skip-Layer { param([string]$Reason) throw [LayerSkipped]::new($Reason) }
 
+# ---------------------------------------------------------------------------
+# 仓库改动锁 / 备份
+#
+# -SelfTest 会临时改写仓库里的真实文件（.gitmodules、工作流、registry.rs …）来验证各层
+# 真会报错。两个进程同时跑就会互相看到对方的注入，出现「检查报错但其实是被别人改的」
+# 这种假失败；进程被杀时还会把注入留在工作区。这里用原子创建的锁文件互斥，
+# 并把原始内容落到磁盘备份，下一个进程起来时能恢复被杀进程留下的改动。
+# ---------------------------------------------------------------------------
+function Get-RepoLockPath { Join-Path $DevCheckRoot '.repo-lock' }
+function Get-SelfTestBackupDir { Join-Path $DevCheckRoot '.selftest-backup' }
+
+function Enter-RepoLock {
+    $lock = Get-RepoLockPath
+    $mine = "{0}-{1}" -f $PID, ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $tmp = "$lock.$mine.tmp"
+    try {
+        # 先写临时文件再原子改名：拿到锁的进程一定读到完整的 PID，不会读到空文件。
+        Set-Content -LiteralPath $tmp -Value "$PID`n$mine" -Encoding ascii
+        [System.IO.File]::Move($tmp, $lock)
+    }
+    catch [System.IO.IOException] {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        $holder = '（读不到持有者 PID）'
+        try {
+            $lines = @(Get-Content -LiteralPath $lock -ErrorAction Stop)
+            if ($lines.Count) { $holder = "PID $($lines[0])" }
+        }
+        catch { }
+        throw "另一个 devcheck 正持有仓库改动锁（$holder）。-SelfTest 会临时改写仓库文件，" +
+              '两个进程同时跑会互相污染；等它结束后重试，或删掉 ' + $lock
+    }
+    finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Exit-RepoLock {
+    $lock = Get-RepoLockPath
+    if (-not (Test-Path -LiteralPath $lock)) { return }
+    try {
+        $lines = @(Get-Content -LiteralPath $lock -ErrorAction Stop)
+        # 只删自己那把；别人重新拿到的锁不能被我误删。
+        if (-not $lines.Count -or [int]$lines[0] -ne $PID) { return }
+        Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
+    }
+    catch { }
+}
+
+# 仓库内文件的改动前备份：备份名由仓库相对路径转义而来（禁用字符替换成 '_'），
+# 因此同一个文件在任何进程里都映射到同一份备份，崩溃后还能被下一个进程找到。
+function Get-RepoBackupPath {
+    param([Parameter(Mandatory)][string]$Path)
+    $dir = Get-SelfTestBackupDir
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $rel = [System.IO.Path]::GetRelativePath($RepoRoot, $Path)
+    $invalid = [System.IO.Path]::GetInvalidFileNameChars() -join ''
+    $name = ($rel -replace "[$([regex]::Escape($invalid))]", '_')
+    return Join-Path $dir $name
+}
+
+function Backup-RepoFile {
+    param([Parameter(Mandatory)][string]$Path)
+    $backup = Get-RepoBackupPath -Path $Path
+    if (Test-Path -LiteralPath $Path) {
+        Copy-Item -LiteralPath $Path -Destination $backup -Force
+    }
+    else {
+        # 备份不存在 + 原文件当时不存在 = 这个文件是注入创建的，清理时直接删。
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+    }
+    return $backup
+}
+
+function Restore-RepoFile {
+    param([Parameter(Mandatory)][string]$Backup, [Parameter(Mandatory)][string]$Path)
+    if (Test-Path -LiteralPath $Backup) {
+        Copy-Item -LiteralPath $Backup -Destination $Path -Force
+    }
+    else {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# -SelfTest 注入过的仓库内文件；下一次运行（哪怕上一次是被杀掉）先按它清场。
+$script:SelfTestRepoFiles = @(
+    '.gitmodules',
+    '.github/workflows/zz-devcheck-selftest.yml',
+    'installer/kachina/src/devcheck-selftest-telemetry.ts',
+    'installer/kachina/src-tauri/src/utils/mod.rs',
+    'installer/kachina/src-tauri/Cargo.toml',
+    'installer/kachina/src-tauri/src/installer/registry.rs',
+    'installer/kachina/vendor/rcedit-rs/rcedit-sys/src/rescle.cc',
+    'tools/ci/Import-DevCmd.ps1',
+    'src/Host/ProcessRunner.cs'
+)
+
+function Clear-RepoMutations {
+    param([switch]$Quiet)
+    # 内容一致说明该用例自己的 Cleanup 已经还原过了，不必再报「被中断」。
+    # 只有内容确实不一样时才是上一次运行留下的注入。
+    $restored = 0
+    foreach ($rel in $script:SelfTestRepoFiles) {
+        $path = Join-Path $RepoRoot $rel
+        $backup = Get-RepoBackupPath -Path $path
+        if (-not (Test-Path -LiteralPath $backup)) { continue }
+        $same = (Test-Path -LiteralPath $path) -and
+            ([System.IO.File]::ReadAllText($path) -eq [System.IO.File]::ReadAllText($backup))
+        if (-not $same) {
+            Restore-RepoFile -Backup $backup -Path $path
+            $restored++
+            if (-not $Quiet) { Write-Info "已从 -SelfTest 备份恢复 $rel（上次运行被中断留下的注入）" }
+        }
+    }
+    if ($restored -and -not $Quiet) { Write-Info "共恢复 $restored 个被中断注入的文件" }
+}
+
 function Invoke-Layer {
     param(
         [Parameter(Mandatory)][string]$Name,

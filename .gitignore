@@ -74,4 +74,7 @@ tools/devcheck/front/gen/
 tools/devcheck/front/.prettierrc
 tools/devcheck/_selftest/
 tools/devcheck/front/_selftest/
+# -SelfTest 的仓库内改动锁与备份（进程被杀后靠它们恢复并清场）
+tools/devcheck/.repo-lock
+tools/devcheck/.selftest-backup/
 !tools/devcheck/README.md

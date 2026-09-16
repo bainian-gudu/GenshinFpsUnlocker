@@ -49,19 +49,14 @@ jobs:
     $registryFile = Join-Path $RepoRoot 'installer/kachina/src-tauri/src/installer/registry.rs'
     Add-Case 'vendor 层能抓到 ARP 静默卸载用了不存在的选项' `
         -Mutate {
-            $script:RegistryBackup = [System.IO.File]::ReadAllText($registryFile)
-            $mutated = $script:RegistryBackup -replace [regex]::Escape('"\"{uninstaller}\" -U -S -I"'), `
+            $original = [System.IO.File]::ReadAllText($registryFile)
+            $mutated = $original -replace [regex]::Escape('"\"{uninstaller}\" -U -S -I"'), `
                 '"\"{uninstaller}\" --uninstall --silent --non-interactive"'
-            if ($mutated -eq $script:RegistryBackup) { throw 'selftest 注入点没匹配上（registry.rs 的 QuietUninstallString 写法变了？）' }
+            if ($mutated -eq $original) { throw 'selftest 注入点没匹配上（registry.rs 的 QuietUninstallString 写法变了？）' }
             [System.IO.File]::WriteAllText($registryFile, $mutated)
         } `
         -Run { Test-VendoredSource } `
-        -Cleanup {
-            if ($script:RegistryBackup) {
-                [System.IO.File]::WriteAllText($registryFile, $script:RegistryBackup)
-                $script:RegistryBackup = $null
-            }
-        }
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $registryFile) -Path $registryFile }
 
     # --- 0c) vendor：rescle.cc 里再出现 locale::empty() 就必须报错 ---
     #     这是 vendored 副本里唯一的「MSVC 版本敏感」代码，用注释形式注入不算
@@ -69,50 +64,32 @@ jobs:
     $rescleFile = Join-Path $RepoRoot 'installer/kachina/vendor/rcedit-rs/rcedit-sys/src/rescle.cc'
     Add-Case 'vendor 层能抓到 rescle.cc 用回 locale::empty()' `
         -Mutate {
-            $script:RescleBackup = [System.IO.File]::ReadAllText($rescleFile)
             Add-Content -Path $rescleFile -Encoding utf8 `
                 -Value "`nstatic void _devcheck_selftest() { std::locale l(std::locale::empty()); (void)l; }"
         } `
         -Run { Test-VendoredSource } `
-        -Cleanup {
-            if ($script:RescleBackup) {
-                [System.IO.File]::WriteAllText($rescleFile, $script:RescleBackup)
-                $script:RescleBackup = $null
-            }
-        }
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $rescleFile) -Path $rescleFile }
 
     # --- 0d) vendor：Sentry 上报被加回来就必须报错（本项目已物理移除遥测）---
     #     注入一行**真代码**：注释形式不算（检查会剥掉 // 注释），跟 0c 同一个道理。
     $utilsMod = Join-Path $RepoRoot 'installer/kachina/src-tauri/src/utils/mod.rs'
     Add-Case 'vendor 层能抓到 Sentry 上报被加回来' `
         -Mutate {
-            $script:UtilsModBackup = [System.IO.File]::ReadAllText($utilsMod)
             Add-Content -Path $utilsMod -Encoding utf8 `
                 -Value "`nfn _devcheck_selftest_telemetry() { let _g = sentry::init(sentry::ClientOptions::default()); }"
         } `
         -Run { Test-VendoredSource } `
-        -Cleanup {
-            if ($script:UtilsModBackup) {
-                [System.IO.File]::WriteAllText($utilsMod, $script:UtilsModBackup)
-                $script:UtilsModBackup = $null
-            }
-        }
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $utilsMod) -Path $utilsMod }
 
     # --- 0e) vendor：遥测依赖被加回 Cargo.toml 就必须报错（连 lock 一起回归的信号）---
     $kaCargoToml = Join-Path $RepoRoot 'installer/kachina/src-tauri/Cargo.toml'
     Add-Case 'vendor 层能抓到 Sentry 依赖被加回 Cargo.toml' `
         -Mutate {
-            $script:CargoTomlBackup = [System.IO.File]::ReadAllText($kaCargoToml)
             Add-Content -Path $kaCargoToml -Encoding utf8 `
                 -Value "`nsentry = { version = `"0.37`", features = [`"backtrace`"] }"
         } `
         -Run { Test-VendoredSource } `
-        -Cleanup {
-            if ($script:CargoTomlBackup) {
-                [System.IO.File]::WriteAllText($kaCargoToml, $script:CargoTomlBackup)
-                $script:CargoTomlBackup = $null
-            }
-        }
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $kaCargoToml) -Path $kaCargoToml }
 
     # --- 0f) vendor：上报域名回到 vendored 树里就必须报错（DSN / 统计端点兜底）---
     #     新建一个临时文件而不是改现有文件：这条断言扫的是「全树文本文件里有没有域名」。
@@ -161,10 +138,8 @@ jobs:
             Add-Content -Path $f -Value "`nexport const _devcheckSelfTest: number = 'not a number';" -Encoding utf8
         } `
         -Run {
-            $npx = Get-Tool 'npx'
-            if (-not $npx) { Skip-Layer 'npx 不在 PATH' }
-            $r = Invoke-Native -FilePath $npx -Arguments @('tsc', '--noEmit', '-p', 'tsconfig.json') -WorkingDirectory $front -Tail 10
-            if ($r.ExitCode -ne 0) { throw 'tsc 报错（符合预期）' }
+            Test-Frontend
+            throw 'front 层没有报错，这层是空壳'
         }
 
     # --- 5) front/sfc：一个 template 不闭合的 .vue ---
@@ -192,7 +167,6 @@ const a: number = 1;
     # --- 6) ci：把 vcvars 输出会解析出 0 个变量的注册
     # 这层守的是 build-kachina 的 MSVC 注入：真退化了要等 9 分钟冷构建才炸。
     $ciScript = Join-Path $RepoRoot 'tools/ci/Import-DevCmd.ps1'
-    $ciOriginal = [System.IO.File]::ReadAllText($ciScript)
     Add-Case 'ci 层能抓到 MSVC 环境解析失效' `
         -Mutate {
             $text = [System.IO.File]::ReadAllText($ciScript)
@@ -201,49 +175,87 @@ const a: number = 1;
             [System.IO.File]::WriteAllText($ciScript, $broken)
         } `
         -Run { Test-CiScripts } `
-        -Cleanup { [System.IO.File]::WriteAllText($ciScript, $ciOriginal) }
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $ciScript) -Path $ciScript }
 
-    Write-Step 'selftest 注入错误自检'
-    $caught = 0; $missed = 0; $skipped = 0; $idx = 0
-    foreach ($c in $cases) {
-        $idx++
-        # 每次都从干净的生成物开始
+    # --- 7) hosttest：把 ProcessRunner 超时路径上的 KillTree 拿掉 ---
+    #      只注入一个能编过的行为错误（少杀进程树，而不是改标记或提前 return，
+    #      后两者会带 CS0162 噪音或者只在特定断言上暴露）。
+    #      注入后 6.2 那条「sleep 4 秒但 1 秒超时」的用例会一直等下去，
+    #      只有「等待有上限 + 超时真的动手杀」都成立才会通过。
+    $processRunner = Join-Path $RepoRoot 'src/Host/ProcessRunner.cs'
+    Add-Case 'hosttest 层能抓到超时没杀进程树' `
+        -Mutate {
+            $text = [System.IO.File]::ReadAllText($processRunner)
+            # 换行可能是 LF 也可能是 CRLF（取决于 checkout 时的 autocrlf），
+            # 先归一化成 LF 再匹配，否则在 Windows runner 上会「注入失败」。
+            $broken = $text.Replace("`r`n", "`n").Replace("                KillTree(process);`n", '')
+            if ($broken -eq $text) { throw '注入失败：没找到 ProcessRunner 的超时分支' }
+            [System.IO.File]::WriteAllText($processRunner, $broken)
+        } `
+        -Run { Test-HostTest } `
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $processRunner) -Path $processRunner }
+
+    # 先按磁盘备份清掉上一次被中断的自检留下的注入，再上锁独占。
+    Clear-RepoMutations
+    $caught = 0; $missed = 0; $skipped = 0
+
+    Enter-RepoLock
+    try {
+        Write-Step 'selftest 注入错误自检'
+        $idx = 0
+        foreach ($c in $cases) {
+            $idx++
+            # 每次都从干净的生成物开始
+            New-GenSources | Out-Null
+            try {
+                # Mutate 之前先把原始内容落到磁盘：进程被杀也留得下恢复依据。
+                # 只在备份不存在时写：否则某个用例没清干净时，备份会被「已污染」的
+                # 内容覆盖，之后再也回不到原始版本。
+                foreach ($rel in $script:SelfTestRepoFiles) {
+                    $path = Join-Path $RepoRoot $rel
+                    if (-not (Test-Path -LiteralPath (Get-RepoBackupPath -Path $path))) {
+                        Backup-RepoFile -Path $path | Out-Null
+                    }
+                }
+                & $c.Mutate
+            }
+            catch {
+                $missed++
+                Write-Bad "  ✗ $($c.Name) —— 注入失败: $($_.Exception.Message)"
+                continue
+            }
+            Write-Host "  ── 注入 $idx/$($cases.Count)：$($c.Name)" -ForegroundColor DarkYellow
+            Write-Host '     ↓ 接下来这段报错是故意注入的，看到它才说明这层没被架空' -ForegroundColor DarkGray
+            $outcome = 'CAUGHT'
+            try {
+                & $c.Run | Out-Null
+                $outcome = 'MISSED'
+            }
+            catch [LayerSkipped] { $outcome = 'SKIPPED' }
+            catch { $outcome = 'CAUGHT' }
+            try { & $c.Cleanup } catch { }
+
+            switch ($outcome) {
+                'CAUGHT'  { $caught++;  Write-Ok "  ✓ $($c.Name)" }
+                'SKIPPED' { $skipped++; Write-Info "  - $($c.Name)（缺工具链，跳过）" }
+                'MISSED'  { $missed++;  Write-Bad "  ✗ $($c.Name) —— 注入了错误却没报错，这层是空壳！" }
+            }
+        }
+
+        # 收尾：删掉临时目录并恢复干净的生成物
+        foreach ($d in @($tmpDir, (Join-Path $front '_selftest'))) {
+            if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
+        }
         New-GenSources | Out-Null
-        try {
-            & $c.Mutate
-        }
-        catch {
-            $missed++
-            Write-Bad "  ✗ $($c.Name) —— 注入失败: $($_.Exception.Message)"
-            continue
-        }
-        Write-Host "  ── 注入 $idx/$($cases.Count)：$($c.Name)" -ForegroundColor DarkYellow
-        Write-Host '     ↓ 接下来这段报错是故意注入的，看到它才说明这层没被架空' -ForegroundColor DarkGray
-        $outcome = 'CAUGHT'
-        try {
-            & $c.Run | Out-Null
-            $outcome = 'MISSED'
-        }
-        catch [LayerSkipped] { $outcome = 'SKIPPED' }
-        catch { $outcome = 'CAUGHT' }
-        try { & $c.Cleanup } catch { }
-
-        switch ($outcome) {
-            'CAUGHT'  { $caught++;  Write-Ok "  ✓ $($c.Name)" }
-            'SKIPPED' { $skipped++; Write-Info "  - $($c.Name)（缺工具链，跳过）" }
-            'MISSED'  { $missed++;  Write-Bad "  ✗ $($c.Name) —— 注入了错误却没报错，这层是空壳！" }
-        }
     }
-
-    # 收尾：删掉临时目录并恢复干净的生成物
-    foreach ($d in @($tmpDir, (Join-Path $front '_selftest'))) {
-        if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
+    finally {
+        # 无论正常结束还是抛异常，都要把仓库内的注入还原并放锁。
+        Clear-RepoMutations -Quiet
+        # Backup-RepoFile 会顺手建目录，这里再兜底删一次，避免留下空目录。
+        Remove-Item -LiteralPath (Get-SelfTestBackupDir) -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Get-SelfTestBackupDir) -Recurse -Force -ErrorAction SilentlyContinue
+        Exit-RepoLock
     }
-    foreach ($f in @((Join-Path $RepoRoot '.gitmodules'),
-                     (Join-Path $RepoRoot '.github/workflows/zz-devcheck-selftest.yml'))) {
-        if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force }
-    }
-    New-GenSources | Out-Null
 
     Write-Host ''
     if ($missed) {

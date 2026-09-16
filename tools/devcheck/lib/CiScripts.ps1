@@ -33,7 +33,10 @@ function Test-CiScripts {
         throw '缺少 tools/ci/Import-DevCmd.ps1 —— build-kachina / devcheck 的 MSVC 注入步骤没有实现'
     }
 
-    $probe = Join-Path $DevCheckRoot '_ci_probe.ps1'
+    # 探测脚本与它读写的三个文件都带进程唯一后缀：两个 devcheck 进程并行跑时
+    # 不再争同一批文件（同名文件会让一方读到另一方写的 GITHUB_ENV）。
+    $token = '{0}-{1}' -f $PID, ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $probe = Join-Path $DevCheckRoot "_ci_probe.$token.ps1"
     # Start-Process 在这里被替换成「把准备好的输出拷过去」，因此不需要真的 cl.exe：
     # Linux 与 Windows 上的 devcheck 都能跑，断言的是脚本自己的逻辑。
     $probeSource = @'
@@ -67,7 +70,7 @@ foreach ($line in @('INCLUDE=C:\VS\include;C:\WinSDK\include', 'LIB=C:\VS\lib', 
 '@
     Set-Content -LiteralPath $probe -Encoding utf8 -Value $probeSource
 
-    $payload = Join-Path $DevCheckRoot '_ci_payload.txt'
+    $payload = Join-Path $DevCheckRoot "_ci_payload.$token.txt"
     Set-Content -LiteralPath $payload -Encoding utf8 -Value @(
         "Environment initialized for: 'x64'"
         'VSCMD_ARG_TGT_ARCH=x64'
@@ -78,7 +81,7 @@ foreach ($line in @('INCLUDE=C:\VS\include;C:\WinSDK\include', 'LIB=C:\VS\lib', 
         'FLAG=two'
     )
 
-    $out = Join-Path $DevCheckRoot '_ci_github_env.txt'
+    $out = Join-Path $DevCheckRoot "_ci_github_env.$token.txt"
     try {
         $result = Invoke-Native -FilePath (Get-Tool 'pwsh') `
             -Arguments @('-NoProfile', '-File', $probe, '-Script', $scriptPath, '-Payload', $payload, '-OutFile', $out) `
@@ -91,5 +94,24 @@ foreach ($line in @('INCLUDE=C:\VS\include;C:\WinSDK\include', 'LIB=C:\VS\lib', 
         Remove-Item -LiteralPath $probe, $payload, $out -Force -ErrorAction SilentlyContinue
     }
 
-    return 'Import-DevCmd.ps1：生成 cmd / 解析 vcvars 输出 / 注入环境 / 写 GITHUB_ENV 均通过'
+    # all 集合的每一层都必须在 devcheck.yml 里真有一步跑它 ——
+    # 新加一层却忘了接进工作流，本地和 CI 都会「绿」，那层等于没写。
+    $main = Get-Content -LiteralPath (Join-Path $DevCheckRoot 'devcheck.ps1') -Raw
+    $allBlock = [regex]::Match($main, "\`$wanted\s*=\s*if\s*\([^\n]*\)\s*\{\s*@\(([^)]*)\)")
+    if (-not $allBlock.Success) { throw 'devcheck.ps1 里找不到 all 层的 $wanted 定义，解析规则失效了' }
+    $layers = @([regex]::Matches($allBlock.Groups[1].Value, "'([a-z0-9]+)'") |
+        ForEach-Object { $_.Groups[1].Value })
+    if ($layers.Count -lt 5) { throw "只从 all 集合里解析出 $($layers.Count) 层，解析规则失效了" }
+
+    $workflow = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/workflows/devcheck.yml') -Raw
+    # 无参数的那一步才会跳过参数解析、跑 $wanted 里由 all 定义的层；
+    # 只写 -Layer all 不会命中这条，所以 all 集合必须在 CI 上真跑过。
+    $runsAll = $workflow -match '(?m)^\s*(?:-\s*)?run:\s*pwsh\s+-NoProfile\s+-File\s+\S*devcheck\.ps1\s*$'
+    if (-not $runsAll) {
+        throw 'devcheck.yml 里没有一步是不带 -Layer 跑 devcheck.ps1 —— all 集合的层不会在 CI 上执行'
+    }
+    # 每层要么被 -Layer <名字> 单独点名，要么由上面那次裸调用覆盖。
+    $single = @($layers | Where-Object { $workflow -match "-Layer\s+$_\b" })
+
+    return "Import-DevCmd.ps1 链路通过；devcheck.yml 用 all 覆盖 $($layers.Count) 层（其中 $($single.Count) 层有单独步骤：$($single -join '、')）"
 }
