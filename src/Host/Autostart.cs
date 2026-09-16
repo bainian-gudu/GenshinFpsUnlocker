@@ -452,39 +452,12 @@ internal static class Autostart
 
     private static bool RunSchtasks(string fileName, string arguments, out string output)
     {
-        output = string.Empty;
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            if (process is null) { output = "进程启动失败"; return false; }
-
-            // 两条管道必须同时读：只看一条时，另一条写满 4KB 缓冲区就会互相等死
-            // （/Query /XML 的输出正好在这个量级上）。
-            var stdout = process.StandardOutput.ReadToEndAsync();
-            var stderr = process.StandardError.ReadToEndAsync();
-            if (!process.WaitForExit(10000))
-            {
-                try { process.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                output = "执行超时";
-                return false;
-            }
-
-            output = (stderr.GetAwaiter().GetResult() + " " + stdout.GetAwaiter().GetResult()).Trim();
-            return process.ExitCode == 0;
-        }
-        catch (Exception ex)
-        {
-            output = ex.Message;
-            return false;
-        }
+        var ok = ProcessRunner.TryRun(
+            fileName, arguments, TimeSpan.FromSeconds(10), requireZeroExit: true,
+            out output, out _, out var timedOut);
+        if (timedOut) { output = "执行超时"; }
+        else if (!ok && string.IsNullOrWhiteSpace(output)) { output = "进程启动失败"; }
+        return ok;
     }
 
     public static string? GetCommand()

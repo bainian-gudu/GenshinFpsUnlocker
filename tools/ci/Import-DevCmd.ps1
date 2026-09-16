@@ -46,9 +46,11 @@ function Get-DevCmdEnvironment {
     param([string]$VcVars)
 
     $tempDir = [System.IO.Path]::GetTempPath()
-    $script = Join-Path $tempDir "import-devcmd-$PID.cmd"
-    $stdout = Join-Path $tempDir "import-devcmd-$PID.out"
-    $stderr = Join-Path $tempDir "import-devcmd-$PID.err"
+    # 用随机名而不是 $PID：同一进程里并发调用两次时，$PID 会撞名并互相覆盖。
+    $token = [guid]::NewGuid().ToString('N')
+    $script = Join-Path $tempDir "import-devcmd-$token.cmd"
+    $stdout = Join-Path $tempDir "import-devcmd-$token.out"
+    $stderr = Join-Path $tempDir "import-devcmd-$token.err"
     try {
         Set-Content -LiteralPath $script -Encoding ascii -Value @(
             '@echo off'

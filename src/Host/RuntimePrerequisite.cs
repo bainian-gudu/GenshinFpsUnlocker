@@ -263,20 +263,12 @@ internal static class RuntimePrerequisite
         // 3) dotnet --list-runtimes
         try
         {
-            var psi = new ProcessStartInfo
+            // 等待有上限：CLI 卡住时不再吊死在 ReadToEnd / WaitForExit 上，
+            // 超时就把结论交给后面的注册表与进程运行时判定。
+            if (ProcessRunner.TryRun(
+                    ResolveDotNetCli(), "--list-runtimes", TimeSpan.FromSeconds(5),
+                    requireZeroExit: true, out var output, out _, out var timedOut))
             {
-                FileName = ResolveDotNetCli(),
-                Arguments = "--list-runtimes",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            using var p = Process.Start(psi);
-            if (p is not null)
-            {
-                var output = p.StandardOutput.ReadToEnd();
-                p.WaitForExit(5000);
                 foreach (var line in output.Split('\n'))
                 {
                     if (line.Contains("Microsoft.WindowsDesktop.App", StringComparison.OrdinalIgnoreCase)
@@ -285,6 +277,10 @@ internal static class RuntimePrerequisite
                         found.Add("dotnet:" + line.Trim());
                     }
                 }
+            }
+            else if (timedOut)
+            {
+                detail += "dotnetTimeout=5s; ";
             }
         }
         catch (Exception ex)
