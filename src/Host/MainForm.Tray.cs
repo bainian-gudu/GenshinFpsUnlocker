@@ -14,9 +14,6 @@ internal sealed partial class MainForm
     private ToolStripMenuItem? _trayAutoWatchItem;
     private ToolStripMenuItem? _trayAntiBlurPerspectiveItem;
     private ToolStripMenuItem? _trayAntiBlurDiveMosaicItem;
-    private ToolStripMenuItem? _trayUpscalerEnabledItem;
-    private ToolStripMenuItem? _trayUpscalerModeRoot;
-    private ToolStripMenuItem? _trayUpscalerQualityRoot;
     private ToolStripMenuItem? _trayFpsRoot;
     private ContextMenuStrip? _trayMenu;
     private Icon? _trayIconOwned;
@@ -53,27 +50,14 @@ internal sealed partial class MainForm
     {
         var effective = _config.MasterEnabled && _config.Enabled;
         var pid = _service.AttachedPid;
-        var upscaler = BuildUpscalerStatusText();
         if (pid > 0)
             return effective
-                ? $"运行中  ·  PID {pid}  ·  {_config.TargetFps} FPS  ·  {upscaler}"
-                : $"已附加  ·  解锁已关  ·  PID {pid}  ·  {upscaler}";
-        if (!_config.MasterEnabled) return $"解锁服务已暂停  ·  {upscaler}";
-        if (!_config.Enabled) return $"帧率解锁已关闭  ·  {_config.TargetFps} FPS  ·  {upscaler}";
-        if (_config.AutoWatch) return $"自动监视中  ·  {_config.TargetFps} FPS  ·  {upscaler}";
-        return $"已就绪  ·  {_config.TargetFps} FPS  ·  {upscaler}";
-    }
-
-    private string BuildUpscalerStatusText()
-    {
-        var state = _service.UpscalerState;
-        if (!state.Enabled) return "超分关闭";
-        if (!state.Available) return "超分不可用";
-        if (!state.Active) return "超分待命";
-        if (state.Status.Contains("已确认", StringComparison.Ordinal)) return "超分已生效";
-        if (state.Status.Contains("失败", StringComparison.Ordinal)
-            || state.Status.Contains("未检测到", StringComparison.Ordinal)) return "超分未生效";
-        return "超分已加载";
+                ? $"运行中  ·  PID {pid}  ·  {_config.TargetFps} FPS"
+                : $"已附加  ·  解锁已关  ·  PID {pid}";
+        if (!_config.MasterEnabled) return "解锁服务已暂停";
+        if (!_config.Enabled) return $"帧率解锁已关闭  ·  {_config.TargetFps} FPS";
+        if (_config.AutoWatch) return $"自动监视中  ·  {_config.TargetFps} FPS";
+        return $"已就绪  ·  {_config.TargetFps} FPS";
     }
 
     private string BuildTrayTipText()
@@ -81,11 +65,10 @@ internal sealed partial class MainForm
         var effective = _config.MasterEnabled && _config.Enabled ? "开" : "关";
         var watch = _config.AutoWatch ? "监视" : "待命";
         var pid = _service.AttachedPid;
-        var upscaler = BuildUpscalerStatusText();
         var mode = _inTray ? "托盘" : "窗口";
         var core = pid > 0
-            ? $"FPS {_config.TargetFps} | {effective} | PID {pid} | {upscaler} | {mode}"
-            : $"FPS {_config.TargetFps} | {effective} | {watch} | {upscaler} | {mode}";
+            ? $"FPS {_config.TargetFps} | {effective} | PID {pid} | {mode}"
+            : $"FPS {_config.TargetFps} | {effective} | {watch} | {mode}";
         return Truncate(core, 63);
     }
 
@@ -135,9 +118,6 @@ internal sealed partial class MainForm
                     _trayAntiBlurPerspectiveItem.Checked = _config.AntiBlurPerspective;
                 if (_trayAntiBlurDiveMosaicItem is not null)
                     _trayAntiBlurDiveMosaicItem.Checked = _config.AntiBlurDiveMosaic;
-                if (_trayUpscalerEnabledItem is not null)
-                    _trayUpscalerEnabledItem.Checked = _config.UpscalerReplacementEnabled;
-
                 if (_trayFpsRoot is not null)
                 {
                     _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";
@@ -149,24 +129,6 @@ internal sealed partial class MainForm
                         var numPart = txt.Split(' ')[0];
                         if (int.TryParse(numPart, out var fps))
                             mi.Checked = fps == _config.TargetFps;
-                    }
-                }
-                if (_trayUpscalerModeRoot is not null)
-                {
-                    _trayUpscalerModeRoot.Text = $"DLSS 版本  ·  {UpscalerModeLabel(_config.UpscalerMode)}";
-                    foreach (ToolStripItem it in _trayUpscalerModeRoot.DropDownItems)
-                    {
-                        if (it is ToolStripMenuItem mi && mi.Tag is string mode)
-                            mi.Checked = string.Equals(mode, _config.UpscalerMode, StringComparison.OrdinalIgnoreCase);
-                    }
-                }
-                if (_trayUpscalerQualityRoot is not null)
-                {
-                    _trayUpscalerQualityRoot.Text = $"超分挡位  ·  {UpscalerQualityLabel(_config.UpscalerQuality)}";
-                    foreach (ToolStripItem it in _trayUpscalerQualityRoot.DropDownItems)
-                    {
-                        if (it is ToolStripMenuItem mi && mi.Tag is string quality)
-                            mi.Checked = string.Equals(quality, _config.UpscalerQuality, StringComparison.OrdinalIgnoreCase);
                     }
                 }
                 UpdateTrayTip();
@@ -198,20 +160,5 @@ internal sealed partial class MainForm
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..(max - 1)] + "…";
-
-    private static string UpscalerQualityLabel(string quality) => quality switch
-    {
-        "nativeAA" => "DLAA",
-        "balanced" => "均衡",
-        "performance" => "性能",
-        "ultraPerformance" => "超高性能",
-        _ => "质量",
-    };
-
-    private static string UpscalerModeLabel(string mode) => mode switch
-    {
-        "dlss5" => "DLSS 5",
-        _ => "DLSS 4",
-    };
 
 }

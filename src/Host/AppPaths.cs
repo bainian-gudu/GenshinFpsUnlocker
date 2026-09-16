@@ -44,24 +44,6 @@ internal static class AppPaths
 
     public static string StubDllPath => Path.Combine(ExeDirectory, StubDllFileName);
 
-    /// <summary>独立的超分辨率组件目录；包含 OptiScaler Aurora 和 DLSS 运行库源文件。</summary>
-    public static string UpscalerDirectory => Path.Combine(ExeDirectory, "upscaler");
-
-    /// <summary>OptiScaler Aurora 源文件（部署时复制为游戏目录的 dxgi.dll）。</summary>
-    public static string UpscalerProxyPath => Path.Combine(UpscalerDirectory, "OptiScaler.dll");
-
-    /// <summary>NVIDIA DLSS Super Resolution Runtime 源文件（部署时复制到游戏目录）。</summary>
-    public static string DlssRuntimePath => Path.Combine(UpscalerDirectory, "nvngx_dlss.dll");
-
-    /// <summary>NVIDIA DLSS Neural Rendering（DLSS 5）运行库源文件（部署时复制到游戏目录）。</summary>
-    public static string DlssNrRuntimePath => Path.Combine(UpscalerDirectory, "nvngx_dlssnr.dll");
-
-    /// <summary>OptiScaler DLSS Neural Rendering 转发器（部署时复制到游戏目录）。</summary>
-    public static string DlssNrForwarderPath => Path.Combine(UpscalerDirectory, "nvngx.dll_dlssnr.dll");
-
-    /// <summary>随发布包分发的组件 SHA-256 清单，用于判断游戏目录里的旧组件是否需要更新。</summary>
-    public static string UpscalerManifestPath => Path.Combine(UpscalerDirectory, "components.sha256");
-
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");
 

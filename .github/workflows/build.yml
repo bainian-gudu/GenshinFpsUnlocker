@@ -25,12 +25,6 @@ on:
         required: false
         default: false
         type: boolean
-      rebuild_optiscaler:
-        description: "强制重新编译 OptiScaler 与 DLSS NR 转发器（忽略缓存）"
-        required: false
-        default: false
-        type: boolean
-
 # 只需要 checkout 与上传 artifact，不需要写权限（与 devcheck.yml 一致）
 permissions:
   contents: read
@@ -161,9 +155,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          # nvngx_dlssnr.dll 是 Git LFS 对象；不拉取时工作区只有 134 字节指针。
-          lfs: true
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -181,88 +172,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      # 组件源码没变就直接复用上次的 OptiScaler.dll / 转发器；只缓存这两个构建产物，
-      # 不缓存 166 MB 的 LFS 模型，模型始终由 checkout 的 lfs: true 提供。
-      # 缓存键包含全部 OptiScaler/外部依赖源码及本工作流，任一源码更新都会让键变化并触发重新编译。
-      - name: Cache OptiScaler components
-        if: ${{ !inputs.rebuild_optiscaler }}
-        id: optiscaler-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            src/Host/upscaler/OptiScaler.dll
-            src/Host/upscaler/nvngx.dll_dlssnr.dll
-          key: optiscaler-${{ runner.os }}-Release-${{ hashFiles('src/OptiScaler/**', 'src/external/**', '.github/workflows/build.yml') }}
-
-      - name: Build OptiScaler from source
-        if: steps.optiscaler-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          Write-Host "Building OptiScaler (x64 Release) from src/OptiScaler/"
-          # SolutionDir 必须指向 src\ 才能让 vcxproj 里的
-          # $(SolutionDir)external\... 路径找到第三方头文件
-          $solDir = "$PWD\src\"
-          msbuild src\OptiScaler\OptiScaler.vcxproj `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:OutDir="$PWD\src\Host\upscaler\" `
-            /p:SolutionDir="$solDir" `
-            /m /nologo /verbosity:minimal
-          $dll = "src\Host\upscaler\OptiScaler.dll"
-          if (-not (Test-Path $dll)) { throw "OptiScaler.dll not found after build" }
-          Write-Host "OptiScaler.dll built: $((Get-Item $dll).Length) bytes"
-
-          Write-Host "Building DLSS Neural Rendering forwarder (x64 Release)"
-          msbuild src\OptiScaler\dlssnr\forwarder\dlssnr_forwarder.vcxproj `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:OutDir="$PWD\src\Host\upscaler\" `
-            /p:SolutionDir="$solDir" `
-            /m /nologo /verbosity:minimal
-          $forwarder = "src\Host\upscaler\nvngx.dll_dlssnr.dll"
-          if (-not (Test-Path -LiteralPath $forwarder)) {
-            throw "nvngx.dll_dlssnr.dll not found after build"
-          }
-          Write-Host "DLSS NR forwarder built: $((Get-Item -LiteralPath $forwarder).Length) bytes"
-
-      - name: Verify cached OptiScaler components
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $components = @{
-            "src\Host\upscaler\OptiScaler.dll" = 1MB
-            "src\Host\upscaler\nvngx.dll_dlssnr.dll" = 4KB
-          }
-          foreach ($entry in $components.GetEnumerator()) {
-            if (-not (Test-Path -LiteralPath $entry.Key)) {
-              throw "Missing OptiScaler component: $($entry.Key)"
-            }
-            $length = (Get-Item -LiteralPath $entry.Key).Length
-            if ($length -lt $entry.Value) {
-              throw "OptiScaler component is incomplete: $($entry.Key) ($length bytes)"
-            }
-            Write-Host "$($entry.Key): $length bytes"
-          }
-
-      - name: Verify DLSS neural rendering payload
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $dll = "src\Host\upscaler\nvngx_dlssnr.dll"
-          $expectedSize = 165830144
-          $expectedSha256 = "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927"
-          if (-not (Test-Path -LiteralPath $dll)) { throw "$dll not found after checkout" }
-          $file = Get-Item -LiteralPath $dll
-          if ($file.Length -ne $expectedSize) {
-            throw "$dll size mismatch: $($file.Length) bytes, expected $expectedSize (Git LFS pointer not fetched?)"
-          }
-          $hash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
-          if ($hash -ne $expectedSha256) {
-            throw "$dll SHA-256 mismatch: $hash"
-          }
-          Write-Host "$dll verified: $expectedSize bytes / $expectedSha256"
 
       - name: Build stub + host
         shell: pwsh
@@ -284,19 +193,6 @@ jobs:
           if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "Host exe missing" }
           if (-not (Test-Path "dist\FpsUnlockerStub.dll")) { throw "Stub dll missing" }
           if (-not (Test-Path "dist\ui\index.html")) { throw "Web UI missing under dist\ui\" }
-          foreach ($name in @("OptiScaler.dll", "nvngx_dlss.dll", "nvngx_dlssnr.dll", "nvngx.dll_dlssnr.dll")) {
-            $path = "dist\upscaler\$name"
-            if (-not (Test-Path -LiteralPath $path)) { throw "Required upscaler component missing: $path" }
-          }
-          $nrDll = "dist\upscaler\nvngx_dlssnr.dll"
-          $nrHash = (Get-FileHash -LiteralPath $nrDll -Algorithm SHA256).Hash
-          if ($nrHash -ne "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927") {
-            throw "dist upscaler DLSS NR hash mismatch: $nrHash"
-          }
-          if (-not (Test-Path -LiteralPath "dist\upscaler\components.sha256")) {
-            throw "Required component manifest missing: dist\upscaler\components.sha256"
-          }
-
           $hasCore = (Test-Path "dist\coreclr.dll") -or (Test-Path "dist\hostfxr.dll")
           if ($env:HOST_MODE -eq "self-contained") {
             if (-not $hasCore) { Write-Warning "SC host missing coreclr/hostfxr" }

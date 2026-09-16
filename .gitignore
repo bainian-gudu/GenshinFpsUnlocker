@@ -23,15 +23,6 @@ config.json
 *.exe
 *.pdb
 !third_party/**
-# 随项目分发的 DLSS 运行库（OptiScaler.dll 由工作流从源码编译）
-!src/Host/upscaler/nvngx_dlss.dll
-!src/Host/upscaler/nvngx_dlssnr.dll
-
-# OptiScaler 源码中的 SDK 库和构建工具
-!src/OptiScaler/**/*.dll
-!src/OptiScaler/**/*.exe
-!src/OptiScaler/**/*.lib
-!src/OptiScaler/**/*.cso
 
 
 # OS / editor

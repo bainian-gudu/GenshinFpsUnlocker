@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, WandSparkles } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
-import type { UpscalerMode } from '../lib/config';
 import { FpsControl } from '../components/FpsControl';
 import { PageHeading, ToggleRow } from '../components/ui';
 
@@ -9,7 +8,7 @@ import { PageHeading, ToggleRow } from '../components/ui';
 export function OverviewPage({ app }: { app: AppState }) {
   const {
     native, config, setModal, launchState, statusText, attachedPid, isElevated, needsAdmin, elevating,
-    effectiveEnabled, readiness, upscaler, navigate, updateConfig, restartElevated, handleLaunch,
+    effectiveEnabled, readiness, navigate, updateConfig, restartElevated, handleLaunch,
   } = app;
 
   return (
@@ -23,18 +22,6 @@ export function OverviewPage({ app }: { app: AppState }) {
       <motion.div className="overview-controls" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
         <div className="overview-left-stack">
           <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
-          <section className="upscaler-shape" aria-label="超分辨率替换">
-            <div className="upscaler-card">
-              <div className="panel-heading"><h2><Sparkles size={17} strokeWidth={1.7} />超分辨率替换</h2><span className="feature-badge">实验组件</span></div>
-              <div className="upscaler-card-body">
-                <div className="upscaler-card-icon"><Sparkles size={22} strokeWidth={1.5} /></div>
-                <div className="upscaler-card-copy"><strong>FSR 2.0 → DLSS{config.upscalerMode === 'dlss5' ? ' 5' : ' 4'}</strong><p>{config.upscalerMode === 'dlss5' ? '超分辨率 + AI 神经渲染，提升光影与材质细节' : '标准 AI 超分辨率，兼容性最广，适用于所有 RTX 显卡'}</p></div>
-                <span className="feature-status">{upscaler.status}</span>
-              </div>
-              <div className="upscaler-quick-toggle"><ToggleRow title="启动游戏时自动替换" description={upscaler.available ? '检测到原神启动后自动应用超分辨率替换' : '设置游戏路径后自动生效'} checked={config.upscalerReplacementEnabled} onChange={(value) => updateConfig('upscalerReplacementEnabled', value)} /></div>
-              <div className="setting-row upscaler-mode-row"><div><span className="row-title">DLSS 版本</span><p>{config.upscalerMode === 'dlss5' ? '超分辨率 + AI 神经渲染，提升光影与材质细节（支持 RTX 20/30/40/50）' : '标准 AI 超分辨率，兼容性最广，适用于所有 RTX 显卡'}</p></div><select className="select-input" aria-label="DLSS 版本" value={config.upscalerMode} onChange={(event) => updateConfig('upscalerMode', event.target.value as UpscalerMode)}><option value="dlss4">DLSS 4 · 超分辨率</option><option value="dlss5">DLSS 5 · 超分辨率 + 神经渲染</option></select></div>
-            </div>
-          </section>
         </div>
         <div className="overview-right-stack">
           <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows"><ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后，自动应用帧率设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} /><ToggleRow icon={WandSparkles} title="反角色虚化" description="开启后镜头拉近时，角色不再透明化" checked={config.antiBlurPerspective} onChange={(value) => updateConfig('antiBlurPerspective', value)} /><ToggleRow icon={WandSparkles} title="移除水下马赛克" description="开启后角色入水时，不再显示马赛克虚化" checked={config.antiBlurDiveMosaic} onChange={(value) => updateConfig('antiBlurDiveMosaic', value)} /><ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} /><ToggleRow icon={Shield} title="启动时自动提权" description="登录自启改由最高权限计划任务启动（不弹 UAC）；手动启动请求一次 UAC" checked={config.autoStartAsAdministrator} onChange={(value) => updateConfig('autoStartAsAdministrator', value)} /><ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后直接进托盘，关闭主窗口也进入托盘后台" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} /></div></section>

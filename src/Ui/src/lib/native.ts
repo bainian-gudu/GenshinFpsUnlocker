@@ -1,4 +1,4 @@
-import type { LogEntry, LogLevel, Page, UnlockerConfig, UpscalerQuality, UpscalerMode } from './config';
+import type { LogEntry, LogLevel, Page, UnlockerConfig } from './config';
 import { asPage, DEFAULT_CONFIG, parseConfig } from './config';
 
 export type NativeState = {
@@ -16,7 +16,6 @@ export type NativeState = {
   needsAdminForUnlock: boolean;
   /** 登录自启动实际生效的方式与提示 */
   autostart: AutostartState;
-  upscaler: UpscalerState;
   version: string;
 };
 
@@ -27,20 +26,6 @@ export type AutostartState = {
   mode: AutostartMode;
   /** 需要用户处理的提示（如计划任务没登记成功），没有则为 null */
   notice: string | null;
-};
-
-export type UpscalerState = {
-  enabled: boolean;
-  active: boolean;
-  activePid: number;
-  available: boolean;
-  proxyPresent: boolean;
-  dlssRuntimePresent: boolean;
-  dlssNrRuntimePresent: boolean;
-  gameConfigured: boolean;
-  quality: UpscalerQuality;
-  mode: UpscalerMode;
-  status: string;
 };
 
 type Pending = {
@@ -152,23 +137,6 @@ function normalizeState(raw: any): NativeState {
         ? (raw.autostart.mode as AutostartMode)
         : 'disabled',
       notice: typeof raw.autostart?.notice === 'string' && raw.autostart.notice ? raw.autostart.notice : null,
-    },
-    upscaler: {
-      enabled: Boolean(raw.upscaler?.enabled),
-      active: Boolean(raw.upscaler?.active),
-      activePid: Number(raw.upscaler?.activePid ?? 0),
-      available: Boolean(raw.upscaler?.available),
-      proxyPresent: Boolean(raw.upscaler?.proxyPresent),
-      dlssRuntimePresent: Boolean(raw.upscaler?.dlssRuntimePresent),
-      dlssNrRuntimePresent: Boolean(raw.upscaler?.dlssNrRuntimePresent),
-      gameConfigured: Boolean(raw.upscaler?.gameConfigured),
-      quality: (['quality', 'balanced', 'performance', 'ultraPerformance', 'nativeAA'].includes(raw.upscaler?.quality)
-        ? raw.upscaler.quality
-        : config.upscalerQuality) as UpscalerQuality,
-      mode: (['dlss4', 'dlss5'].includes(raw.upscaler?.mode)
-        ? raw.upscaler.mode
-        : config.upscalerMode) as UpscalerMode,
-      status: String(raw.upscaler?.status ?? '组件未检测'),
     },
     version: String(raw.version ?? '1.0.0'),
   };

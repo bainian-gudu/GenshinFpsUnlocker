@@ -76,39 +76,6 @@ if (-not (Test-Path (Join-Path $DistDir "FpsUnlockerStub.dll"))) {
 if (-not (Test-Path (Join-Path $DistDir "ui\index.html"))) {
     Write-Warning "$DistDir\ui\index.html 缺失，安装后主界面会走原生兜底页"
 }
-foreach ($required in @(
-    "upscaler\OptiScaler.dll",
-    "upscaler\nvngx_dlss.dll",
-    "upscaler\nvngx_dlssnr.dll",
-    "upscaler\nvngx.dll_dlssnr.dll",
-    "upscaler\components.sha256"
-)) {
-    if (-not (Test-Path -LiteralPath (Join-Path $DistDir $required))) {
-        throw "$DistDir\$required 缺失 —— 不能生成缺少超分辨率组件的安装包"
-    }
-}
-$nrDll = Join-Path $DistDir "upscaler\nvngx_dlssnr.dll"
-$nrHash = (Get-FileHash -LiteralPath $nrDll -Algorithm SHA256).Hash
-if ($nrHash -ne "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927") {
-    throw "$nrDll SHA-256 不匹配：$nrHash"
-}
-$manifestPath = Join-Path $DistDir "upscaler\components.sha256"
-foreach ($line in (Get-Content -LiteralPath $manifestPath)) {
-    if ($line -notmatch '^([^=]+)=([0-9a-fA-F]{64})$') {
-        throw "组件清单格式错误：$line"
-    }
-    $name = $Matches[1]
-    $expected = $Matches[2]
-    $componentPath = Join-Path $DistDir "upscaler\$name"
-    if (-not (Test-Path -LiteralPath $componentPath)) {
-        throw "组件清单指向缺失文件：$componentPath"
-    }
-    $actual = (Get-FileHash -LiteralPath $componentPath -Algorithm SHA256).Hash
-    if ($actual -ne $expected) {
-        throw "组件清单与文件不匹配：$name"
-    }
-}
-
 if (-not $Version) {
     $csproj = Join-Path $RepoRoot "src\Host\GenshinFpsUnlocker.Host.csproj"
     $raw = Get-Content $csproj -Raw

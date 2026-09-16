@@ -30,12 +30,6 @@ internal sealed partial class UiBridge
                 _service.SetAntiBlurPerspective(abp.GetValue<bool>());
             if (p["antiBlurDiveMosaic"] is JsonNode abm)
                 _service.SetAntiBlurDiveMosaic(abm.GetValue<bool>());
-            if (p["upscalerReplacementEnabled"] is JsonNode upscaler)
-                _service.SetUpscalerReplacementEnabled(upscaler.GetValue<bool>());
-            if (p["upscalerQuality"] is JsonNode quality)
-                _service.SetUpscalerQuality(quality.GetValue<string>());
-            if (p["upscalerMode"] is JsonNode mode)
-                _service.SetUpscalerMode(mode.GetValue<string>());
             // 两个自启开关可能落在同一次 patch 里：这里只改配置，收尾时统一同步一次，
             // 免得先按普通权限登记、再改成管理员，中途出现两条自启项并存的窗口。
             if (p["autoStartWithWindows"] is JsonNode auto)
@@ -95,13 +89,6 @@ internal sealed partial class UiBridge
         SetBool(root, "autoWatch", v => _config.AutoWatch = v);
         SetBool(root, "antiBlurPerspective", v => _config.AntiBlurPerspective = v);
         SetBool(root, "antiBlurDiveMosaic", v => _config.AntiBlurDiveMosaic = v);
-        SetBool(root, "upscalerReplacementEnabled", v => _config.UpscalerReplacementEnabled = v);
-        if (root.TryGetProperty("upscalerQuality", out var quality)
-            && quality.ValueKind == JsonValueKind.String)
-            _config.UpscalerQuality = quality.GetString() ?? AppConfig.DefaultUpscalerQuality;
-        if (root.TryGetProperty("upscalerMode", out var mode)
-            && mode.ValueKind == JsonValueKind.String)
-            _config.UpscalerMode = mode.GetString() ?? AppConfig.DefaultUpscalerMode;
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
         SetBool(root, "autoStartAsAdministrator", v => _config.AutoStartAsAdministrator = v);
@@ -124,7 +111,8 @@ internal sealed partial class UiBridge
         }
 
         _config.Sanitize();
-        _service.SyncUpscalerConfiguration();
+        // 导入的配置可能换掉游戏路径：重新核对一次上一版本的残留组件。
+        _service.QueueLegacyCleanup();
         // 导入的配置可能换掉自启开关的组合，同样按唯一入口重新同步，
         // 否则会出现「配置说管理员自启、实际还是旧通道」的错位。
         _service.SyncAutostart();
@@ -144,9 +132,6 @@ internal sealed partial class UiBridge
         to.Enabled = from.Enabled;
         to.AntiBlurPerspective = from.AntiBlurPerspective;
         to.AntiBlurDiveMosaic = from.AntiBlurDiveMosaic;
-        to.UpscalerReplacementEnabled = from.UpscalerReplacementEnabled;
-        to.UpscalerQuality = from.UpscalerQuality;
-        to.UpscalerMode = from.UpscalerMode;
         to.MasterEnabled = from.MasterEnabled;
         to.AutoWatch = from.AutoWatch;
         to.StartMinimized = from.StartMinimized;
@@ -184,9 +169,6 @@ internal sealed partial class UiBridge
         autoWatch = _config.AutoWatch,
         antiBlurPerspective = _config.AntiBlurPerspective,
         antiBlurDiveMosaic = _config.AntiBlurDiveMosaic,
-        upscalerReplacementEnabled = _config.UpscalerReplacementEnabled,
-        upscalerQuality = _config.UpscalerQuality,
-        upscalerMode = _config.UpscalerMode,
         startMinimized = _config.StartMinimized,
         autoStartWithWindows = _config.AutoStartWithWindows,
         autoStartAsAdministrator = _config.AutoStartAsAdministrator,

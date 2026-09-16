@@ -4,7 +4,7 @@ import { NAV_ITEMS, PAGE_NAMES } from '../lib/nav';
 import type { ToastItem } from '../components/ui';
 import type { LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
 import { CONFIG_LABELS, DEFAULT_CONFIG, STORAGE_KEY, downloadFile, getPage, loadConfig, makeLog, parseConfig } from '../lib/config';
-import type { AutostartState, NativeState, UpscalerState } from '../lib/native';
+import type { AutostartState, NativeState } from '../lib/native';
 import { isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeNavigate, onNativeState } from '../lib/native';
 
 export type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
@@ -46,19 +46,6 @@ export function useAppState() {
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [elevating, setElevating] = useState(false);
   const [autostart, setAutostart] = useState<AutostartState>({ mode: 'disabled', notice: null });
-  const [upscaler, setUpscaler] = useState<UpscalerState>({
-    enabled: false,
-    active: false,
-    activePid: 0,
-    available: false,
-    proxyPresent: false,
-    dlssRuntimePresent: false,
-    dlssNrRuntimePresent: false,
-    gameConfigured: false,
-    quality: 'quality',
-    mode: 'dlss4',
-    status: '组件未检测',
-  });
   const [version, setVersion] = useState('1.0.0');
   const importRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
@@ -89,7 +76,6 @@ export function useAppState() {
     setIsElevated(Boolean(state.isElevated));
     setNeedsAdmin(Boolean(state.needsAdminForUnlock));
     setAutostart(state.autostart);
-    setUpscaler(state.upscaler);
     setVersion(state.version || '1.0.0');
     setLaunchState(state.attachedPid > 0 ? 'running' : 'idle');
   }, []);
@@ -433,7 +419,7 @@ export function useAppState() {
   return {
     native, booting, config, setConfig, page, theme, setTheme, sidebarOpen, setSidebarOpen,
     modal, setModal, saveState, toasts, dismissToast, logs, setLogs, launchState, statusText,
-    attachedPid, currentFps, isElevated, needsAdmin, elevating, autostart, upscaler, version, effectiveEnabled, readiness,
+    attachedPid, currentFps, isElevated, needsAdmin, elevating, autostart, version, effectiveEnabled, readiness,
     importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, beginLaunch,
     restartElevated, startUninstall, handleLaunch, exportConfig, importConfig, exportLogs,
     savePath, browsePath, autoLocatePath,

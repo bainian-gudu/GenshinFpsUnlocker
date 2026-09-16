@@ -9,6 +9,7 @@ internal sealed partial class UnlockService
 {
     /// <summary>
     /// 监视主循环：
+    /// 0) 先按固定节拍清理上一版本残留在游戏目录里的代理组件
     /// 1) 总开关/自动监视关闭 → 空闲等待
     /// 2) 无游戏 → 长间隔轮询
     /// 3) 已注入同 PID → 保活推送 IPC
@@ -24,6 +25,9 @@ internal sealed partial class UnlockService
         {
             try
             {
+                // 与解锁状态无关：残留清理是历史数据的回收，不注入、不改配置。
+                TryRunLegacyCleanup();
+
                 if (!_config.MasterEnabled)
                 {
                     PushConfigToIpc();
