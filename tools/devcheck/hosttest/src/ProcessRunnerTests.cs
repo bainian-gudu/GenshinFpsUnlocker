@@ -6,8 +6,8 @@ namespace GenshinFpsUnlocker.Host.Tests;
 /// ProcessRunner 的行为断言。
 ///
 /// 为什么单测这个类：它是宿主里唯一「等外部进程」的公共通道，历史上出过
-/// 「子进程超时后只杀了直接子进程，孙进程继承着管道写端，父进程读管道读到天荒地老」
-/// 这类只在超时路径上复现的挂起。这里把每条承诺都钉住。
+/// 「超时后只杀了直接子进程 / 排空窗口用掉整段 timeout」这类只在特定路径上复现的挂起。
+/// 这里把每条承诺都钉住。
 /// </summary>
 internal static class ProcessRunnerTests
 {
@@ -15,8 +15,7 @@ internal static class ProcessRunnerTests
     {
         h.Case("正常退出：合并 stdout/stderr，退出码 0 时返回 true", () =>
         {
-            var result = Run(
-                Shell.FileName, Shell.EchoBoth, TimeSpan.FromSeconds(10));
+            var result = Run(Shell.FileName, Shell.EchoBoth, TimeSpan.FromSeconds(10));
             Harness.True(result.Ok, $"期望成功，实际 output=[{result.Output}]");
             Harness.Equal(0, result.ExitCode, "退出码");
             Harness.False(result.TimedOut, "不应标记超时");
@@ -37,11 +36,34 @@ internal static class ProcessRunnerTests
             Harness.Equal(7, result.ExitCode, "退出码");
         });
 
-        h.Case("超时：杀进程树、返回 false 并标记 timedOut", () =>
+        h.Case("超时：返回 false 并标记 timedOut", () =>
         {
-            var result = Run(Shell.FileName, Shell.Sleep, TimeSpan.FromSeconds(1));
+            var result = Run(Shell.FileName, Shell.SleepLong, TimeSpan.FromSeconds(1));
             Harness.False(result.Ok, "超时必须返回 false");
             Harness.True(result.TimedOut, "必须标记 timedOut（调用方据此给出「执行超时」而不是「启动失败」）");
+        });
+
+        h.Case("超时会真的杀掉目标进程：超时后不该再留下标记文件", () =>
+        {
+            // 「返回有上限」不等于「进程真被杀」。子进程会在约 5s 后写下标记文件：
+            // 只有 KillTree 生效时它才永远不会出现。
+            var marker = Path.Combine(
+                Path.GetTempPath(), $"devcheck-hosttest-marker-{Guid.NewGuid():N}.txt");
+            try
+            {
+                var result = Run(Shell.FileName, Shell.ExitAfterWritingMarker(marker), TimeSpan.FromSeconds(1));
+                Harness.False(result.Ok, "超时必须返回 false");
+                Harness.True(result.TimedOut, "必须标记 timedOut");
+
+                Thread.Sleep(Shell.MarkerDelay + TimeSpan.FromSeconds(1));
+                Harness.False(
+                    File.Exists(marker),
+                    "超时后子进程还在跑并写出了标记文件 —— 进程树没有被杀掉");
+            }
+            finally
+            {
+                if (File.Exists(marker)) { File.Delete(marker); }
+            }
         });
 
         h.Case("可执行文件不存在：返回 false、不抛异常", () =>
@@ -62,7 +84,8 @@ internal static class ProcessRunnerTests
         h.Case("孙进程继承管道写端：返回不等待它退出", () =>
         {
             // 父进程立刻退出，但它派生的孙进程继承了 stdout/stderr 写端并睡 10 秒。
-            // 没有「排空管道也设上限」的修复时，ReadToEnd 会一直等 EOF。
+            // 排空窗口必须从「退出那一刻」起算固定 200ms；沿用整段 timeout 的剩余预算
+            // 会在这里白等到孙进程结束。
             var sw = Stopwatch.StartNew();
             var result = Harness.Bounded(
                 () => Run(Shell.FileName, Shell.SpawnPipeHoldingGrandchild, TimeSpan.FromSeconds(10)),
@@ -74,8 +97,8 @@ internal static class ProcessRunnerTests
             Harness.Equal(0, result.ExitCode, "退出码");
             Harness.False(result.TimedOut, "父进程已经退出，不该走到超时分支");
             Harness.True(
-                sw.Elapsed < TimeSpan.FromSeconds(5),
-                $"必须靠「排空上限」而不是等孙进程退出，实际耗时 {sw.Elapsed.TotalSeconds:n1}s");
+                sw.Elapsed < TimeSpan.FromSeconds(2),
+                $"排空窗口应固定 200ms，实际耗时 {sw.Elapsed.TotalSeconds:n1}s");
         });
     }
 
@@ -104,7 +127,10 @@ internal static class Shell
 
     public static string Exit7 => IsWindows ? "/c exit 7" : "-c \"exit 7\"";
 
-    public static string Sleep => IsWindows ? "/c ping -n 4 127.0.0.1 > nul" : "-c \"sleep 4\"";
+    public static string SleepLong => IsWindows ? "/c ping -n 30 127.0.0.1 > nul" : "-c \"sleep 30\"";
+
+    /// <summary>标记文件最早出现的时间；远大于下面用到的超时值。</summary>
+    public static TimeSpan MarkerDelay => TimeSpan.FromSeconds(5);
 
     /// <summary>stdout / stderr 各写 8KB，确保两侧都超过 Windows 上 4KB 的管道缓冲。</summary>
     public static string FloodBothPipes => IsWindows
@@ -118,4 +144,13 @@ internal static class Shell
     public static string SpawnPipeHoldingGrandchild => IsWindows
         ? "/c start /b ping -n 10 127.0.0.1 > nul"
         : "-c \"sleep 10 & exit 0\"";
+
+    /// <summary>
+    /// 睡够 MarkerDelay 之后才写下标记文件。不用重定向，避免两层引号在 cmd 上打架；
+    /// 参数都是不带空格的临时路径。调用方给的超时远小于这个时间：
+    /// 正确杀掉进程 → 文件永不出现；没杀掉 → 到点就出现。
+    /// </summary>
+    public static string ExitAfterWritingMarker(string markerPath) => IsWindows
+        ? $"/c ping -n 6 127.0.0.1 & echo alive>{markerPath}"
+        : $"-c \"sleep {MarkerDelay.TotalSeconds:n0}; echo alive > '{markerPath}'\"";
 }

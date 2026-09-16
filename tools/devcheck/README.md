@@ -135,7 +135,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `gen/src/utils/agreement.ts` 末尾追加 `const x: number = 'not a number';` | `front` 的 tsc 报错 |
 | `front/_selftest/Broken.vue`（`<div>` 未闭合） | `front` 的 SFC 编译报错 |
 | `tools/ci/Import-DevCmd.ps1` 的解析正则改成永不匹配 | `ci` 层报错（解析不出任何环境变量，MSVC 注入失效） |
-| `ProcessRunner.cs` 超时分支里的 `KillTree` 拿掉 | `hosttest` 层报错（超时的进程没人杀，断言只能一直等），windows-latest 上真跑 |
+| `ProcessRunner.cs` 超时分支里的 `KillTree` 拿掉 | `hosttest` 层报错（超时的子进程会活到写出标记文件），windows-latest 上真跑 |
 
 跑完自动删掉临时目录/临时文件并重新生成干净的检查源（用 `git status` 可验证零残留）。
 任何一个「注入了却没报错」→ 退出码 1。
