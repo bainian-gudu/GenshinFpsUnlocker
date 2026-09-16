@@ -55,9 +55,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # 源码没变就直接复用上次的产物（Rust LTO + build-std + 静态 msquic 冷构建很慢）
+      # 源码没变就直接复用上次的产物（Rust LTO + build-std + 静态 msquic 冷构建很慢）。
+      # 这一步**始终执行**：被 if 跳过时 actions/cache 连保存都不会做，强制重建那一轮
+      # 跑完就存不下缓存，下一轮还得再冷构建一次（真踩过）。
       - name: Cache kachina-builder.exe
-        if: ${{ !inputs.rebuild_kachina }}
         id: kachina-cache
         # 版本下限见 installer/README.md「workflow 里那些看着多余的设置」
         uses: actions/cache@v5
@@ -65,10 +66,23 @@ jobs:
           path: installer/tools/kachina-builder.exe
           key: kachina-builder-${{ runner.os }}-${{ hashFiles('installer/kachina/**') }}
 
+      # rebuild_kachina=true 只决定「命中缓存也要重建」，不再决定要不要读写缓存：
+      # 没命中就构建，跑完由上面的缓存步骤把新产物存进去。
+      - name: Decide whether to rebuild
+        id: kachina
+        shell: pwsh
+        run: |
+          $hit = '${{ steps.kachina-cache.outputs.cache-hit }}' -eq 'true'
+          $force = '${{ inputs.rebuild_kachina }}' -eq 'true'
+          $rebuild = -not ($hit -and -not $force)
+          "rebuild=$($rebuild.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "cache-hit=$hit force=$force rebuild=$rebuild"
+
       # 长路径 + 下面的 CMAKE_GENERATOR: Ninja 是同一件事的两道防线（FTK1011），
       # 详见 installer/README.md「workflow 里那些看着多余的设置」
       - name: Enable Windows long paths
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -78,7 +92,7 @@ jobs:
           "LongPathsEnabled = " + (Get-ItemProperty -Path $key).LongPathsEnabled
 
       - name: Install Rust nightly + rust-src
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -87,7 +101,7 @@ jobs:
           rustc --version; cargo --version
 
       - name: Cache cargo / target
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "installer/kachina/src-tauri"
@@ -95,7 +109,7 @@ jobs:
           key: kachina-src
 
       - name: Setup pnpm
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         # 版本下限见 installer/README.md「workflow 里那些看着多余的设置」
         uses: pnpm/action-setup@v6
         with:
@@ -104,7 +118,7 @@ jobs:
           package_json_file: installer/kachina/package.json
 
       - name: Setup Node.js
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -114,12 +128,12 @@ jobs:
       # Ninja 生成器不会像 MSBuild 那样自己去 VS 安装目录找 cl.exe，
       # 必须先把 MSVC 开发环境注入 PATH / INCLUDE / LIB。
       - name: Add MSVC Developer environment
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         shell: pwsh
         run: tools/ci/Import-DevCmd.ps1 -Arch x64
 
       - name: Build kachina-builder from source
-        if: steps.kachina-cache.outputs.cache-hit != 'true'
+        if: steps.kachina.outputs.rebuild == 'true'
         env:
           # cmake-rs 会读取 CMAKE_GENERATOR；Ninja 不写 .tlog，绕开 FTK1011（见 README）
           CMAKE_GENERATOR: Ninja

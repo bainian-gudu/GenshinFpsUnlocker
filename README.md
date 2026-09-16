@@ -241,7 +241,7 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 [`tools/devcheck/README.md`](tools/devcheck/README.md)。
 
 **Build** 依次跑 `build-kachina`（源码 → `kachina-builder.exe`，源码未变时命中缓存，
-输入 `rebuild_kachina=true` 可强制重建）→ `build-app` → `pack`，可选
+输入 `rebuild_kachina=true` 可强制重建，重建后的产物照常写回缓存）→ `build-app` → `pack`，可选
 `host_mode=self-contained` 打全量自包含主程序；产物与本地构建一致，挂在 Release 上。
 把 `Install` 包发布到 Release 且 tag 为 `v{version}` 后，配置里的 GitHub 在线源即可用于更新器。
 
