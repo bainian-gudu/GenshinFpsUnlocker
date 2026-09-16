@@ -81,6 +81,4 @@ h1, h2, h3, p { margin: 0; }
 svg { flex-shrink: 0; }
 ::selection { color: var(--text); background: #a486d653; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-.skip-link { position: fixed; z-index: 120; top: -60px; left: 16px; padding: 12px 18px; background: var(--accent); color: var(--accent-text); border-radius: 5px; font-size: 13px; }
-.skip-link:focus { top: 12px; }
 .app-shell { min-height: 100svh; color: var(--text); }

@@ -32,7 +32,6 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="app-shell">
-        <a href="#main-content" className="skip-link" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>跳转到主要内容</a>
         <AnimatePresence>{sidebarOpen && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}</AnimatePresence>
         <AppSidebar app={app} />
         <div className="main-pane">
