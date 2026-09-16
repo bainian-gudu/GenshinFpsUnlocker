@@ -38,14 +38,14 @@ env:
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   CARGO_TERM_COLOR: "always"
-  # 这两个变量都是为了压掉第三方 action 自己的告警，理由见
+  # 压掉第三方 action 自己的告警，理由见
   # installer/README.md「workflow 里那些看着多余的设置」
   NODE_NO_WARNINGS: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
   # 项目内 kachina-installer 源码 → kachina-builder.exe
-  # 不再从上游 Release 下载二进制（robinraju/release-downloader 已移除）
+  # 二进制只从本仓库源码构建，不从上游 Release 下载
   # ---------------------------------------------------------------------------
   build-kachina:
     name: Kachina builder (from installer/kachina)
@@ -59,7 +59,7 @@ jobs:
       - name: Cache kachina-builder.exe
         if: ${{ !inputs.rebuild_kachina }}
         id: kachina-cache
-        # v5 起 action.yml 用 node24；v4 仍声明 node20，会打弃用告警
+        # 版本下限见 installer/README.md「workflow 里那些看着多余的设置」
         uses: actions/cache@v5
         with:
           path: installer/tools/kachina-builder.exe
@@ -96,7 +96,7 @@ jobs:
 
       - name: Setup pnpm
         if: steps.kachina-cache.outputs.cache-hit != 'true'
-        # v5 起 action.yml 用 node24；v4 仍声明 node20，会打弃用告警
+        # 版本下限见 installer/README.md「workflow 里那些看着多余的设置」
         uses: pnpm/action-setup@v6
         with:
           # 仓库根目录没有 package.json；版本号（pnpm@10.17.0）从上游快照的
@@ -113,7 +113,6 @@ jobs:
 
       # Ninja 生成器不会像 MSBuild 那样自己去 VS 安装目录找 cl.exe，
       # 必须先把 MSVC 开发环境注入 PATH / INCLUDE / LIB。
-      # 用仓库内的脚本而不是 ilammy/msvc-dev-cmd@v1：后者已停更且仍是 node20。
       - name: Add MSVC Developer environment
         if: steps.kachina-cache.outputs.cache-hit != 'true'
         shell: pwsh

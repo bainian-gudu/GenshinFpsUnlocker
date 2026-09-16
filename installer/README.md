@@ -1,8 +1,7 @@
 # installer/ — 安装器与发布包
 
-本项目的安装 / 卸载 / 更新**只有 Kachina 一种实现**。宿主程序（`src/Host`）里已经
-没有任何自带的安装卸载路径（`--install`、`--uninstall`、`Uninstall.cmd` 垫片、
-自写 ARP 卸载注册表项、内置白名单删目录都已删除）。
+本项目的安装 / 卸载 / 更新**只有 Kachina 一种实现**。宿主程序（`src/Host`）本身不动
+文件与注册表，收到 `--install` / `--uninstall` 这类旧参数时只提示用户改用 Kachina。
 
 面向使用者只需要下载根目录 `artifacts\` 中的安装包；本目录供开发者构建、配置和排查安装器。
 所有与打包安装器相关的代码都集中在这里：
@@ -314,9 +313,9 @@ CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace 
 | --- | --- |
 | `RUST_TOOLCHAIN: nightly` + `-Z build-std` | 上游 kachina 的构建方式，stable 工具链编不过 |
 | `CMAKE_GENERATOR: Ninja`（`build-kachina` job） | `seera-msquic` 的静态构建会在 `target\<三元组>\release\build\seera-msquic\<hash>\out\build\CMakeFiles\CMakeScratch\TryCompile-*\...` 这种极深路径下写 `.tlog`，超过 Windows 260 字符上限时 MSBuild 的 FileTracker 报 `error FTK1011: could not create the new file tracking log file`。Ninja 不写 `.tlog`，从根上绕开；同 job 里的 `Enable Windows long paths`（`LongPathsEnabled=1`）是第二道防线。**副作用**：Ninja 不会像 MSBuild 那样自己去 VS 安装目录找 `cl.exe`，所以必须先跑 `tools/ci/Import-DevCmd.ps1` 把 `PATH` / `INCLUDE` / `LIB` 注入进去 |
-| `tools/ci/Import-DevCmd.ps1` | 这一步原来是 `ilammy/msvc-dev-cmd@v1`。它最后发布于 2024-04，`action.yml` 仍声明 `node20`，runner 上会打 Node 20 弃用告警，上游也没有 node24 版本可升；于是把它的核心逻辑收进仓库：`vswhere` 找 `vcvarsall.bat` → `cmd /s /c "call ... && set"` 拿全量环境 → 变化的环境变量写 `$GITHUB_ENV`。仓内脚本不再依赖 Node 运行时，也不再受上游停更影响 |
+| `tools/ci/Import-DevCmd.ps1` | 仓库自带的 MSVC 环境注入，不依赖任何 Node 运行时，因此不会在 runner 上产生 action 相关的弃用告警。按 `ProgramFiles` / `ProgramFiles(x86)` 枚举 `vcvarsall.bat`（环境变量推导，不写死盘符或版本）→ 用 `Start-Process` 跑一次子 cmd 拿全量环境变量 → 同名变量后者覆盖前者，结果写进 `$GITHUB_ENV` 供后续 step 使用 |
 | `NODE_NO_WARNINGS: "1"` | `actions/setup-node` 自己（含它的 post-job 缓存步骤）会打 `[DEP0040] punycode` / `[DEP0169] url.parse()` 弃用告警，是 action 内部依赖的事，跟本仓库无关。`env` 对所有步骤生效，在这里统一静音 |
-| 工作流里 action 的版本下限 | 清掉 Node 20 弃用告警那次升级定下的规矩：`actions/cache` ≥ v5、`pnpm/action-setup` ≥ v5、`actions/download-artifact` ≥ v7（三者从这些版本起 `action.yml` 声明 node24）。再升这些 action 时对照 `action.yml` 的 `runs.using` 复核一遍，别再退回 node20 |
+| 工作流里 action 的版本下限 | `actions/cache` ≥ v5、`pnpm/action-setup` ≥ v5、`actions/download-artifact` ≥ v7：这三个版本起 `action.yml` 声明 `node24`，低于下限的版本会在 runner 上打 Node 20 弃用告警。升级时对照 `action.yml` 的 `runs.using` 复核 |
 | kachina 的 `rcedit = { path = "../vendor/rcedit-rs" }` | 原本是 git 依赖，但上游 C++ 用了新版 MSVC 已移除的非标准扩展，编不过。完整出处（含上游仓库、快照 commit、对应的 MSVC STL 变更）见 `kachina/vendor/rcedit-rs/LOCAL_PATCHES.md` |
 | 仓库根的 `.gitattributes`（`* text=auto eol=lf`） | windows-latest 的 git 默认 `core.autocrlf=true`，检出成 CRLF 后 `prettier --check` 在 Windows 上必挂。详见 `../tools/devcheck/README.md`「跨平台的坑」 |
 | `git config --global init.defaultBranch main`（放在 checkout 之前） | `actions/checkout` 会先 `git init`，ubuntu 镜像上默认分支名还是 `master`，每次打 8 行 hint。同上 |
@@ -340,7 +339,6 @@ CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace 
 | `warning: field \`0\` is never read` → `kachina-installer (bin "kachina-builder") generated 1 warning` | 上游 `src/cli/arg.rs:42` 的 `Command::Other(Vec<String>)`，不是我们改过的文件；替上游改会给以后升级添乱 |
 | `warning: the following packages contain code that will be rejected by a future version of Rust: russh v0.54.5` | 第三方依赖的 future-incompat 提示 |
 | `Could Not Find ...\target\x86_64-win7-windows-msvc\release\kachina-builder...` | tauri CLI 自己探测产物路径的输出；实际产物落在不带三元组的 `target\release\`，`build-kachina.ps1` 的兜底分支会接住它 |
-| `##[warning]Node.js 20 is deprecated ... forced to run on Node.js 24` | 2026-09-16 之后应**不再出现**（见上表）。历史上来自 `actions/cache@v4`、`pnpm/action-setup@v4`、`actions/download-artifact@v6` 的 `action.yml` 声明 node20，以及 `ilammy/msvc-dev-cmd@v1`——前三个已升到 node24 版本，最后一个换成仓内脚本。再看到这条告警，说明某个 action 又出了 node20 版本或新引入了旧版本 |
 
 ## 升级上游 Kachina
 

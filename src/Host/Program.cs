@@ -15,9 +15,8 @@ internal static class Program
     private static SingleInstance? _activeInstance;
 
     /// <summary>
-    /// 旧版本内置安装逻辑写下的安装标记文件名。
-    /// 内置安装/卸载已移除（统一走 Kachina），这里仅用于向后兼容地识别历史安装副本，
-    /// 不再创建该文件。
+    /// 历史版本写下的安装标记文件名。安装统一走 Kachina 后本程序只读不写，
+    /// 仅用于识别早期的安装副本。
     /// </summary>
     private const string LegacyInstallMarkerFileName = "GenshinFpsUnlocker.install";
 
@@ -160,13 +159,13 @@ internal static class Program
             return;
         }
 
-        // ---- 遗留的安装/卸载命令行 ----
-        // 安装卸载统一由 Kachina 完成（安装目录内的 GenshinFpsUnlocker.uninst.exe，
-        // 或「设置 → 应用和功能」里由 Kachina 注册的卸载项）。
-        // 这里只负责把老快捷方式/老命令行的调用引导过去，绝不自己动文件系统。
+        // ---- 安装/卸载命令行 ----
+        // 安装与卸载统一由 Kachina 完成（安装目录内的 GenshinFpsUnlocker.uninst.exe，
+        // 或「设置 → 应用和功能」里由 Kachina 注册的卸载项）。带这些参数启动时只提示
+        // 用户改用 Kachina，程序自己不碰文件系统。
         if (args.Any(a => a is "--install" or "/install" or "--uninstall" or "/uninstall"))
         {
-            AppLog.Warn("已移除内置安装/卸载入口，忽略参数: " + string.Join(' ', args));
+            AppLog.Warn("安装/卸载由 Kachina 负责，忽略参数: " + string.Join(' ', args));
             if (!quiet)
             {
                 MessageBox.Show(

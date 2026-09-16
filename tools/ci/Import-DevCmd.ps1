@@ -7,10 +7,9 @@
     pwsh tools/ci/Import-DevCmd.ps1
 
 .NOTES
-    原先这一步用 ilammy/msvc-dev-cmd@v1。它最后发布于 2024-04，action.yml 仍声明
-    node20，在 runner 上会打 Node 20 弃用告警；上游没有 node24 版本可升，于是把它的
-    核心逻辑收进仓库：找 vcvarsall.bat → 在子 cmd 里跑一次拿全量环境变量 → 把变化
-    的部分写进 GITHUB_ENV。背景见 installer/README.md「workflow 里那些看着多余的设置」。
+    仓库自带的 MSVC 环境注入，不依赖任何 Node 运行时，也就不会在 runner 上产生
+    action 相关的弃用告警。流程：找 vcvarsall.bat → 在子 cmd 里跑一次拿全量环境变量
+    → 变化的变量写进 GITHUB_ENV。背景见 installer/README.md「workflow 里那些看着多余的设置」。
 #>
 param(
     # 传给 vcvarsall.bat 的目标架构，如 x64 / x86 / arm64。

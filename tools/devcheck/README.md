@@ -240,9 +240,6 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
   读完再拼接，所以 stderr 一律排在 stdout 后面。两边都非空时插一行
   `──── 以上 stdout / 以下 stderr（顺序不代表先后） ────`，避免把末尾那段
   stderr 误读成「跑完之后又出事了」。
-- Windows job 里 `##[warning]Node.js 20 is deprecated ... ilammy/msvc-dev-cmd@v1`：
-   该 action 已停更且只有 node20 版本 → 换成仓内的 `tools/ci/Import-DevCmd.ps1`。
-   细节见 `installer/README.md`「workflow 里那些看着多余的设置」。
 
 ## 维护约定
 

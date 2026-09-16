@@ -53,9 +53,8 @@ internal static class ShortcutHelper
             description: AppPaths.ProductDisplayName + " — 自定义 FPS · 后台注入",
             iconPath: icon);
 
-        // 卸载快捷方式只指向 Kachina 安装器生成的 uninst.exe。
-        // 便携 / 开发目录没有该文件时不再回退到「主程序 --uninstall」
-        // （内置卸载路径已删除），而是把历史残留的卸载快捷方式一并清掉。
+        // 卸载快捷方式只指向 Kachina 安装器生成的 uninst.exe；
+        // 便携 / 开发目录没有该文件时，顺手把历史残留的卸载快捷方式清掉。
         var uninstExe = AppPaths.UninstExePath;
         if (!File.Exists(uninstExe))
         {
