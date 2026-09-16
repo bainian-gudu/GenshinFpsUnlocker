@@ -53,10 +53,12 @@ internal static class ProcessRunner
                 return false;
             }
 
-            // 进程已退出，但管道可能还没到 EOF（例如孙进程继承了写端）。给一小段
-            // 排空时间，超时就按已读到的部分返回，绝不在这里干等。
-            var outOk = WaitBounded(stdout, deadline + DrainWindow);
-            var errOk = WaitBounded(stderr, deadline + DrainWindow);
+            // 进程已退出，但管道可能还没到 EOF（例如孙进程继承了写端）。排空窗口从
+            // **退出这一刻**起算固定 200ms：不能沿用整段 timeout 的剩余预算，
+            // 否则进程 0.1s 就退出时这里会白等近 timeout 那么久。
+            var drainDeadline = DateTime.UtcNow + DrainWindow;
+            var outOk = WaitBounded(stdout, drainDeadline);
+            var errOk = WaitBounded(stderr, drainDeadline);
             var text = ((outOk ? stdout.Result : string.Empty) + " " +
                         (errOk ? stderr.Result : string.Empty)).Trim();
             output = text;
