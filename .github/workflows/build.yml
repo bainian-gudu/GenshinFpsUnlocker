@@ -41,7 +41,6 @@ env:
   # 这两个变量都是为了压掉第三方 action 自己的告警，理由见
   # installer/README.md「workflow 里那些看着多余的设置」
   NODE_NO_WARNINGS: "1"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -60,7 +59,8 @@ jobs:
       - name: Cache kachina-builder.exe
         if: ${{ !inputs.rebuild_kachina }}
         id: kachina-cache
-        uses: actions/cache@v4
+        # v5 起 action.yml 用 node24；v4 仍声明 node20，会打弃用告警
+        uses: actions/cache@v5
         with:
           path: installer/tools/kachina-builder.exe
           key: kachina-builder-${{ runner.os }}-${{ hashFiles('installer/kachina/**') }}
@@ -96,7 +96,8 @@ jobs:
 
       - name: Setup pnpm
         if: steps.kachina-cache.outputs.cache-hit != 'true'
-        uses: pnpm/action-setup@v4
+        # v5 起 action.yml 用 node24；v4 仍声明 node20，会打弃用告警
+        uses: pnpm/action-setup@v6
         with:
           # 仓库根目录没有 package.json；版本号（pnpm@10.17.0）从上游快照的
           # packageManager 字段读取
@@ -112,11 +113,11 @@ jobs:
 
       # Ninja 生成器不会像 MSBuild 那样自己去 VS 安装目录找 cl.exe，
       # 必须先把 MSVC 开发环境注入 PATH / INCLUDE / LIB。
+      # 用仓库内的脚本而不是 ilammy/msvc-dev-cmd@v1：后者已停更且仍是 node20。
       - name: Add MSVC Developer environment
         if: steps.kachina-cache.outputs.cache-hit != 'true'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+        shell: pwsh
+        run: tools/ci/Import-DevCmd.ps1 -Arch x64
 
       - name: Build kachina-builder from source
         if: steps.kachina-cache.outputs.cache-hit != 'true'
@@ -167,11 +168,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: src/Ui/package-lock.json
-
-      - name: Add MSVC Developer environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
 
       - name: Build stub + host
         shell: pwsh
@@ -247,13 +243,13 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download kachina-builder
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: kachina-builder
           path: installer/tools
 
       - name: Download app dist
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: app-dist
           path: dist

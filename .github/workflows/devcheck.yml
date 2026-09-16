@@ -24,7 +24,6 @@ env:
   CARGO_TERM_COLOR: "always"
   # 压掉第三方 action 自己的弃用告警，理由见 tools/devcheck/README.md「日志里哪些 Warning / error 是正常的」
   NODE_NO_WARNINGS: "1"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   devcheck:
@@ -70,11 +69,11 @@ jobs:
 
       # native 层要用 cl.exe 真编 vendored rcedit-sys 的 C++（rescle.cc / librcedit.cpp）。
       # 不注入 MSVC 开发环境时该层会自动 SKIP，不算失败。
+      # 用仓库内的脚本而不是 ilammy/msvc-dev-cmd@v1：后者已停更且仍是 node20。
       - name: Add MSVC Developer environment
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+        shell: pwsh
+        run: tools/ci/Import-DevCmd.ps1 -Arch x64
 
       - name: Cache cargo (devcheck crates)
         uses: Swatinem/rust-cache@v2

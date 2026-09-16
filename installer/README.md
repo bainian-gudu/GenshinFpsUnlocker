@@ -313,9 +313,10 @@ CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace 
 | 设置 | 为什么 |
 | --- | --- |
 | `RUST_TOOLCHAIN: nightly` + `-Z build-std` | 上游 kachina 的构建方式，stable 工具链编不过 |
-| `CMAKE_GENERATOR: Ninja`（`build-kachina` job） | `seera-msquic` 的静态构建会在 `target\<三元组>\release\build\seera-msquic\<hash>\out\build\CMakeFiles\CMakeScratch\TryCompile-*\...` 这种极深路径下写 `.tlog`，超过 Windows 260 字符上限时 MSBuild 的 FileTracker 报 `error FTK1011: could not create the new file tracking log file`。Ninja 不写 `.tlog`，从根上绕开；同 job 里的 `Enable Windows long paths`（`LongPathsEnabled=1`）是第二道防线。**副作用**：Ninja 不会像 MSBuild 那样自己去 VS 安装目录找 `cl.exe`，所以必须先跑 `ilammy/msvc-dev-cmd@v1` 把 `PATH` / `INCLUDE` / `LIB` 注入进去 |
+| `CMAKE_GENERATOR: Ninja`（`build-kachina` job） | `seera-msquic` 的静态构建会在 `target\<三元组>\release\build\seera-msquic\<hash>\out\build\CMakeFiles\CMakeScratch\TryCompile-*\...` 这种极深路径下写 `.tlog`，超过 Windows 260 字符上限时 MSBuild 的 FileTracker 报 `error FTK1011: could not create the new file tracking log file`。Ninja 不写 `.tlog`，从根上绕开；同 job 里的 `Enable Windows long paths`（`LongPathsEnabled=1`）是第二道防线。**副作用**：Ninja 不会像 MSBuild 那样自己去 VS 安装目录找 `cl.exe`，所以必须先跑 `tools/ci/Import-DevCmd.ps1` 把 `PATH` / `INCLUDE` / `LIB` 注入进去 |
+| `tools/ci/Import-DevCmd.ps1` | 这一步原来是 `ilammy/msvc-dev-cmd@v1`。它最后发布于 2024-04，`action.yml` 仍声明 `node20`，runner 上会打 Node 20 弃用告警，上游也没有 node24 版本可升；于是把它的核心逻辑收进仓库：`vswhere` 找 `vcvarsall.bat` → `cmd /s /c "call ... && set"` 拿全量环境 → 变化的环境变量写 `$GITHUB_ENV`。仓内脚本不再依赖 Node 运行时，也不再受上游停更影响 |
 | `NODE_NO_WARNINGS: "1"` | `actions/setup-node` 自己（含它的 post-job 缓存步骤）会打 `[DEP0040] punycode` / `[DEP0169] url.parse()` 弃用告警，是 action 内部依赖的事，跟本仓库无关。`env` 对所有步骤生效，在这里统一静音 |
-| `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"` | 2025-10 起「声明 node20 的 action 一律强制跑 node24」已是 runner 默认行为，这个变量留着只是显式声明。日志里那条 `##[warning]Node.js 20 is deprecated` 来自第三方 action 自己的 `action.yml`（清单见下表），删不删这个变量都会打 |
+| 工作流里 action 的版本下限 | 清掉 Node 20 弃用告警那次升级定下的规矩：`actions/cache` ≥ v5、`pnpm/action-setup` ≥ v5、`actions/download-artifact` ≥ v7（三者从这些版本起 `action.yml` 声明 node24）。再升这些 action 时对照 `action.yml` 的 `runs.using` 复核一遍，别再退回 node20 |
 | kachina 的 `rcedit = { path = "../vendor/rcedit-rs" }` | 原本是 git 依赖，但上游 C++ 用了新版 MSVC 已移除的非标准扩展，编不过。完整出处（含上游仓库、快照 commit、对应的 MSVC STL 变更）见 `kachina/vendor/rcedit-rs/LOCAL_PATCHES.md` |
 | 仓库根的 `.gitattributes`（`* text=auto eol=lf`） | windows-latest 的 git 默认 `core.autocrlf=true`，检出成 CRLF 后 `prettier --check` 在 Windows 上必挂。详见 `../tools/devcheck/README.md`「跨平台的坑」 |
 | `git config --global init.defaultBranch main`（放在 checkout 之前） | `actions/checkout` 会先 `git init`，ubuntu 镜像上默认分支名还是 `master`，每次打 8 行 hint。同上 |
@@ -339,7 +340,7 @@ CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace 
 | `warning: field \`0\` is never read` → `kachina-installer (bin "kachina-builder") generated 1 warning` | 上游 `src/cli/arg.rs:42` 的 `Command::Other(Vec<String>)`，不是我们改过的文件；替上游改会给以后升级添乱 |
 | `warning: the following packages contain code that will be rejected by a future version of Rust: russh v0.54.5` | 第三方依赖的 future-incompat 提示 |
 | `Could Not Find ...\target\x86_64-win7-windows-msvc\release\kachina-builder...` | tauri CLI 自己探测产物路径的输出；实际产物落在不带三元组的 `target\release\`，`build-kachina.ps1` 的兜底分支会接住它 |
-| `##[warning]Node.js 20 is deprecated ... forced to run on Node.js 24` | `ilammy/msvc-dev-cmd@v1`、`pnpm/action-setup@v4`、`actions/download-artifact@v6` 的 action.yml 仍声明 node20；msvc-dev-cmd 已是最新 v1.13.0，只能等上游 |
+| `##[warning]Node.js 20 is deprecated ... forced to run on Node.js 24` | 2026-09-16 之后应**不再出现**（见上表）。历史上来自 `actions/cache@v4`、`pnpm/action-setup@v4`、`actions/download-artifact@v6` 的 `action.yml` 声明 node20，以及 `ilammy/msvc-dev-cmd@v1`——前三个已升到 node24 版本，最后一个换成仓内脚本。再看到这条告警，说明某个 action 又出了 node20 版本或新引入了旧版本 |
 
 ## 升级上游 Kachina
 
