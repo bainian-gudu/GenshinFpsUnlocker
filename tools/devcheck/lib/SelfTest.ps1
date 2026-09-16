@@ -189,6 +189,20 @@ const a: number = 1;
             if ($r.ExitCode -ne 0) { throw 'SFC 编译报错（符合预期）' }
         }
 
+    # --- 6) ci：把 vcvars 输出会解析出 0 个变量的注册
+    # 这层守的是 build-kachina 的 MSVC 注入：真退化了要等 9 分钟冷构建才炸。
+    $ciScript = Join-Path $RepoRoot 'tools/ci/Import-DevCmd.ps1'
+    $ciOriginal = [System.IO.File]::ReadAllText($ciScript)
+    Add-Case 'ci 层能抓到 MSVC 环境解析失效' `
+        -Mutate {
+            $text = [System.IO.File]::ReadAllText($ciScript)
+            $broken = $text.Replace("if (`$line -match '^([^=]+)=(.*)`$')", 'if ($line -match "^THIS_WILL_NEVER_MATCH=(.*)$")')
+            if ($broken -eq $text) { throw '注入失败：没找到解析环境变量的正则' }
+            [System.IO.File]::WriteAllText($ciScript, $broken)
+        } `
+        -Run { Test-CiScripts } `
+        -Cleanup { [System.IO.File]::WriteAllText($ciScript, $ciOriginal) }
+
     Write-Step 'selftest 注入错误自检'
     $caught = 0; $missed = 0; $skipped = 0; $idx = 0
     foreach ($c in $cases) {

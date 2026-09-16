@@ -14,7 +14,7 @@
 param(
     # 传给 vcvarsall.bat 的目标架构，如 x64 / x86 / arm64。
     [string]$Arch = 'x64',
-    # 显式指定 vcvarsall.bat（留空则自动查找）。自动化测试会注入假脚本。
+    # 显式指定 vcvarsall.bat（留空则自动查找）；devcheck 的 ci 层用它注入假脚本。
     [string]$VcVars = ''
 )
 

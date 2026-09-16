@@ -80,6 +80,7 @@ $KachinaSrc = Join-Path $RepoRoot 'installer/kachina/src-tauri/src'
 . (Join-Path $DevCheckRoot 'lib/Generate.ps1')
 . (Join-Path $DevCheckRoot 'lib/Common.ps1')
 . (Join-Path $DevCheckRoot 'lib/Layers.ps1')
+. (Join-Path $DevCheckRoot 'lib/CiScripts.ps1')
 . (Join-Path $DevCheckRoot 'lib/SelfTest.ps1')
 
 # ---------------------------------------------------------------------------
@@ -109,13 +110,13 @@ if ($SelfTest) {
     exit 0
 }
 
-$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'ui')
+$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'ui', 'ci')
 $requested = @($Layer -split '[,\s]+' | Where-Object { $_ })
 if (-not $requested.Count) { $requested = @('all') }
 foreach ($r in $requested) {
     if ($validLayers -notcontains $r) { throw "未知的层 '$r'，可选: $($validLayers -join ', ')" }
 }
-$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host') } else { $requested }
+$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'ci') } else { $requested }
 # gen 是 rust/logic/front 的前置
 if (($wanted -contains 'rust' -or $wanted -contains 'logic' -or $wanted -contains 'front') -and ($wanted -notcontains 'gen')) {
     $wanted = @('gen') + $wanted
@@ -137,6 +138,7 @@ foreach ($l in $wanted) {
         'front' { Invoke-Layer 'front TS 类型 / SFC / 格式'   { Test-Frontend } }
         'host'  { Invoke-Layer 'host  .NET Host 构建'         { Test-Host } }
         'ui'    { Invoke-Layer 'ui    Web UI 构建'            { Test-Ui } }
+        'ci'    { Invoke-Layer 'ci    CI 脚本行为'            { Test-CiScripts } }
     }
 }
 

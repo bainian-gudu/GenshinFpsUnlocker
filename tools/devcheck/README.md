@@ -9,9 +9,9 @@
 
 ```powershell
 # 仓库根目录
-pwsh tools/devcheck/devcheck.ps1                 # 跑 all（ps1 gen rust logic front host）
+pwsh tools/devcheck/devcheck.ps1                 # 跑 all（ps1 gen rust logic front host ci）
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
-pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 12 个错误，确认每层都会报错
+pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 13 个错误，确认每层都会报错
 pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑 rustfmt
 ```
 
@@ -33,6 +33,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `logic` | 同一批函数的**行为断言**（197 条，含循环用例）：注册表 / 快捷方式 / 计划任务名 / 用户数据目录 / 安装目录内文件清单 / 旧版本残留清单安全阀、路径归一化与比较、微软签名判定，以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement`（含「配置里的计划任务名与宿主 `Autostart.cs` 一致」这类接线断言） | cargo | 首次 ~15s，之后 ~0.4s |
 | `front` | `utils/agreement.ts` + `types.ts` 的 `tsc --strict`；`installer/kachina/src` 下**全部** `.vue` 的 `@vue/compiler-sfc` 编译；`agreement.ts` 的 prettier 风格 | node + npm | 首次 ~10s，之后 ~2s |
 | `host` | `src/Host` 的 `dotnet build -c Release -p:EnableWindowsTargeting=true` | .NET 9 SDK | ~2–8s |
+| `ci` | `tools/ci/Import-DevCmd.ps1` 的行为：用假 vcvarsall 输出跑一遍「生成 .cmd → 解析输出 → 注入环境 → 写 `GITHUB_ENV`」，并断言工作流里的 action 版本不低于 `installer/README.md` 登记的下限 | pwsh 7 | ~1s |
 | `ui` | `src/Ui` 的 `vite build`（**不在 `all` 里**，要先 `cd src/Ui && npm install`） | node + npm | 视机器 |
 
 全套热跑 ≈ 6–12 秒。
@@ -96,10 +97,11 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `-SelfTest`：证明这套检查不是空壳
 
 检查工具最大的风险是「跑通了但其实什么都没查」。`-SelfTest` 会先正常生成一次，
-然后注入 12 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，7 个会临时创建/改写
+然后注入 13 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，8 个会临时创建/改写
 仓库内的文件（`.gitmodules`、一个假工作流、`registry.rs` 的 `QuietUninstallString`、
 `rescle.cc` 末尾一行、`utils/mod.rs` 末尾一行 `sentry::init`、`Cargo.toml` 末尾一行
-`sentry = {…}`、一个带 DSN 域名的临时 `.ts`），每个用例跑完立即还原，收尾再兜底删一次：
+`sentry = {…}`、一个带 DSN 域名的临时 `.ts`、`tools/ci/Import-DevCmd.ps1` 的解析正则），
+每个用例跑完立即还原，收尾再兜底删一次：
 
 | 注入 | 期望 |
 | --- | --- |
@@ -115,6 +117,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `gen/extracted.rs` 里把 `segments.len() >= 2` 改成 `>= 1`（不是 `>= 0`，见下） | `logic` 层断言失败 |
 | `gen/src/utils/agreement.ts` 末尾追加 `const x: number = 'not a number';` | `front` 的 tsc 报错 |
 | `front/_selftest/Broken.vue`（`<div>` 未闭合） | `front` 的 SFC 编译报错 |
+| `tools/ci/Import-DevCmd.ps1` 的解析正则改成永不匹配 | `ci` 层报错（解析不出任何环境变量，MSVC 注入失效） |
 
 跑完自动删掉临时目录/临时文件并重新生成干净的检查源（用 `git status` 可验证零残留）。
 任何一个「注入了却没报错」→ 退出码 1。
