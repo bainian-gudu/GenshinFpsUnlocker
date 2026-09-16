@@ -97,6 +97,8 @@ export function parseConfig(value: unknown): UnlockerConfig {
     throw new Error('targetFps 必须是 1 至 540 之间的整数。');
   }
   const next = { ...DEFAULT_CONFIG };
+  // 只认 DEFAULT_CONFIG 里存在的字段：旧版本导出文件里的已删除字段
+  // （例如超分替换时期的 upscaler*）会在这里被当未知键忽略，不影响导入。
   for (const key of Object.keys(DEFAULT_CONFIG) as (keyof UnlockerConfig)[]) {
     if (!(key in input)) continue;
     const item = input[key];

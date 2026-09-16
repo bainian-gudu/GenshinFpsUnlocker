@@ -5,6 +5,8 @@ namespace GenshinFpsUnlocker.Host;
 /// <summary>
 /// 核心后台服务：监视游戏进程、注入 Stub、经共享内存下发目标 FPS。
 /// UI / 托盘通过属性与 StateChanged 事件读取状态；本类负责节流以降低开销。
+/// 另外负责一次性回收上一版本「超分替换」留在游戏目录里的代理组件
+/// （见 <see cref="LegacyProxyCleanup"/>）：只删不写，且不受解锁开关影响。
 /// </summary>
 internal sealed partial class UnlockService : IDisposable
 {
@@ -35,7 +37,7 @@ internal sealed partial class UnlockService : IDisposable
     /// <summary>下一次允许尝试注入的 UTC 时间（失败退避）。</summary>
     private DateTime _nextInjectAttemptUtc = DateTime.MinValue;
 
-    // ---- 历史残留组件清理（见 LegacyProxyCleanup）----
+    // ---- 历史残留组件清理（见 LegacyProxyCleanup） ----
     /// <summary>游戏目录里是否还可能有上一版本部署的代理组件（1 = 需要重试清理）。</summary>
     private int _legacyCleanupPending;
     /// <summary>下一次允许重试清理的 UTC 时间：文件被游戏占用时不必每轮都撞一遍。</summary>

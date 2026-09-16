@@ -8,6 +8,8 @@ namespace GenshinFpsUnlocker.Host;
 /// 应用配置（JSON）。主路径：%LocalAppData%\GenshinFpsUnlocker\config.json。
 /// 持久化策略：写临时文件 → Flush → File.Replace 原子替换 → 保留 .bak 备份；
 /// 读失败时依次尝试主文件 / .bak / .tmp / 便携旁路，降低丢失与半截写入风险。
+/// 已删除功能的旧字段（例如超分替换时期的 upscaler*）由反序列化器当未知字段忽略，
+/// 旧 config.json 仍能直接读入，下次保存时自然消失。
 /// </summary>
 internal sealed partial class AppConfig
 {
