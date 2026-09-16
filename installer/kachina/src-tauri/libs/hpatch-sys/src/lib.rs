@@ -1,6 +1,9 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+// 同 hdiff-sys：bindgen 生成的 CRT extern 声明会触发
+// suspicious_runtime_symbol_definitions。
+#![allow(suspicious_runtime_symbol_definitions)]
 
 use std::{ffi::c_void, mem::ManuallyDrop};
 

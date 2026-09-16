@@ -335,9 +335,7 @@ CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace 
 
 | 字样 | 来源 |
 | --- | --- |
-| `warning: suspicious definition of the runtime memcmp/memcpy/memmove/memset/strlen symbol`（各 5 条 ×2） | kachina 自带的 C 库 `hdiff-sys` / `hpatch-sys` 自己实现了这些符号 |
-| `warning: field \`0\` is never read` → `kachina-installer (bin "kachina-builder") generated 1 warning` | 上游 `src/cli/arg.rs:42` 的 `Command::Other(Vec<String>)`，不是我们改过的文件；替上游改会给以后升级添乱 |
-| `warning: the following packages contain code that will be rejected by a future version of Rust: russh v0.54.5` | 第三方依赖的 future-incompat 提示 |
+| `warning: the following packages contain code that will be rejected by a future version of Rust: russh v0.54.5` | 上游依赖 `russh` 的 future-incompat 提示，只在升级 `russh` 时消失，不影响产物 |
 | `Could Not Find ...\target\x86_64-win7-windows-msvc\release\kachina-builder...` | tauri CLI 自己探测产物路径的输出；实际产物落在不带三元组的 `target\release\`，`build-kachina.ps1` 的兜底分支会接住它 |
 
 ## 升级上游 Kachina

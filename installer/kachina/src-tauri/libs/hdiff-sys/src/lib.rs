@@ -1,6 +1,10 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+// bindgen 把 MSVC 的 CRT extern 声明也生成了一遍（`memcmp` / `memcpy` / `memmove` /
+// `memset` / `strlen`），它们在 64 位下用的是 C 侧签名，rustc 1.9x 会对这类定义报
+// suspicious_runtime_symbol_definitions；本 crate 只把它当 FFI 声明用。
+#![allow(suspicious_runtime_symbol_definitions)]
 
 use std::ffi::c_void;
 

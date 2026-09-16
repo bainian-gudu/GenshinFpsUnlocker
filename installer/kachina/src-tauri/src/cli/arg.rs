@@ -38,6 +38,8 @@ pub enum Command {
     InstallWebview2,
     #[clap(hide = true)]
     HeadlessUac(UacArgs),
+    // clap 的 external_subcommand 只在解析阶段写入该字段，编译期看不到读取方
     #[clap(external_subcommand)]
+    #[allow(dead_code)]
     Other(Vec<String>),
 }

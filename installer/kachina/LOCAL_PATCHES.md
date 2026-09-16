@@ -25,6 +25,7 @@
 - [8. 后续安全加固](#8-第二轮安全加固卸载收尾路径比较提权管道arp-卸载入口)
 - [9. 下载与提权链路加固](#9-第三轮安全加固把下载后执行和提权管道两条链路一次收干净)
 - [10. 前端模块拆分与注释中文化](#10-前端模块拆分与注释语言统一)
+- [11. 构建日志告警收敛](#11-构建日志告警收敛)
 - [升级上游时的套用顺序](#升级上游时的套用顺序)
 
 | # | 需求 | 涉及文件 |
@@ -745,6 +746,35 @@ AppContainer 进程、远程会话，并把完整性级别压到 Low。于是别
 
 ---
 
+## 11. 构建日志告警收敛
+
+`pnpm build` 在 `-Z build-std` 下会带出两类与产物无关的告警，逐条从源头上消掉：
+
+### `libs/hdiff-sys/src/lib.rs`、`libs/hpatch-sys/src/lib.rs`
+
+```rust
+#![allow(suspicious_runtime_symbol_definitions)]
+```
+
+bindgen 生成绑定时会顺手把 MSVC 的 CRT extern 声明也生成一遍（`memcmp` / `memcpy` /
+`memmove` / `memset` / `strlen`），这些声明在 64 位下用 C 侧签名，rustc 1.9x 起会对
+它们报 `suspicious definition of the runtime ... symbol`，每个 crate 5 条。绑定文件
+（`binding.rs`）由 `include!` 引入 `src/lib.rs`，所以在 crate 根上关掉该 lint 即可，
+不必改生成物。重新生成绑定时这条属性不受影响。
+
+### `src-tauri/src/cli/arg.rs`
+
+```rust
+#[allow(dead_code)]
+Other(Vec<String>),
+```
+
+`Command::Other` 由 clap 的 `external_subcommand` 在解析阶段写入，编译期看不到读取方，
+于是 `field 0 is never read` 报一条。该字段不能删（删了外部子命令就接不住），
+局部关闭 dead_code 是最小改法。
+
+---
+
 
 ## 升级上游时的套用顺序
 
@@ -776,6 +806,9 @@ AppContainer 进程、远程会话，并把完整性级别压到 Low。于是别
    三处改成调用它 → `installer/uninstall.rs` 的 `rm_list` 加安全阀、
    `has_reparse_point` 提为 `pub` → `main.rs` 的日志文件加重解析点检查 →
    `utils/acl.rs` 换 SDDL。跑 `pwsh tools/devcheck/devcheck.ps1 -Layer vendor,rust,logic`；
+3e. **重做第 11 节的告警收敛**：两个 `libs/*-sys` 的 `src/lib.rs` 各加一行
+   `#![allow(suspicious_runtime_symbol_definitions)]`，`cli/arg.rs` 的
+   `Other(Vec<String>)` 上加 `#[allow(dead_code)]`；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
