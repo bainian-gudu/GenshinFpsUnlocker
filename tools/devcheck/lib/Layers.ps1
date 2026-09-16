@@ -412,16 +412,25 @@ function Test-HostTest {
 
     # 测试台引用的是托管宿主（WinExe + WinForms），任何平台都能编，
     # 但只有 Windows 装得了 Microsoft.WindowsDesktop.App 运行时、跑得起来。
+    # 输出目录由 SDK 推导（RID / TargetFramework 因机器而异），这里直接问 MSBuild 要，
+    # 不猜路径：Windows runner 上曾有 TFM 目录与 RID 子目录两种布局。
     $buildArgs = @('build', $proj, '-c', 'Debug', '-p:EnableWindowsTargeting=true', '--nologo', '-v', 'q')
     $r = Invoke-Native -FilePath $dotnet -Arguments $buildArgs -WorkingDirectory $RepoRoot -Tail 20
     if ($r.ExitCode -ne 0) { throw '测试台编译失败' }
+
+    $r = Invoke-Native -FilePath $dotnet `
+        -Arguments @('msbuild', $proj, '-p:Configuration=Debug', '-p:EnableWindowsTargeting=true', '-getProperty:TargetPath') `
+        -WorkingDirectory $RepoRoot -Tail 5
+    if ($r.ExitCode -ne 0) { throw '取不到测试台输出路径（dotnet msbuild -getProperty:TargetPath）' }
+    $dll = ($r.Output -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+    if (-not $dll) { throw 'dotnet msbuild 没有返回 TargetPath' }
+
     if (-not $script:IsWin) {
-        Skip-Layer '非 Windows：测试台依赖 WindowsDesktop 运行时，这里只验证它能编过（断言交给 windows-latest）'
+        Skip-Layer "非 Windows：测试台依赖 WindowsDesktop 运行时，这里只验证它能编过（断言交给 windows-latest）：$dll"
     }
 
-    $dll = Join-Path $RepoRoot 'tools/devcheck/hosttest/bin/Debug/net9.0-windows10.0.18362.0/win-x64/GenshinFpsUnlocker.Host.Tests.dll'
     if (-not (Test-Path -LiteralPath $dll)) { throw "测试台没有产出 $dll" }
-    $r = Invoke-Native -FilePath $dotnet -Arguments @($dll) -WorkingDirectory $RepoRoot -Tail 40
+    $r = Invoke-Native -FilePath $dotnet -Arguments @($dll) -WorkingDirectory (Split-Path -Parent $dll) -Tail 40
 
     # 退出码之外再抓一行汇总：测试进程被运行时错误打断时，行号/原因是唯一线索。
     $summary = ($r.Output -split "`r?`n" | Where-Object { $_ -match '====' } | Select-Object -Last 1)
