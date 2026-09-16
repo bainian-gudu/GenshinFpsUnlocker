@@ -11,7 +11,8 @@ export function AppSidebar({ app }: { app: AppState }) {
 
   return (
     <aside ref={sidebarRef} id="app-navigation" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="主导航" role={sidebarOpen ? 'dialog' : undefined} aria-modal={sidebarOpen || undefined}>
-      <div className="sidebar-brand-row"><button className="brand-button" aria-label="返回游戏概览" onClick={() => navigate('overview')}><Brand /></button><button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="关闭导航"><X size={19} /></button></div>
+      {/* 品牌区只是标识：不做成按钮，避免左上角出现可聚焦的框，也不再抢「返回概览」这个动作（导航栏第一项即可）。 */}
+      <div className="sidebar-brand-row"><Brand /><button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="关闭导航"><X size={19} /></button></div>
       <div className="nav-group-label">工作空间</div>
       <nav className="primary-nav" aria-label="工作空间">
         {NAV_ITEMS.map(({ page: itemPage, label, icon: Icon }, index) => (
