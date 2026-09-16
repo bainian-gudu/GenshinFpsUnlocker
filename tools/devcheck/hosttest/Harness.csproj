@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Host 行为的自包含测试台：只用 .NET SDK 自带的 BCL，不引入 xunit / MSTest，
+    因此 devcheck 不需要访问 nuget.org 也能跑。
+
+    引用宿主工程（WinExe、win-x64），所以测试进程本身只能在 Windows 上运行；
+    Linux/macOS 上这一层由 PowerShell 侧跳过，只做「能不能编过」的验证。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.18362.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>GenshinFpsUnlocker.Host.Tests</AssemblyName>
+    <RootNamespace>GenshinFpsUnlocker.Host.Tests</RootNamespace>
+    <!-- 被引用的 Host 是 WinExe + WinForms，这里只是消费它的类型，不需要自带 WinForms -->
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Host/GenshinFpsUnlocker.Host.csproj" />
+  </ItemGroup>
+</Project>

@@ -9,9 +9,9 @@
 
 ```powershell
 # 仓库根目录
-pwsh tools/devcheck/devcheck.ps1                 # 跑 all（ps1 gen rust logic front host ci）
+pwsh tools/devcheck/devcheck.ps1                 # 跑 all（vendor ps1 gen rust logic native front host hosttest ci）
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
-pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 13 个错误，确认每层都会报错
+pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 14 个错误，确认每层都会报错
 pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑 rustfmt
 ```
 
@@ -33,10 +33,27 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `logic` | 同一批函数的**行为断言**（197 条，含循环用例）：注册表 / 快捷方式 / 计划任务名 / 用户数据目录 / 安装目录内文件清单 / 旧版本残留清单安全阀、路径归一化与比较、微软签名判定，以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement`（含「配置里的计划任务名与宿主 `Autostart.cs` 一致」这类接线断言） | cargo | 首次 ~15s，之后 ~0.4s |
 | `front` | `utils/agreement.ts` + `types.ts` 的 `tsc --strict`；`installer/kachina/src` 下**全部** `.vue` 的 `@vue/compiler-sfc` 编译；`agreement.ts` 的 prettier 风格 | node + npm | 首次 ~10s，之后 ~2s |
 | `host` | `src/Host` 的 `dotnet build -c Release -p:EnableWindowsTargeting=true` | .NET 9 SDK | ~2–8s |
+| `hosttest` | Host 的**行为断言**（自包含测试台，不依赖 xunit/MSTest）：`ProcessRunner` 的正常退出 / 非 0 退出码 / 超时杀进程树 / 启动失败 / 双管道并发读 / **孙进程继承管道写端时不干等**。Linux/macOS 只验证测试台能编译，断言在 windows-latest 上真跑 | .NET 9 SDK | 首次 ~8s，之后 ~4s |
 | `ci` | `tools/ci/Import-DevCmd.ps1` 的行为：用假 vcvarsall 输出跑一遍「生成 .cmd → 解析输出 → 注入环境 → 写 `GITHUB_ENV`」，并断言工作流里的 action 版本不低于 `installer/README.md` 登记的下限 | pwsh 7 | ~1s |
 | `ui` | `src/Ui` 的 `vite build`（**不在 `all` 里**，要先 `cd src/Ui && npm install`） | node + npm | 视机器 |
 
-全套热跑 ≈ 6–12 秒。
+全套热跑 ≈ 8–15 秒（`native` / `hosttest` 的断言依赖对应平台，缺平台时只做编译或直接 SKIP）。
+
+## `-SelfTest` 的并发与清场
+
+`-SelfTest` 会临时改写**仓库里的真实文件**（`.gitmodules`、工作流、`registry.rs`、
+`ProcessRunner.cs` …）来验证各层真的会报错，因此它有两个保护：
+
+1. **仓库改动锁**（`tools/devcheck/.repo-lock`）：同一工作区里同时只允许一个自检进程。
+   第二个进程会明确报「另一个 devcheck 正持有仓库改动锁（PID …）」而不是互相污染出
+   一堆假失败。锁是原子改名创建的，拿锁进程被杀也不会留下永久锁（下次运行会看到 PID
+   不在了，删锁继续）。
+2. **磁盘备份 + 启动清场**（`tools/devcheck/.selftest-backup/`）：每次注入前把原始内容
+   落盘。进程被杀（Ctrl+C、CI 取消）后，下次运行会先按备份恢复被改的文件再开工；
+   正常结束时备份目录会被删掉。`ci` 探测脚本的临时文件也带进程唯一后缀，两个 devcheck
+   并行跑普通检查（非自检）时不再互抢文件。
+
+两个目录都在 `.gitignore` 里。
 
 ## `vendor` 层：kachina 只从本仓库拉
 
@@ -97,11 +114,11 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `-SelfTest`：证明这套检查不是空壳
 
 检查工具最大的风险是「跑通了但其实什么都没查」。`-SelfTest` 会先正常生成一次，
-然后注入 13 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，8 个会临时创建/改写
+然后注入 14 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，9 个会临时创建/改写
 仓库内的文件（`.gitmodules`、一个假工作流、`registry.rs` 的 `QuietUninstallString`、
 `rescle.cc` 末尾一行、`utils/mod.rs` 末尾一行 `sentry::init`、`Cargo.toml` 末尾一行
-`sentry = {…}`、一个带 DSN 域名的临时 `.ts`、`tools/ci/Import-DevCmd.ps1` 的解析正则），
-每个用例跑完立即还原，收尾再兜底删一次：
+`sentry = {…}`、一个带 DSN 域名的临时 `.ts`、`tools/ci/Import-DevCmd.ps1` 的解析正则、
+`ProcessRunner.cs` 的超时分支），每个用例跑完立即还原，收尾再兜底删一次：
 
 | 注入 | 期望 |
 | --- | --- |
@@ -118,6 +135,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `gen/src/utils/agreement.ts` 末尾追加 `const x: number = 'not a number';` | `front` 的 tsc 报错 |
 | `front/_selftest/Broken.vue`（`<div>` 未闭合） | `front` 的 SFC 编译报错 |
 | `tools/ci/Import-DevCmd.ps1` 的解析正则改成永不匹配 | `ci` 层报错（解析不出任何环境变量，MSVC 注入失效） |
+| `ProcessRunner.cs` 的超时分支改成 `return true` | `hosttest` 层报错（超时被当成成功），windows-latest 上真跑 |
 
 跑完自动删掉临时目录/临时文件并重新生成干净的检查源（用 `git status` 可验证零残留）。
 任何一个「注入了却没报错」→ 退出码 1。
@@ -138,6 +156,7 @@ tools/devcheck/
 ├── rust/logic/             行为断言 crate（mock windows-registry，跨平台）
 │   └── src/main.rs         197 条断言 + mock
 ├── front/                  package.json / tsconfig.json / sfccheck.mjs
+├── hosttest/               宿主行为断言：自包含测试台（无 xunit/MSTest）+ 引用 src/Host
 └── rust/native/target/     native 层的 CARGO_TARGET_DIR（运行时生成，已 gitignore）
 ```
 
@@ -155,6 +174,11 @@ tools/devcheck/
   含 `/windows/` 视为系统目录）。其余都是上游/本项目的真实代码。
 - **抽取用括号配对而不是行号切片**：上游在文件里增删别的函数不会影响结果；
   但清单里的 item 一旦改名/删除，`Get-RustItem` 会**抛错**而不是静默少测。
+- **`hosttest` 为什么不用 xunit / MSTest**：`dotnet test` 要还原 nuget 包，而 devcheck
+  的定位是「几分钟内出结论的快速体检」，不该为几个断言多一个外网依赖。测试台自己
+  实现汇总与退出码；每个可能挂起的用例都用 `Task.Wait(上限)` 兜住，保证「被测的
+  挂起操作」不会把测试进程一起拖死。`InternalsVisibleTo` 只在 Debug 配置下挂到宿主
+  工程，Release 产物不带测试后门。
 
 ## 覆盖范围（诚实地说）
 
@@ -165,7 +189,9 @@ vendored C++ 在当前 MSVC 下编不过（`native` 层，仅 Windows）、
 Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 `windows-registry` 的 API 误用）、`uninstall.rs` 里安全阀逻辑被改坏、
 协议内联（`resolve_agreement`）行为变化、TS 类型错误、`.vue` 模板/`<script setup>`
-语法错误、C# 编译错误与警告、`.ps1` 语法错误、我们维护文件的格式漂移。
+语法错误、C# 编译错误与警告、**`ProcessRunner` 的退出码 / 超时杀进程树 / 管道排空
+上限**（`hosttest` 层，仅在 Windows 上真跑断言）、`.ps1` 语法错误、
+我们维护文件的格式漂移。
 
 **抓不到**（这些还得靠真实构建 / 实机）：
 
@@ -226,7 +252,7 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 | 出现位置 | 字样 | 为什么正常 |
 | --- | --- | --- |
 | `logic` 层末尾 | `Warning: failed to read agreementFile ".../NO_SUCH_FILE.txt"` | 反例用例：协议文件缺失时 `resolve_agreement` 必须告警且不写出 `content`（前端链接保持不可点）。紧邻上一行有「（预期告警 ↓ …）」标注 |
-| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 12 个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/12：…」横幅 |
+| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 每个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/14：…」横幅 |
 | `rust` / `logic` 层 | `Agreement embedded: ".../USER_AGREEMENT.txt"` | 正常路径的信息输出，说明协议真的被读进来并内联了 |
 
 已经消掉的噪音（别再把它们加回来）：

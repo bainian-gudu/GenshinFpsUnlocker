@@ -18,9 +18,12 @@
       logic  同一批函数的**行为断言**（mock windows-registry），任意平台可跑。
       native vendored rcedit-sys 的 C++（rescle.cc / librcedit.cpp）真用 MSVC 编一遍。
              只在有 cl.exe 的机器上跑，其它平台 SKIP。
-      front  agreement.ts / types.ts 的 tsc --strict 类型检查 + 全部 .vue 的
+     front  agreement.ts / types.ts 的 tsc --strict 类型检查 + 全部 .vue 的
              @vue/compiler-sfc 编译 + 我们维护文件的 prettier 检查。
-      host   src/Host 的 dotnet build（Release，EnableWindowsTargeting）。
+      host   src/Host 的 dotnet build（Release，EnableWindowsTargeting）。只证明它编得过，
+             不证明它算得对。
+      hosttest Host 行为断言（ProcessRunner：退出码 / 超时 / 管道排空上限）。
+             自包含测试台，不依赖 xunit；非 Windows 上只做编译验证后 SKIP。
       ui     src/Ui 的 vite 构建（**不在 all 里**，需要先 npm install）。
 
     任何一层失败 → 退出码 1。缺工具链的层标记 SKIP 并给出提示（不算失败）。
@@ -48,10 +51,11 @@ param(
     # 不自动安装任何东西（rustup target / npm install）
     [switch]$SkipInstall,
 
-    # 自检：故意注入 11 个错误，确认每一层真的会报错。
-    # 5 个只改 tools/devcheck 下的生成文件与 _selftest 临时目录；6 个会临时创建/追加
-    # 仓库内的文件（.gitmodules、假工作流、rescle.cc、utils/mod.rs、Cargo.toml、
-    # 一个临时 .ts），每个用例跑完立即还原。
+    # 自检：故意注入 14 个错误，确认每一层真的会报错。
+    # 5 个只改 tools/devcheck 下的生成文件与 _selftest 临时目录；9 个会临时创建/改写
+    # 仓库内的文件（.gitmodules、假工作流、registry.rs、rescle.cc、utils/mod.rs、
+    # Cargo.toml、一个临时 .ts、Import-DevCmd.ps1、ProcessRunner.cs）。
+    # 自检持有仓库改动锁，并在磁盘上留备份：中断后下次运行会先恢复再开工。
     [switch]$SelfTest
 )
 
@@ -110,13 +114,13 @@ if ($SelfTest) {
     exit 0
 }
 
-$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'ui', 'ci')
+$validLayers = @('all', 'vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'hosttest', 'ui', 'ci')
 $requested = @($Layer -split '[,\s]+' | Where-Object { $_ })
 if (-not $requested.Count) { $requested = @('all') }
 foreach ($r in $requested) {
     if ($validLayers -notcontains $r) { throw "未知的层 '$r'，可选: $($validLayers -join ', ')" }
 }
-$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'ci') } else { $requested }
+$wanted = if ($requested -contains 'all') { @('vendor', 'ps1', 'gen', 'rust', 'logic', 'native', 'front', 'host', 'hosttest', 'ci') } else { $requested }
 # gen 是 rust/logic/front 的前置
 if (($wanted -contains 'rust' -or $wanted -contains 'logic' -or $wanted -contains 'front') -and ($wanted -notcontains 'gen')) {
     $wanted = @('gen') + $wanted
@@ -137,6 +141,7 @@ foreach ($l in $wanted) {
         'native' { Invoke-Layer 'native vendored C++ (MSVC)'  { Test-NativeDeps } }
         'front' { Invoke-Layer 'front TS 类型 / SFC / 格式'   { Test-Frontend } }
         'host'  { Invoke-Layer 'host  .NET Host 构建'         { Test-Host } }
+        'hosttest' { Invoke-Layer 'hosttest Host 行为断言'   { Test-HostTest } }
         'ui'    { Invoke-Layer 'ui    Web UI 构建'            { Test-Ui } }
         'ci'    { Invoke-Layer 'ci    CI 脚本行为'            { Test-CiScripts } }
     }

@@ -44,15 +44,11 @@
     <!-- Windows 10/11 现代 Toast；不可用时宿主回退到托盘提示。 -->
     <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
   </ItemGroup>
-  <Target Name="ExcludeWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
-    <ItemGroup>
-      <Reference CopyLocal="false" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'">
-        <Private>false</Private>
-      </Reference>
-      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
-      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
-    </ItemGroup>
-  </Target>
+  <!-- 让 tools/devcheck/hosttest 的自包含测试台能直接用 internal 类型（ProcessRunner 等）。
+       只在 Debug 下开，Release 产物不带这条 friend assembly。 -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <InternalsVisibleTo Include="GenshinFpsUnlocker.Host.Tests" />
+  </ItemGroup>
   <!-- 应用图标旁路副本（exe 旁 app.ico），托盘/运行时读文件 -->
   <ItemGroup>
     <None Include="Assets\app.ico">

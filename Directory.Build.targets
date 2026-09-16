@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    宿主是 WinForms（UseWindowsForms=true），而 Microsoft.Web.WebView2 同时带 WPF 程序集。
+    不清掉它，任何引用宿主的工程都会报 MSB3277（WindowsBase 4.0 与 5.0 冲突）。
+    放在仓库根的 Directory.Build.targets 里，src/Host 与 tools/devcheck/hosttest 一起生效。
+  -->
+  <Target Name="ExcludeWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+      <Reference CopyLocal="false" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'">
+        <Private>false</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+</Project>

@@ -404,6 +404,35 @@ function Test-Host {
     return 'Host 构建通过'
 }
 
+function Test-HostTest {
+    $dotnet = Get-Tool 'dotnet'
+    if (-not $dotnet) { Skip-Layer 'dotnet 不在 PATH（.NET 9 SDK）' }
+    $proj = Join-Path $DevCheckRoot 'hosttest/Harness.csproj'
+    if (-not (Test-Path -LiteralPath $proj)) { throw "找不到 $proj" }
+
+    # 测试台引用的是托管宿主（WinExe + WinForms），任何平台都能编，
+    # 但只有 Windows 装得了 Microsoft.WindowsDesktop.App 运行时、跑得起来。
+    $buildArgs = @('build', $proj, '-c', 'Debug', '-p:EnableWindowsTargeting=true', '--nologo', '-v', 'q')
+    $r = Invoke-Native -FilePath $dotnet -Arguments $buildArgs -WorkingDirectory $RepoRoot -Tail 20
+    if ($r.ExitCode -ne 0) { throw '测试台编译失败' }
+    if (-not $script:IsWin) {
+        Skip-Layer '非 Windows：测试台依赖 WindowsDesktop 运行时，这里只验证它能编过（断言交给 windows-latest）'
+    }
+
+    $dll = Join-Path $RepoRoot 'tools/devcheck/hosttest/bin/Debug/net9.0-windows10.0.18362.0/win-x64/GenshinFpsUnlocker.Host.Tests.dll'
+    if (-not (Test-Path -LiteralPath $dll)) { throw "测试台没有产出 $dll" }
+    $r = Invoke-Native -FilePath $dotnet -Arguments @($dll) -WorkingDirectory $RepoRoot -Tail 40
+
+    # 退出码之外再抓一行汇总：测试进程被运行时错误打断时，行号/原因是唯一线索。
+    $summary = ($r.Output -split "`r?`n" | Where-Object { $_ -match '====' } | Select-Object -Last 1)
+    if ($r.ExitCode -ne 0) {
+        if (-not $summary) { $summary = "退出码 $($r.ExitCode)" }
+        throw "Host 行为断言失败：$summary"
+    }
+    if (-not $summary) { $summary = '断言全部通过' }
+    return $summary.Trim()
+}
+
 function Test-Ui {
     $npm = Get-Tool 'npm'
     if (-not $npm) { Skip-Layer 'npm 不在 PATH' }
