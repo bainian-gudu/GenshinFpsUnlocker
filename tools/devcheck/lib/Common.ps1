@@ -125,7 +125,8 @@ $script:SelfTestRepoFiles = @(
     'installer/kachina/src-tauri/src/installer/registry.rs',
     'installer/kachina/vendor/rcedit-rs/rcedit-sys/src/rescle.cc',
     'tools/ci/Import-DevCmd.ps1',
-    'src/Host/ProcessRunner.cs'
+    'src/Host/ProcessRunner.cs',
+    'src/Host/GameLocator.Helpers.cs'
 )
 
 function Clear-RepoMutations {

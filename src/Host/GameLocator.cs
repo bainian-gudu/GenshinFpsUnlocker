@@ -11,6 +11,8 @@ internal enum GameLocateSource
     RunningProcess,
     UnityLog,
     LauncherConfig,
+    Shortcut,
+    QuickScan,
     RegistryUninstall,
     Manual,
     None,
@@ -26,8 +28,9 @@ internal readonly record struct GameLocateResult(bool Ok, string? Path, GameLoca
 
 /// <summary>
 /// 多源游戏主程序定位器（Unity 日志 + 启动器/注册表回退）。
-/// 优先级：配置 → 运行中进程 → Unity 日志 → 启动器 config.ini → 卸载注册表。
-/// 支持中文路径；config.ini 仅浅层搜索以控制开销。
+/// 优先级：配置 → 运行中进程 → Unity 日志 → 启动器 config.ini/注册表 →
+/// 桌面/开始菜单快捷方式反推 → 有预算上限的全盘快扫 → 卸载注册表。
+/// 支持中文路径，所有目录枚举都设深度与耗时上限。
 /// </summary>
 internal static partial class GameLocator
 {
@@ -36,8 +39,9 @@ internal static partial class GameLocator
     /// <summary>国际服主程序文件名。</summary>
     public const string GenshinImpactExe = "GenshinImpact.exe";
 
-    // 从 Unity 日志中的 .../(GenshinImpact|YuanShen)_Data 还原 exe 路径
-    [GeneratedRegex(@".:(?:\\|/).+(?:GenshinImpact|YuanShen)(?=_Data)", RegexOptions.IgnoreCase)]
+    // 从 Unity 日志中的 .../(GenshinImpact|YuanShen)_Data 还原 exe 路径。
+    // 非贪婪 + 文件名边界：日志里同一行可能先出现别的 _Data 目录（如崩溃转储路径）。
+    [GeneratedRegex(@".:(?:\\|/)(.+?)(?:GenshinImpact|YuanShen)(?=_Data)", RegexOptions.IgnoreCase)]
     private static partial Regex WarmupFileLine { get; }
 
     [GeneratedRegex(@"game_install_path\s*=\s*(.+)", RegexOptions.IgnoreCase)]
@@ -66,11 +70,21 @@ internal static partial class GameLocator
         var fromLauncher = LocateFromLauncherConfigs();
         if (fromLauncher.Ok) return fromLauncher;
 
-        // 5) 卸载信息注册表 InstallLocation
+        // 5) 快捷方式反推：玩家常从桌面/开始菜单的快捷方式启动，目标即游戏或安装目录
+        var fromShortcut = LocateFromShortcuts();
+        if (fromShortcut.Ok) return fromShortcut;
+
+        // 6) 自定义目录快扫：非官方安装位置（D:\Games\… 之类）只在前几步找不到时兜底
+        var fromScan = LocateFromQuickScan();
+        if (fromScan.Ok) return fromScan;
+
+        // 7) 卸载信息注册表 InstallLocation
         var fromReg = LocateFromUninstallRegistry();
         if (fromReg.Ok) return fromReg;
 
-        return GameLocateResult.Fail("未能自动找到原神主程序，请手动选择 YuanShen.exe 或 GenshinImpact.exe");
+        return GameLocateResult.Fail(
+            "未能自动找到原神主程序（已查配置、运行进程、Unity 日志、启动器、快捷方式、磁盘快扫与注册表），" +
+            "请手动选择 YuanShen.exe 或 GenshinImpact.exe");
     }
 
     /// <summary>打开文件对话框供用户手动选择主程序。</summary>
@@ -114,6 +128,8 @@ internal static partial class GameLocator
         GameLocateSource.RunningProcess => "运行中进程",
         GameLocateSource.UnityLog => "Unity 日志",
         GameLocateSource.LauncherConfig => "启动器/安装目录",
+        GameLocateSource.Shortcut => "快捷方式",
+        GameLocateSource.QuickScan => "磁盘扫描",
         GameLocateSource.RegistryUninstall => "注册表",
         GameLocateSource.Manual => "手动选择",
         _ => "未知",

@@ -22,7 +22,8 @@
              @vue/compiler-sfc 编译 + 我们维护文件的 prettier 检查。
       host   src/Host 的 dotnet build（Release，EnableWindowsTargeting）。只证明它编得过，
              不证明它算得对。
-      hosttest Host 行为断言（ProcessRunner：退出码 / 超时 / 管道排空上限）。
+      hosttest Host 行为断言（ProcessRunner：退出码 / 超时 / 管道排空上限；
+             GameLocator：自定义目录快扫、目录剪枝、快捷方式目标反推）。
              自包含测试台，不依赖 xunit；非 Windows 上只做编译验证后 SKIP。
       ui     src/Ui 的 vite 构建（**不在 all 里**，需要先 npm install）。
 
@@ -51,10 +52,10 @@ param(
     # 不自动安装任何东西（rustup target / npm install）
     [switch]$SkipInstall,
 
-    # 自检：故意注入 14 个错误，确认每一层真的会报错。
+    # 自检：故意注入 15 个错误，确认每一层真的会报错。
     # 5 个只改 tools/devcheck 下的生成文件与 _selftest 临时目录；9 个会临时创建/改写
     # 仓库内的文件（.gitmodules、假工作流、registry.rs、rescle.cc、utils/mod.rs、
-    # Cargo.toml、一个临时 .ts、Import-DevCmd.ps1、ProcessRunner.cs）。
+    # Cargo.toml、一个临时 .ts、Import-DevCmd.ps1、ProcessRunner.cs、GameLocator.Helpers.cs）。
     # 自检持有仓库改动锁，并在磁盘上留备份：中断后下次运行会先恢复再开工。
     [switch]$SelfTest
 )

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace GenshinFpsUnlocker.Host;
@@ -8,6 +9,9 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal static partial class GameLocator
 {
+    /// <summary>Unity 日志里最多尝试几个 *_Data 候选路径（日志可能很长）。</summary>
+    private const int MaxUnityLogCandidates = 50;
+
     /// <summary>从正在运行的 YuanShen / GenshinImpact 进程取映像路径。</summary>
     public static GameLocateResult LocateFromRunningProcess()
     {
@@ -72,13 +76,17 @@ internal static partial class GameLocator
             try { content = File.ReadAllText(logPath); }
             catch { continue; }
 
-            var match = WarmupFileLine.Match(content);
-            if (!match.Success) continue;
-
-            var fullPath = PathUtil.Normalize(match.Value + ".exe");
-            if (IsValidGameExe(fullPath))
+            // 同一行/同一份日志里可能有多个 *_Data 路径（崩溃转储、缓存目录…），
+            // 逐个试到真的存在主程序为止，而不是只看第一条。
+            var tried = 0;
+            foreach (Match match in WarmupFileLine.Matches(content))
             {
-                return GameLocateResult.Success(fullPath, GameLocateSource.UnityLog, logPath);
+                if (++tried > MaxUnityLogCandidates) break;
+                var fullPath = PathUtil.Normalize(match.Value + ".exe");
+                if (IsValidGameExe(fullPath))
+                {
+                    return GameLocateResult.Success(fullPath, GameLocateSource.UnityLog, logPath);
+                }
             }
         }
 
@@ -147,6 +155,143 @@ internal static partial class GameLocator
         }
 
         return GameLocateResult.Fail("启动器目录 / config.ini 中未找到游戏");
+    }
+
+    /// <summary>快扫预算：整层来源的耗时上限。</summary>
+    public static readonly TimeSpan QuickScanBudget = TimeSpan.FromSeconds(8);
+
+    /// <summary>驱动器根下最多进几层；自定义安装一般在 5 层以内，再深就不值得扫。</summary>
+    private const int DriveScanDepth = 5;
+
+    /// <summary>用户目录下最多进几层（Downloads/Desktop 里常是解压出来的游戏目录）。</summary>
+    private const int UserDirScanDepth = 6;
+
+    /// <summary>
+    /// 非官方安装路径兜底：在用户目录与所有本地/可移动驱动器上做**有预算的**广度优先扫描。
+    /// 这不是为了替代前面的来源，而是覆盖「D:\Games\原神\…」这类既不在
+    /// Program Files、注册表里也没记录的情况。目录名剪枝 + 深度上限 + 总耗时上限
+    /// 保证最坏情况也只是几秒。
+    /// </summary>
+    public static GameLocateResult LocateFromQuickScan()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var (userRoots, driveRoots) = CollectQuickScanRoots();
+
+        // 用户目录优先（命中率更高、扫描面更小），随后是整盘。
+        var fromUserDirs = ScanRoots(userRoots, UserDirScanDepth, stopwatch);
+        if (fromUserDirs.Ok) return fromUserDirs;
+
+        var fromDrives = ScanRoots(driveRoots, DriveScanDepth, stopwatch);
+        if (fromDrives.Ok) return fromDrives;
+
+        return string.IsNullOrEmpty(fromDrives.Detail)
+            ? GameLocateResult.Fail("磁盘快扫未找到原神主程序")
+            : fromDrives;
+    }
+
+    /// <summary>在给定根目录集合上做一轮广度优先扫描（共用同一个耗时预算）。</summary>
+    public static GameLocateResult ScanRoots(IEnumerable<string> roots, int maxDepth, Stopwatch stopwatch)
+    {
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<(string Dir, int Depth)>();
+
+        foreach (var root in roots)
+        {
+            var normalized = PathUtil.Normalize(root);
+            if (string.IsNullOrEmpty(normalized) || !PathUtil.ExistsDir(normalized)) continue;
+            if (!visited.Add(normalized)) continue;
+            queue.Enqueue((normalized, 0));
+        }
+
+        while (queue.Count > 0)
+        {
+            if (stopwatch.Elapsed > QuickScanBudget)
+            {
+                return GameLocateResult.Fail(
+                    $"磁盘快扫超过 {QuickScanBudget.TotalSeconds:n0}s 预算，已放弃（看过 {visited.Count} 个目录）");
+            }
+
+            var (dir, depth) = queue.Dequeue();
+
+            string[] files;
+            try { files = Directory.GetFiles(dir, "*.exe", SearchOption.TopDirectoryOnly); }
+            catch { files = Array.Empty<string>(); }
+
+            foreach (var file in files)
+            {
+                if (!IsCandidateExeName(Path.GetFileName(file))) continue;
+                var normalized = PathUtil.Normalize(file);
+                if (!PathUtil.ExistsFile(normalized)) continue;
+                // 只认带 Unity 资源特征的目录，避免把同名的无关 exe 当游戏
+                if (!IsPlausibleGameRoot(normalized)) continue;
+                return GameLocateResult.Success(
+                    normalized, GameLocateSource.QuickScan,
+                    $"磁盘扫描命中：{PathUtil.GetDirectoryNameSafe(normalized)}");
+            }
+
+            if (depth >= maxDepth) continue;
+            string[] subs;
+            try { subs = Directory.GetDirectories(dir); }
+            catch { continue; }
+            foreach (var sub in subs)
+            {
+                if (ShouldSkipDirectory(sub, atDriveRoot: depth == 0)) continue;
+                var normalized = PathUtil.Normalize(sub);
+                if (!visited.Add(normalized)) continue;
+                queue.Enqueue((normalized, depth + 1));
+            }
+        }
+
+        return GameLocateResult.Fail("这组目录里没有找到原神主程序");
+    }
+
+    /// <summary>快扫根目录：用户目录（含 OneDrive）与所有本地/可移动驱动器。</summary>
+    public static (List<string> UserRoots, List<string> DriveRoots) CollectQuickScanRoots()
+    {
+        var userRoots = new List<string>();
+        var driveRoots = new List<string>();
+
+        foreach (var folder in new[]
+                 {
+                     Environment.SpecialFolder.DesktopDirectory,
+                     Environment.SpecialFolder.MyDocuments,
+                     Environment.SpecialFolder.UserProfile,
+                     Environment.SpecialFolder.MyMusic,
+                     Environment.SpecialFolder.MyPictures,
+                 })
+        {
+            Add(Environment.GetFolderPath(folder));
+        }
+        foreach (var env in new[] { "OneDrive", "OneDriveCommercial", "OneDriveConsumer" })
+        {
+            Add(Environment.GetEnvironmentVariable(env));
+        }
+        // Downloads 不在 SpecialFolder 里
+        Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));
+
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (!drive.IsReady) continue;
+                if (drive.DriveType != DriveType.Fixed && drive.DriveType != DriveType.Removable) continue;
+                var root = PathUtil.Normalize(drive.RootDirectory.FullName);
+                if (string.IsNullOrEmpty(root)) continue;
+                if (!driveRoots.Contains(root, StringComparer.OrdinalIgnoreCase)) driveRoots.Add(root);
+            }
+            catch { /* 光驱 / 未就绪的卷 */ }
+        }
+
+        return (userRoots, driveRoots);
+
+        void Add(string? dir)
+        {
+            if (string.IsNullOrWhiteSpace(dir)) return;
+            var normalized = PathUtil.Normalize(dir);
+            if (string.IsNullOrEmpty(normalized)) return;
+            if (driveRoots.Contains(normalized, StringComparer.OrdinalIgnoreCase)) return;
+            if (!userRoots.Contains(normalized, StringComparer.OrdinalIgnoreCase)) userRoots.Add(normalized);
+        }
     }
 
     /// <summary>从“应用和功能”卸载信息中查找原神 InstallLocation。</summary>

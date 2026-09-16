@@ -11,7 +11,7 @@
 # 仓库根目录
 pwsh tools/devcheck/devcheck.ps1                 # 跑 all（vendor ps1 gen rust logic native front host hosttest ci）
 pwsh tools/devcheck/devcheck.ps1 -Layer rust,logic
-pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 14 个错误，确认每层都会报错
+pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 自检：注入 15 个错误，确认每层都会报错
 pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑 rustfmt
 ```
 
@@ -33,7 +33,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `logic` | 同一批函数的**行为断言**（197 条，含循环用例）：注册表 / 快捷方式 / 计划任务名 / 用户数据目录 / 安装目录内文件清单 / 旧版本残留清单安全阀、路径归一化与比较、微软签名判定，以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement`（含「配置里的计划任务名与宿主 `Autostart.cs` 一致」这类接线断言） | cargo | 首次 ~15s，之后 ~0.4s |
 | `front` | `utils/agreement.ts` + `types.ts` 的 `tsc --strict`；`installer/kachina/src` 下**全部** `.vue` 的 `@vue/compiler-sfc` 编译；`agreement.ts` 的 prettier 风格 | node + npm | 首次 ~10s，之后 ~2s |
 | `host` | `src/Host` 的 `dotnet build -c Release -p:EnableWindowsTargeting=true` | .NET 9 SDK | ~2–8s |
-| `hosttest` | Host 的**行为断言**（自包含测试台，不依赖 xunit/MSTest）：`ProcessRunner` 的正常退出 / 非 0 退出码 / 超时杀进程树 / 启动失败 / 双管道并发读 / **孙进程继承管道写端时不干等**。Linux/macOS 只验证测试台能编译，断言在 windows-latest 上真跑 | .NET 9 SDK | 首次 ~8s，之后 ~4s |
+| `hosttest` | Host 的**行为断言**（自包含测试台，不依赖 xunit/MSTest）：`ProcessRunner` 的正常退出 / 非 0 退出码 / 超时杀进程树 / 启动失败 / 双管道并发读 / **孙进程继承管道写端时不干等**；`GameLocator` 的自定义目录快扫命中、系统目录与 installer 剪枝、`_Data` 在上一层的布局、同名假 exe 排除、主程序名判定、快捷方式目标反推。Linux/macOS 只验证测试台能编译，断言在 windows-latest 上真跑 | .NET 9 SDK | 首次 ~8s，之后 ~4s |
 | `ci` | `tools/ci/Import-DevCmd.ps1` 的行为：用假 vcvarsall 输出跑一遍「生成 .cmd → 解析输出 → 注入环境 → 写 `GITHUB_ENV`」，并断言工作流里的 action 版本不低于 `installer/README.md` 登记的下限 | pwsh 7 | ~1s |
 | `ui` | `src/Ui` 的 `vite build`（**不在 `all` 里**，要先 `cd src/Ui && npm install`） | node + npm | 视机器 |
 
@@ -114,11 +114,12 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 ## `-SelfTest`：证明这套检查不是空壳
 
 检查工具最大的风险是「跑通了但其实什么都没查」。`-SelfTest` 会先正常生成一次，
-然后注入 14 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，9 个会临时创建/改写
+然后注入 15 个错误，逐个确认对应层会失败。其中 5 个只动**生成物**，10 个会临时创建/改写
 仓库内的文件（`.gitmodules`、一个假工作流、`registry.rs` 的 `QuietUninstallString`、
 `rescle.cc` 末尾一行、`utils/mod.rs` 末尾一行 `sentry::init`、`Cargo.toml` 末尾一行
 `sentry = {…}`、一个带 DSN 域名的临时 `.ts`、`tools/ci/Import-DevCmd.ps1` 的解析正则、
-`ProcessRunner.cs` 的超时分支），每个用例跑完立即还原，收尾再兜底删一次：
+`ProcessRunner.cs` 的超时分支、`GameLocator.Helpers.cs` 的剪枝表），每个用例跑完立即还原，
+收尾再兜底删一次：
 
 | 注入 | 期望 |
 | --- | --- |
@@ -136,6 +137,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `front/_selftest/Broken.vue`（`<div>` 未闭合） | `front` 的 SFC 编译报错 |
 | `tools/ci/Import-DevCmd.ps1` 的解析正则改成永不匹配 | `ci` 层报错（解析不出任何环境变量，MSVC 注入失效） |
 | `ProcessRunner.cs` 超时分支里的 `KillTree` 拿掉 | `hosttest` 层报错（超时的子进程会活到写出标记文件），windows-latest 上真跑 |
+| `GameLocator.Helpers.cs` 剪枝表里删掉系统目录那一行 | `hosttest` 层报错（`Windows` / `System32` 不再被剪枝），windows-latest 上真跑 |
 
 跑完自动删掉临时目录/临时文件并重新生成干净的检查源（用 `git status` 可验证零残留）。
 任何一个「注入了却没报错」→ 退出码 1。
@@ -190,7 +192,8 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 `windows-registry` 的 API 误用）、`uninstall.rs` 里安全阀逻辑被改坏、
 协议内联（`resolve_agreement`）行为变化、TS 类型错误、`.vue` 模板/`<script setup>`
 语法错误、C# 编译错误与警告、**`ProcessRunner` 的退出码 / 超时杀进程树 / 管道排空
-上限**（`hosttest` 层，仅在 Windows 上真跑断言）、`.ps1` 语法错误、
+上限**与 **`GameLocator` 的扫描剪枝与路径推导**（`hosttest` 层，仅在 Windows 上真跑
+断言）、`.ps1` 语法错误、
 我们维护文件的格式漂移。
 
 **抓不到**（这些还得靠真实构建 / 实机）：
@@ -252,7 +255,7 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
 | 出现位置 | 字样 | 为什么正常 |
 | --- | --- | --- |
 | `logic` 层末尾 | `Warning: failed to read agreementFile ".../NO_SUCH_FILE.txt"` | 反例用例：协议文件缺失时 `resolve_agreement` 必须告警且不写出 `content`（前端链接保持不可点）。紧邻上一行有「（预期告警 ↓ …）」标注 |
-| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 每个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/14：…」横幅 |
+| `-SelfTest` | `error[E0308]` / `error TS2322` / `Element is missing end tag` / `Missing closing ')'` | 每个用例故意注入的错误，被抓到才说明这层没被架空。每个用例前有「注入 N/15：…」横幅 |
 | `rust` / `logic` 层 | `Agreement embedded: ".../USER_AGREEMENT.txt"` | 正常路径的信息输出，说明协议真的被读进来并内联了 |
 
 已经消掉的噪音（别再把它们加回来）：

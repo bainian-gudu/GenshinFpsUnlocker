@@ -195,6 +195,22 @@ const a: number = 1;
         -Run { Test-HostTest } `
         -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $processRunner) -Path $processRunner }
 
+    # --- 8) hosttest：磁盘快扫的目录剪枝被改坏 ---
+    #      注入方式是删掉剪枝表里的系统目录那一行（而不是 return false），
+    #      编译干净、没有 CS0162 噪音，只有真的跑断言才会发现。
+    $gameLocatorHelpers = Join-Path $RepoRoot 'src/Host/GameLocator.Helpers.cs'
+    Add-Case 'hosttest 层能抓到快扫不再剪枝系统目录' `
+        -Mutate {
+            $text = [System.IO.File]::ReadAllText($gameLocatorHelpers)
+            # 换行可能是 LF 也可能是 CRLF（取决于 checkout 时的 autocrlf）。
+            $needle = '        "Windows", "WinSxS", "System32", "SysWOW64", "SystemApps", "servicing",' + "`n"
+            $broken = $text.Replace("`r`n", "`n").Replace($needle, '')
+            if ($broken -eq $text) { throw '注入失败：没找到剪枝表里的系统目录行' }
+            [System.IO.File]::WriteAllText($gameLocatorHelpers, $broken)
+        } `
+        -Run { Test-HostTest } `
+        -Cleanup { Restore-RepoFile -Backup (Get-RepoBackupPath -Path $gameLocatorHelpers) -Path $gameLocatorHelpers }
+
     # 先按磁盘备份清掉上一次被中断的自检留下的注入，再上锁独占。
     Clear-RepoMutations
     $caught = 0; $missed = 0; $skipped = 0
