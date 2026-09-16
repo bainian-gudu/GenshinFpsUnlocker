@@ -90,6 +90,15 @@ internal static class Program
 
         try
         {
+            // CI / 诊断专用：只把登录计划任务 XML 写出来就退出，本机不会创建任何任务。
+            // build.yml 拿这份 XML 真跑一次 schtasks /Create，确保任务计划程序接受它。
+            var dumpIndex = Array.IndexOf(args, "--dump-elevated-task-xml");
+            if (dumpIndex >= 0 && dumpIndex + 1 < args.Length)
+            {
+                Autostart.DumpElevatedTaskXml(args[dumpIndex + 1]);
+                return;
+            }
+
             Run(args);
         }
         catch (Exception ex)
@@ -261,8 +270,9 @@ internal static class Program
         config.Sanitize();
         AppLog.ApplyConfig(config);
 
-        // 用户明确开启自动提权时，仅手动启动交接到管理员实例。
-        // 登录自启动始终保持静默，不因这一偏好请求 UAC。
+        // 用户明确开启自动提权时，手动启动交接到管理员实例；登录自启不在这里提权，
+        // 而是由「开机自启动 + 自动管理员」组合登记的最高权限计划任务在登录时直接启动
+        // （见 Autostart.SyncLoginStartup），因此登录过程不会弹 UAC。
         // 只允许受保护的 Program Files 安装目录执行此路径，避免用户可写目录
         // 中的 exe 被替换后借 UAC 获取高完整性令牌。
         if (!isAutostart && config.AutoStartAsAdministrator && !Elevation.IsAdministrator()
@@ -294,15 +304,17 @@ internal static class Program
             }
         }
 
-        // 自启项始终使用当前用户的 HKCU\Run，以普通权限静默启动。
-        // 自动管理员选项只作用于手动启动；清理旧版本高权限任务，避免登录时提权。
+        // 登录自启：普通权限写 HKCU\Run，管理员权限登记最高权限计划任务，二者只保留一个；
+        // 登记失败会退回 HKCU\Run 并把原因带到界面上（Autostart.LastReport）。
+        // 同一进程里这里先同步、UiBridge 后建，所以首次读到的就是本次登录的真实状态。
         try
         {
-            Autostart.SyncElevatedTask(false);
-            Autostart.SyncOnStartup(config.AutoStartWithWindows, config.LoadedFromDisk);
+            Autostart.SyncLoginStartup(
+                config.AutoStartWithWindows,
+                config.AutoStartAsAdministrator,
+                config.LoadedFromDisk);
         }
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
-        AppLog.Info($"autostart={config.AutoStartWithWindows} cmd={Autostart.GetCommand()}");
 
         // 只对 Kachina 安装副本维护开始菜单快捷方式；桌面快捷方式由安装器一次性创建，
         // 宿主启动时不再扫描、创建或删除桌面图标。

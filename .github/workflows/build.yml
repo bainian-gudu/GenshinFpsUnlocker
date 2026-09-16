@@ -306,6 +306,30 @@ jobs:
           }
           Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
 
+      # 登录计划任务的 XML 格式对不对，只有任务计划程序自己说了算；devcheck 那几层管不到。
+      # 这里让刚构建出来的宿主导出真实 XML，再让 schtasks 真跑一次 /Create（随后删掉），
+      # 保证「管理员自启动」不会因为 XML 被拒而静默退回普通权限自启。
+      - name: Validate autostart task XML
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $xml = Join-Path $env:RUNNER_TEMP "GenshinFpsUnlocker.AutoStart.xml"
+          if (Test-Path -LiteralPath $xml) { Remove-Item -LiteralPath $xml -Force }
+          $proc = Start-Process -FilePath ".\dist\GenshinFpsUnlocker.exe" `
+            -ArgumentList "--dump-elevated-task-xml", "`"$xml`"" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "导出登录计划任务 XML 失败（退出码 $($proc.ExitCode)）" }
+          if (-not (Test-Path -LiteralPath $xml)) { throw "未生成登录计划任务 XML" }
+          Write-Host "任务 XML：$((Get-Item -LiteralPath $xml).Length) bytes"
+
+          $task = "GenshinFpsUnlocker.CiXmlValidate"
+          schtasks /Create /TN $task /XML $xml /F
+          if ($LASTEXITCODE -ne 0) { throw "schtasks 拒绝了登录计划任务 XML（退出码 $LASTEXITCODE）" }
+          schtasks /Query /TN $task /XML | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "校验任务创建后查询失败" }
+          schtasks /Delete /TN $task /F
+          if ($LASTEXITCODE -ne 0) { throw "清理校验任务失败" }
+          Write-Host "登录计划任务 XML 校验通过"
+
       - name: Upload dist
         uses: actions/upload-artifact@v6
         with:

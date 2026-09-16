@@ -58,10 +58,17 @@ internal sealed partial class AppConfig
     /// <summary>配置 schema 版本（用于一次性迁移默认行为）。</summary>
     public int ConfigSchemaVersion { get; set; } = 0;
 
-    /// <summary>是否写入 HKCU\...\Run，实现开机自启动。</summary>
+    /// <summary>
+    /// 是否随 Windows 登录自动启动（见 <see cref="Autostart.SyncLoginStartup"/>）：
+    /// 默认写 HKCU\...\Run（标准权限）；与 <see cref="AutoStartAsAdministrator"/>
+    /// 同时开启时改登记最高权限计划任务，登录即高权限、不弹 UAC。
+    /// </summary>
     public bool AutoStartWithWindows { get; set; } = false;
 
-    /// <summary>手动启动时自动请求管理员权限；登录自启动始终保持普通权限。</summary>
+    /// <summary>
+    /// 以管理员权限运行：手动启动时请求一次 UAC；与 <see cref="AutoStartWithWindows"/>
+    /// 同时开启时，登录自启用最高权限计划任务启动（不弹 UAC）。
+    /// </summary>
     public bool AutoStartAsAdministrator { get; set; } = false;
 
     /// <summary>

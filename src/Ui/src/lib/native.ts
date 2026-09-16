@@ -14,8 +14,19 @@ export type NativeState = {
   isElevated: boolean;
   /** 解锁注入通常需要管理员；与 isElevated 相反时便于 UI 横幅 */
   needsAdminForUnlock: boolean;
+  /** 登录自启动实际生效的方式与提示 */
+  autostart: AutostartState;
   upscaler: UpscalerState;
   version: string;
+};
+
+/** 登录自启实际登记的通道：计划任务（最高权限）/ HKCU Run（标准权限）/ 登记失败回退 */
+export type AutostartMode = 'disabled' | 'standard' | 'elevated' | 'fallback';
+
+export type AutostartState = {
+  mode: AutostartMode;
+  /** 需要用户处理的提示（如计划任务没登记成功），没有则为 null */
+  notice: string | null;
 };
 
 export type UpscalerState = {
@@ -136,6 +147,12 @@ function normalizeState(raw: any): NativeState {
     isNative: true,
     isElevated,
     needsAdminForUnlock: raw.needsAdminForUnlock != null ? Boolean(raw.needsAdminForUnlock) : !isElevated,
+    autostart: {
+      mode: (['standard', 'elevated', 'fallback'] as const).includes(raw.autostart?.mode)
+        ? (raw.autostart.mode as AutostartMode)
+        : 'disabled',
+      notice: typeof raw.autostart?.notice === 'string' && raw.autostart.notice ? raw.autostart.notice : null,
+    },
     upscaler: {
       enabled: Boolean(raw.upscaler?.enabled),
       active: Boolean(raw.upscaler?.active),

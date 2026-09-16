@@ -913,6 +913,9 @@ const PROJECT_CONFIG: ProjectConfig = reactive({
   userDataPath: [],
   ignoreFolderPath: [],
   extraUninstallPath: [],
+  extraUninstallRegistry: [],
+  extraUninstallScheduledTasks: [],
+  extraUninstallLnkNames: [],
   title: 'Title',
   description: 'description',
   windowTitle: ' ',
@@ -2324,6 +2327,10 @@ async function uninstall() {
         uninstall_name: PROJECT_CONFIG.uninstallName,
         // 安装期写入的注册表（开机自启动等）随卸载一并回收
         extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
+        // 安装期登记的登录计划任务（开机自启动 + 自动管理员）同样随卸载回收，
+        // 否则卸载后每次登录还会有一个指向已删程序的任务
+        extra_uninstall_scheduled_tasks:
+          PROJECT_CONFIG.extraUninstallScheduledTasks ?? [],
         // 宿主自建/改名的快捷方式：尽力删除，失败不影响卸载
         extra_uninstall_shortcuts: extraShortcuts,
       },

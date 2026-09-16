@@ -78,6 +78,8 @@
 .settings-control .panel-heading + .toggle-row { border-top: 0; }
 .settings-small-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.9; }
 .settings-small-note > svg { margin-top: 3px; }
+/* 登录自启没按预期登记时（如计划任务需要管理员权限）用警示色，提示必须被看到 */
+.settings-small-note.is-warning { color: var(--warning); }
 .settings-path-panel { margin-top: 20px; padding-bottom: 21px; }
 .path-display { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 5px; background: var(--input); color: var(--secondary); font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .input-help { color: var(--muted); font-size: 10.5px; line-height: 1.9; margin-top: 8px; }

@@ -107,6 +107,10 @@ pub struct RunUninstallArgs {
     /// 额外注册表清理（安装时写入的自启动等项）。旧版前端不会传，故给默认值。
     #[serde(default)]
     extra_uninstall_registry: Vec<RegistryCleanupItem>,
+    /// 额外计划任务清理（「开机自启动 + 自动管理员」组合登记的登录任务，见
+    /// `src/Host/Autostart.cs`）。旧版前端不会传，故给默认值。
+    #[serde(default)]
+    extra_uninstall_scheduled_tasks: Vec<String>,
     /// 尽力删除的路径（安装期由宿主自建/改名的快捷方式等）。
     /// 与 `extra_uninstall_path` 的区别：删不掉只记日志，绝不让卸载失败。
     #[serde(default)]
@@ -121,6 +125,7 @@ pub async fn run_uninstall_with_args(args: RunUninstallArgs) -> TAResult<Vec<Str
         args.reg_name,
         args.uninstall_name,
         args.extra_uninstall_registry,
+        args.extra_uninstall_scheduled_tasks,
         args.extra_uninstall_shortcuts,
     )
     .await
@@ -891,6 +896,55 @@ async fn rm_best_effort(paths: &[String], allowed_names: &[String]) {
     }
 }
 
+/// 计划任务名是否允许删除（`extraUninstallScheduledTasks` 的安全阀）。
+///
+/// 卸载器通常以管理员身份运行，`schtasks /Delete` 的 `/TN` 又是「名字可带通配形态」
+/// 的入口：配置里写一个 `*` 就等于清空整台机器的任务。这里只放行
+/// **以本产品名开头**、只含字母数字与 `._- ` 的任务名，其余一律跳过。
+/// 名字长度另设上限，避免畸形配置把命令行撑爆。
+fn is_safe_task_name(product: &str, name: &str) -> bool {
+    let product = product.trim();
+    let name = name.trim();
+    if product.is_empty() || name.is_empty() || name.len() > 100 {
+        return false;
+    }
+    if !name.to_ascii_lowercase().starts_with(&product.to_ascii_lowercase()) {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ' '))
+}
+
+/// 删除宿主登记过的登录计划任务（「开机自启动 + 自动管理员」组合）。
+///
+/// 这类任务不是注册表项，`extraUninstallRegistry` 覆盖不到；与注册表清理同语义：
+/// 不存在、名字不合法、删不掉都只记日志，绝不让卸载失败。
+pub fn clean_extra_scheduled_tasks(product: &str, tasks: &[String]) {
+    let schtasks = std::env::var("SystemRoot")
+        .map(|root| Path::new(&root).join("System32").join("schtasks.exe"))
+        .unwrap_or_else(|_| PathBuf::from("schtasks.exe"));
+    for task in tasks {
+        let name = task.trim();
+        if !is_safe_task_name(product, name) {
+            tracing::warn!("跳过不安全的计划任务清理项: {task}");
+            continue;
+        }
+        match std::process::Command::new(&schtasks)
+            .args(["/Delete", "/TN", name, "/F"])
+            .creation_flags(CREATE_NO_WINDOW.0)
+            .output()
+        {
+            Ok(output) if output.status.success() => tracing::info!("已删除计划任务 {name}"),
+            // 任务不存在时 schtasks 会返回非 0，这里只记日志
+            Ok(output) => tracing::warn!(
+                "删除计划任务失败（已忽略）{name}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(error) => tracing::warn!("调用 schtasks 失败（已忽略）{name}: {error}"),
+        }
+    }
+}
+
 /// 清理安装期写入的注册表项（自启动等）。所有错误都被吞掉，仅记录日志。
 pub fn clean_extra_registry(items: &[RegistryCleanupItem]) {
     for item in items {
@@ -958,6 +1012,7 @@ pub async fn run_uninstall(
     reg_name: String,
     uninstall_name: String,
     extra_uninstall_registry: Vec<RegistryCleanupItem>,
+    extra_uninstall_scheduled_tasks: Vec<String>,
     extra_uninstall_shortcuts: Vec<String>,
 ) -> TAResult<Vec<String>> {
     let exe_path = std::env::current_exe().context("GET_EXE_PATH_ERR")?;
@@ -1097,6 +1152,10 @@ pub async fn run_uninstall(
 
     // 清理安装期写入的注册表项（开机自启动等），见项目配置 extraUninstallRegistry
     clean_extra_registry(&extra_uninstall_registry);
+
+    // 清理安装期登记的登录计划任务（开机自启动 + 自动管理员），见
+    // 项目配置 extraUninstallScheduledTasks；允许的名字限定在本产品前缀下。
+    clean_extra_scheduled_tasks(&reg_name, &extra_uninstall_scheduled_tasks);
 
     // 删除注册表——HKLM 与 HKCU 都尝试，因为安装可能使用任一项
     let reg_path = format!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{reg_name}");

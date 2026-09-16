@@ -15,6 +15,7 @@
 
 - [1. 卸载器注册表清理](#1-卸载器额外注册表清理-extrauninstallregistry)
 - [1b. 卸载器快捷方式清理](#1b-卸载器清理宿主自建改名的快捷方式-extrauninstalllnknames)
+- [1c. 卸载器计划任务清理](#1c-卸载器清理安装期登记的登录计划任务-extrauninstallscheduledtasks)
 - [2. 用户协议](#2-用户协议可配置--多格式--弹窗全文)
 - [3. 安全加固](#3-安全加固收敛卸载器的删除范围与提权面)
 - [4. rcedit 本地副本](#4-依赖rcedit-从-git-依赖改为仓库内副本)
@@ -30,6 +31,7 @@
 | --- | --- | --- |
 | 1 | 卸载时清理安装期写入的注册表（开机自启动等） | `src-tauri/src/installer/uninstall.rs`、`src/App.vue`、`src/types.ts`、`src/api/ipc.ts` |
 | 1b | 卸载时清理安装期由宿主自建/改名的快捷方式 | 同上 4 个文件 |
+| 1c | 卸载时清理安装期登记的登录计划任务（开机自启 + 自动管理员） | 同上 4 个文件 |
 | 2 | 用户协议可配置、多格式、点击弹窗看全文 | `src-tauri/src/builder/pack.rs`、`src/App.vue`、`src/types.ts`、`src/utils/agreement.ts`（新增） |
 | 3 | 安全加固：收敛卸载器的删除范围与提权面 | `src-tauri/src/installer/uninstall.rs`、`src/utils/agreement.ts`、`src/App.vue`（另有宿主侧 `src/Host/UninstallLauncher.cs`、`src/Host/RuntimePrerequisite.cs`，不属于本目录） |
 | 4 | 让 kachina 在 MSVC 14.51（VS 2026 / windows-latest）上还能编过 | `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`vendor/rcedit-rs/`（新增的仓库内依赖 + 1 行 C++ 修复） |
@@ -149,6 +151,68 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 与 `ShortcutHelper.ShortcutNameAliases()` 曾经列举的历史别名一致
 （那个方法和 `RemoveCreatedShortcuts()` 已随「宿主不做卸载」一并删除）。
+
+---
+
+## 1c. 卸载器：清理安装期登记的登录计划任务（`extraUninstallScheduledTasks`）
+
+宿主把「开机自启动」分成两种登记方式，二选一（见 `src/Host/Autostart.cs`）：
+
+| 配置组合 | 实际登记 | 卸载时怎么清 |
+| --- | --- | --- |
+| 只开「开机自启动」 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `GenshinFpsUnlocker` 值 | `extraUninstallRegistry`（第 1 节） |
+| 「开机自启动」+「启动时自动以管理员权限运行」 | 任务计划程序里的 `GenshinFpsUnlocker.AutoStart`（`RunLevel=HighestAvailable`） | 本节 |
+
+计划任务既不是注册表项也不是文件，上游卸载器完全不知道它，只能靠
+`schtasks /Delete /TN <名字> /F` 回收。**不清理的后果**：卸载后每次登录，
+任务计划程序都会去拉起一个已经不存在的 exe。
+
+### `src-tauri/src/installer/uninstall.rs`
+
+- `RunUninstallArgs` 新增字段 `#[serde(default)] extra_uninstall_scheduled_tasks: Vec<String>`
+  ——旧版前端不传也能反序列化。
+- `run_uninstall(...)` 新增同名参数（只有 `run_uninstall_with_args` 一个调用点），
+  在 `clean_extra_registry(&extra_uninstall_registry)` 之后调用
+  `clean_extra_scheduled_tasks(&reg_name, &extra_uninstall_scheduled_tasks)`。
+- 新增 `fn is_safe_task_name(product: &str, name: &str) -> bool`（纯函数，可跨平台断言）：
+  任务名必须**以 `regName` 开头**、只含字母数字与 `._- `、长度 ≤ 100。
+  这条安全阀是必需的：卸载器通常以管理员身份运行，配置里写个 `*` 就等于
+  「删掉整台机器的计划任务」。
+- 新增 `pub fn clean_extra_scheduled_tasks(...)`：用
+  `std::process::Command::new("%SystemRoot%\\System32\\schtasks.exe")`
+  + `.args(["/Delete", "/TN", name, "/F"])`（参数数组，不经 shell）
+  + `CREATE_NO_WINDOW`。任务不存在 / 名字不合法 / 调用失败都只 `tracing` 记日志，
+  绝不让卸载失败。
+
+### `src/App.vue`
+
+卸载分支构造 `ipcRunUninstall({...})` 时新增：
+
+```ts
+extra_uninstall_scheduled_tasks: PROJECT_CONFIG.extraUninstallScheduledTasks ?? [],
+```
+
+### `src/types.ts` / `src/api/ipc.ts`
+
+- `ProjectConfig` 新增可选字段 `extraUninstallScheduledTasks?: string[]`；
+- `IpcRunUninstall` 新增可选字段 `extra_uninstall_scheduled_tasks?: string[]`。
+
+### 本项目配置
+
+`installer/kachina.config.json`：
+
+```json
+"extraUninstallScheduledTasks": [
+  "GenshinFpsUnlocker.AutoStart"
+]
+```
+
+### 复核方式
+
+- `tools/devcheck` 的 `logic` 层第 17 组断言 `is_safe_task_name`（通配符、目录形式、
+  别人的任务名、空名、超长名、命令行注入形态全部要拦）；
+- 第 18 组拿**真实仓库文件**核对接线：`src/Host/Autostart.cs` 里的任务名与
+  `kachina.config.json` 一致、名字能过安全阀、前端与 Rust 两侧字段都接上了。
 
 ---
 

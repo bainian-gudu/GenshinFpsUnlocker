@@ -239,6 +239,19 @@ internal sealed partial class UiBridge : IDisposable
             saveState = save == 1 ? "saving" : save == 2 ? "error" : "saved",
             isNative = true,
             isElevated = elevated,
+            // 登录自启实际生效的方式（普通权限 Run / 最高权限计划任务 / 回退）与提示：
+            // 直接读同步结果，界面不需要再去猜注册表和任务计划程序里的状态。
+            autostart = new
+            {
+                mode = Autostart.LastReport.Mode switch
+                {
+                    Autostart.AutostartMode.Elevated => "elevated",
+                    Autostart.AutostartMode.Standard => "standard",
+                    Autostart.AutostartMode.Fallback => "fallback",
+                    _ => "disabled",
+                },
+                notice = Autostart.LastReport.Notice,
+            },
             // 权限状态只看当前进程令牌；真实注入被拒绝时再提示提权。
             // 当前进程不是管理员时始终提供手动提权入口；历史授权记录不能替代真实令牌。
             needsAdminForUnlock = !elevated,

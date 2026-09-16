@@ -40,7 +40,7 @@ export function AppDialogs({ app }: { app: AppState }) {
         setModal(null);
         notify('已恢复默认设置');
       }} />}
-      {modal === 'uninstall' && <ConfirmDialog key="uninstall" title="卸载本软件？" description="将启动安装器（Kachina）的卸载向导：清理程序文件、桌面与开始菜单快捷方式、开机自启动注册表项，以及「安装的应用」中的卸载登记。可在向导中选择是否同时删除配置与日志。此操作不可自动撤销。" action="开始卸载" onClose={() => setModal(null)} onConfirm={async () => { setModal(null); await startUninstall(); }} />}
+      {modal === 'uninstall' && <ConfirmDialog key="uninstall" title="卸载本软件？" description="将启动安装器（Kachina）的卸载向导：清理程序文件、桌面与开始菜单快捷方式、开机自启动（注册表项与管理员计划任务），以及「安装的应用」中的卸载登记。可在向导中选择是否同时删除配置与日志。此操作不可自动撤销。" action="开始卸载" onClose={() => setModal(null)} onConfirm={async () => { setModal(null); await startUninstall(); }} />}
       {modal === 'clearLogs' && <ConfirmDialog key="clear-logs" title="清空日志列表？" description={`当前列表中的 ${logs.length} 条记录将从界面清除（桌面版不会删除磁盘日志文件）。`} action="清空列表" onClose={() => setModal(null)} onConfirm={() => { setLogs([]); setModal(null); notify('日志列表已清空'); }} />}
     </AnimatePresence>
   );

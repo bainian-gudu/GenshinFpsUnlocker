@@ -107,7 +107,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 | 事项 | 归属 | 说明 |
 | --- | --- | --- |
 | 快捷方式的**中文显示名** | `src/Host/ShortcutHelper.cs` | Kachina 建的是 `GenshinFpsUnlocker.lnk`（英文 `appName`），宿主每次启动把它规范成 `原神帧率解锁.lnk` 并清掉英文重复项；改名后上游卸载器认不出这个文件，靠 `extraUninstallLnkNames` 补删（见下） |
-| 开机自启（`HKCU\...\Run`） | `src/Host/Autostart.cs` | 按配置项「开机自启动」同步写入/删除；卸载时由 `kachina.config.json` 的 `extraUninstallRegistry` 交给卸载器回收（见下），不需要用户先手动关闭 |
+| 开机自启 | `src/Host/Autostart.cs` | 按配置项「开机自启动」+「启动时自动以管理员权限运行」同步，两种登记方式二选一：普通权限写 `HKCU\...\Run`，管理员权限登记任务计划程序里的 `GenshinFpsUnlocker.AutoStart`（`RunLevel=HighestAvailable`，登录不弹 UAC）。卸载时分别由 `kachina.config.json` 的 `extraUninstallRegistry` 与 `extraUninstallScheduledTasks` 交给卸载器回收（见下），不需要用户先手动关闭 |
 
 ## 本项目给 Kachina 加 / 改的配置项
 
@@ -134,6 +134,30 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 下已加载的用户配置单元（跳过 `*_Classes`、`.DEFAULT`、`S-1-5-18`），
 确保删掉的是登录用户装的那一份。ARP 卸载项仍由上游逻辑按 `regName` 删除，
 不要在这里重复声明。清理失败只记日志，不会中断卸载。
+
+### `extraUninstallScheduledTasks` — 卸载时清理安装期登记的登录计划任务
+
+```json
+"extraUninstallScheduledTasks": [
+  "GenshinFpsUnlocker.AutoStart"
+]
+```
+
+「开机自启动 + 启动时自动以管理员权限运行」同时开启时，宿主不再写 `HKCU\...\Run`，
+而是在任务计划程序里登记一个最高权限登录任务（`src/Host/Autostart.cs`）。
+它不是注册表项、也不是文件，`extraUninstallRegistry` / `extraUninstallPath`
+都覆盖不到，只能靠 `schtasks /Delete /TN <名字> /F` 回收 —— 否则卸载后每次登录
+都会去拉起一个已经不存在的 exe。
+
+| 约束 | 说明 |
+| --- | --- |
+| 填**任务名** | 不是路径。`\` 前缀（根目录）与子目录形式都当作不安全输入跳过 |
+| 必须带产品前缀 | 只放行以 `regName` 开头、且只含字母数字与 `._- `、长度 ≤ 100 的名字 |
+| 通配符一律拒绝 | 卸载器通常以管理员身份运行，`*` 会变成「删掉整台机器的任务」 |
+| 失败只记日志 | 任务不存在、权限不足、schtasks 调用失败都不会让卸载中断 |
+
+安全阀实现在 `src-tauri/src/installer/uninstall.rs` 的 `is_safe_task_name`，
+断言见 `tools/devcheck` 的 logic 层（第 17、18 组用例）。
 
 ### `extraUninstallLnkNames` — 卸载时清理宿主自建/改名的快捷方式
 

@@ -1003,6 +1003,127 @@ fn runtime_signature_cases() {
     );
 }
 
+fn scheduled_task_name_cases() {
+    println!("[17] 计划任务名安全阀 is_safe_task_name");
+    let long_name = format!("GenshinFpsUnlocker.{}", "a".repeat(200));
+    let cases: Vec<(&str, &str, bool)> = vec![
+        // 正常：本产品的登录任务
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker.AutoStart", true),
+        ("GenshinFpsUnlocker", "genshinfpsunlocker.autostart", true),
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker", true),
+        ("GenshinFpsUnlocker", "  GenshinFpsUnlocker.AutoStart  ", true),
+        // 通配符：等于清空整台机器的任务
+        ("GenshinFpsUnlocker", "*", false),
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker*", false),
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker?", false),
+        // 目录形态 / 别人的任务
+        ("GenshinFpsUnlocker", r"GenshinFpsUnlocker\Evil", false),
+        ("GenshinFpsUnlocker", r"\GenshinFpsUnlocker.AutoStart", false),
+        ("GenshinFpsUnlocker", "Other.Product", false),
+        // 空产品名 / 空任务名 / 超长
+        ("", "GenshinFpsUnlocker.AutoStart", false),
+        ("   ", "GenshinFpsUnlocker.AutoStart", false),
+        ("GenshinFpsUnlocker", "", false),
+        ("GenshinFpsUnlocker", "   ", false),
+        ("GenshinFpsUnlocker", long_name.as_str(), false),
+        // 命令行注入形态（虽然 schtasks 用参数数组传，不放行更省心）
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker.AutoStart\" /F", false),
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker.AutoStart&calc", false),
+        ("GenshinFpsUnlocker", "GenshinFpsUnlocker.AutoStart;whoami", false),
+    ];
+    for (product, name, want) in cases {
+        let got = is_safe_task_name(product, name);
+        check(
+            &format!("product={product:?} name={name:?} => {want}"),
+            got == want,
+            format!("got {got}"),
+        );
+    }
+}
+
+fn scheduled_task_wiring_case() {
+    println!("[18] 卸载登录计划任务接线（真实仓库文件）");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(4)
+        .expect("repo root")
+        .to_path_buf();
+
+    // 宿主的任务名是唯一事实来源：config 里写错名字 = 卸载后任务残留。
+    let host = std::fs::read_to_string(repo.join("src/Host/Autostart.cs")).expect("read Autostart.cs");
+    let task_name = host
+        .split("ElevatedTaskName = \"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap_or("");
+    check(
+        "Autostart.cs 里的计划任务名可识别",
+        !task_name.is_empty(),
+        task_name.to_string(),
+    );
+
+    let cfg: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join("installer/kachina.config.json")).expect("read config"),
+    )
+    .expect("parse config");
+    let reg_name = cfg["regName"].as_str().unwrap_or("");
+    let configured = cfg["extraUninstallScheduledTasks"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    check(
+        "kachina.config.json 登记的正是宿主那个任务名",
+        configured
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|name| name == task_name),
+        format!("{configured:?} vs {task_name:?}"),
+    );
+
+    // 配置里的名字必须能过安全阀：否则卸载时会被 is_safe_task_name 静默跳过，
+    // 「配了但没删」这种问题只有用户下次登录才会发现。
+    let rejected = configured
+        .iter()
+        .filter_map(|v| v.as_str())
+        .filter(|name| !is_safe_task_name(reg_name, name))
+        .collect::<Vec<_>>();
+    check(
+        "配置里的任务名都以 regName 开头、能过安全阀",
+        rejected.is_empty() && !reg_name.is_empty(),
+        format!("rejected={rejected:?} regName={reg_name:?}"),
+    );
+
+    let app = std::fs::read_to_string(repo.join("installer/kachina/src/App.vue")).expect("read App.vue");
+    check(
+        "App.vue 把 extraUninstallScheduledTasks 传给卸载器",
+        app.contains("extra_uninstall_scheduled_tasks")
+            && app.contains("PROJECT_CONFIG.extraUninstallScheduledTasks"),
+        "",
+    );
+    let ipc = std::fs::read_to_string(repo.join("installer/kachina/src/api/ipc.ts")).expect("read ipc.ts");
+    check(
+        "ipc.ts 声明 extra_uninstall_scheduled_tasks",
+        ipc.contains("extra_uninstall_scheduled_tasks"),
+        "",
+    );
+    let types = std::fs::read_to_string(repo.join("installer/kachina/src/types.ts")).expect("read types.ts");
+    check(
+        "types.ts 声明 extraUninstallScheduledTasks",
+        types.contains("extraUninstallScheduledTasks"),
+        "",
+    );
+
+    let rs = std::fs::read_to_string(
+        repo.join("installer/kachina/src-tauri/src/installer/uninstall.rs"),
+    )
+    .expect("read uninstall.rs");
+    check(
+        "uninstall.rs 用 reg_name 调 clean_extra_scheduled_tasks",
+        rs.contains("clean_extra_scheduled_tasks(&reg_name"),
+        "",
+    );
+}
+
 #[tokio::main]
 async fn main() {
     reg_target_cases();
@@ -1020,6 +1141,8 @@ async fn main() {
     relative_member_cases();
     runtime_signature_cases();
     rm_list_cases();
+    scheduled_task_name_cases();
+    scheduled_task_wiring_case();
     let (pass, fail) = (PASS.load(Ordering::Relaxed), FAIL.load(Ordering::Relaxed));
     println!("\n==== PASS {pass} / FAIL {fail} ====");
     if fail > 0 {

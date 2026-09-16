@@ -223,7 +223,7 @@ internal sealed partial class UnlockService : IDisposable
         PushConfigToIpc(force: true);
     }
 
-    /// <summary>开机自启动开关（同步注册表）。</summary>
+    /// <summary>开机自启动开关（按配置同步 HKCU\Run 或最高权限计划任务）。</summary>
     public void SetAutoStartWithWindows(bool enabled)
     {
         _config.AutoStartWithWindows = enabled;
@@ -240,13 +240,15 @@ internal sealed partial class UnlockService : IDisposable
         Raise(forceUi: true);
     }
 
-    private void SyncAutostart()
-    {
-        // 开机自启动固定走 HKCU\Run 普通权限；自动管理员只用于手动启动。
-        // 同时清理旧版本的高权限任务，防止登录时提权。
-        Autostart.SyncElevatedTask(false);
-        Autostart.SetEnabled(_config.AutoStartWithWindows);
-    }
+    /// <summary>
+    /// 按配置同步登录自启：普通权限写 HKCU\Run，管理员权限登记最高权限计划任务
+    /// （二选一，见 <see cref="Autostart.SyncLoginStartup"/>）。结果同时记录在
+    /// <see cref="Autostart.LastReport"/>，界面据此显示实际生效的方式与提示。
+    /// </summary>
+    public Autostart.AutostartReport SyncAutostart() => Autostart.SyncLoginStartup(
+        _config.AutoStartWithWindows,
+        _config.AutoStartAsAdministrator,
+        configLoadedFromDisk: true);
 
     /// <summary>刷新游戏路径状态；配置无效且 autoLocateIfMissing 时自动多源查找。</summary>
     public GameLocateResult RefreshGamePath(bool autoLocateIfMissing)

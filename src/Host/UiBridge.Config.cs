@@ -36,10 +36,12 @@ internal sealed partial class UiBridge
                 _service.SetUpscalerQuality(quality.GetValue<string>());
             if (p["upscalerMode"] is JsonNode mode)
                 _service.SetUpscalerMode(mode.GetValue<string>());
+            // 两个自启开关可能落在同一次 patch 里：这里只改配置，收尾时统一同步一次，
+            // 免得先按普通权限登记、再改成管理员，中途出现两条自启项并存的窗口。
             if (p["autoStartWithWindows"] is JsonNode auto)
-                _service.SetAutoStartWithWindows(auto.GetValue<bool>());
+                _config.AutoStartWithWindows = auto.GetValue<bool>();
             if (p["autoStartAsAdministrator"] is JsonNode autoAdmin)
-                _service.SetAutoStartAsAdministrator(autoAdmin.GetValue<bool>());
+                _config.AutoStartAsAdministrator = autoAdmin.GetValue<bool>();
             if (p["startMinimized"] is JsonNode min)
                 _config.StartMinimized = min.GetValue<bool>();
             if (p["debugLogging"] is JsonNode dbg)
@@ -62,6 +64,9 @@ internal sealed partial class UiBridge
                 _config.SafetyNoticeAcknowledged = ack.GetValue<bool>();
             if (p["suppressAdminHint"] is JsonNode adm)
                 _config.SuppressAdminHint = adm.GetValue<bool>();
+
+            if (p["autoStartWithWindows"] is not null || p["autoStartAsAdministrator"] is not null)
+                _service.SyncAutostart();
 
             _config.Sanitize();
             batch.Flush();      // 合并后的唯一一次落盘
@@ -120,7 +125,9 @@ internal sealed partial class UiBridge
 
         _config.Sanitize();
         _service.SyncUpscalerConfiguration();
-        Autostart.SetEnabled(_config.AutoStartWithWindows);
+        // 导入的配置可能换掉自启开关的组合，同样按唯一入口重新同步，
+        // 否则会出现「配置说管理员自启、实际还是旧通道」的错位。
+        _service.SyncAutostart();
         AppLog.ApplyConfig(_config);
         _form.SyncTrayFromConfig();
     }

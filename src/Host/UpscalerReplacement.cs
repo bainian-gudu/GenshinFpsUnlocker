@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 
@@ -9,6 +8,10 @@ namespace GenshinFpsUnlocker.Host;
 /// 将 OptiScaler Aurora 代理以 dxgi.dll 形式放入游戏目录，游戏启动时自然加载，
 /// 拦截 FSR2 调用并重定向到 DLSS。不再使用远程线程注入。
 /// 支持 DLSS 4（标准超分辨率）和 DLSS 5（超分辨率 + 神经渲染）两种模式。
+///
+/// 部署可回滚：关闭替换会回收部署到游戏目录的代理、运行库与配置（游戏运行中占用删不掉时
+/// 保留部署记录、等游戏退出后继续重试）；切换 DLSS 版本会清掉当前模式用不到的组件，
+/// 重新开启或文件缺失时再按安装目录里的组件补写回去。
 /// </summary>
 internal sealed class UpscalerReplacement : IDisposable
 {
@@ -16,11 +19,34 @@ internal sealed class UpscalerReplacement : IDisposable
     private const long MinimumDlssNrRuntimeBytes = 128L * 1024 * 1024;
     private const long MinimumDlssNrForwarderBytes = 4L * 1024;
 
+    /// <summary>确认文件身份时最多读取多少字节（超大运行库不做全文特征扫描）。</summary>
+    private const long MaximumIdentityScanBytes = 32L * 1024 * 1024;
+
+    /// <summary>本程序生成的 OptiScaler.ini 首行；用于确认这份配置是本程序写的。</summary>
+    private const string ConfigHeaderMarker = "; 由原神帧率解锁生成（OptiScaler Aurora）";
+
     /// <summary>代理 DLL 在游戏目录中的文件名（OptiScaler 标准 proxy 名称）。</summary>
     private const string ProxyDllFileName = "dxgi.dll";
 
     /// <summary>部署标记文件，用于识别由本程序部署的文件。</summary>
     private const string DeployMarkerFileName = ".genshin-fps-unlocker-optiscaler";
+
+    private const string DlssRuntimeFileName = "nvngx_dlss.dll";
+    private const string DlssNrRuntimeFileName = "nvngx_dlssnr.dll";
+    private const string DlssNrForwarderFileName = "nvngx.dll_dlssnr.dll";
+    private const string OptiScalerConfigFileName = "OptiScaler.ini";
+    private const string OptiScalerLogFileName = "OptiScaler.log";
+
+    /// <summary>游戏目录里由本程序维护的文件；关闭替换或切换模式时按这份清单核对回收。</summary>
+    private static readonly string[] DeploymentFileNames =
+    [
+        ProxyDllFileName,
+        DlssRuntimeFileName,
+        DlssNrRuntimeFileName,
+        DlssNrForwarderFileName,
+        OptiScalerConfigFileName,
+        OptiScalerLogFileName,
+    ];
 
     private readonly object _sync = new();
     private readonly Dictionary<string, (long Length, DateTime LastWriteUtc, string Hash)> _sourceHashCache =
@@ -75,8 +101,10 @@ internal sealed class UpscalerReplacement : IDisposable
             if (!enabled)
             {
                 StopTrackingLocked();
-                TryRemoveDeploymentLocked(gamePath);
-                _status = "替换功能已关闭";
+                _deployed = false;
+                _status = TryRemoveDeploymentLocked(gamePath)
+                    ? "替换功能已关闭，游戏目录里的代理组件已清理"
+                    : "替换功能已关闭；代理文件正被游戏占用，退出游戏后会自动清理";
                 return;
             }
             if (_activePid != 0
@@ -114,7 +142,11 @@ internal sealed class UpscalerReplacement : IDisposable
             if (!_enabled)
             {
                 StopTrackingLocked();
-                TryRemoveDeploymentLocked(gamePath);
+                // 关闭状态下每轮都核对一次：游戏运行期间删不掉的代理文件，
+                // 等游戏退出后这一轮会把它清掉（不再依赖部署标记文件还在）。
+                _status = TryRemoveDeploymentLocked(gamePath)
+                    ? "替换功能已关闭，游戏目录里的代理组件已清理"
+                    : "替换功能已关闭；代理文件正被游戏占用，退出游戏后会自动清理";
                 return;
             }
 
@@ -189,23 +221,28 @@ internal sealed class UpscalerReplacement : IDisposable
             var changed = false;
 
             var proxyDest = Path.Combine(gameDir, ProxyDllFileName);
-            var dlssDest = Path.Combine(gameDir, "nvngx_dlss.dll");
-            var dlssNrDest = Path.Combine(gameDir, "nvngx_dlssnr.dll");
-            var dlssNrForwarderDest = Path.Combine(gameDir, "nvngx.dll_dlssnr.dll");
+            var dlssDest = Path.Combine(gameDir, DlssRuntimeFileName);
+            var dlssNrDest = Path.Combine(gameDir, DlssNrRuntimeFileName);
+            var dlssNrForwarderDest = Path.Combine(gameDir, DlssNrForwarderFileName);
 
-            // 只同步内容哈希变化（或目标缺失）的组件；宿主/UI 单独更新时清单不变，这里不会覆盖旧组件。
+            // 只同步内容哈希变化（或目标缺失）的组件：目标文件被删/被替换时这里会重新写入，
+            // 而安装目录里的组件没变时不会反复覆盖游戏目录。
             changed |= SyncComponent(manifest, marker, "OptiScaler.dll", AppPaths.UpscalerProxyPath, proxyDest);
-            changed |= SyncComponent(manifest, marker, "nvngx_dlss.dll", AppPaths.DlssRuntimePath, dlssDest);
+            changed |= SyncComponent(manifest, marker, DlssRuntimeFileName, AppPaths.DlssRuntimePath, dlssDest);
 
             if (isDlss5)
             {
-                changed |= SyncComponent(manifest, marker, "nvngx_dlssnr.dll", AppPaths.DlssNrRuntimePath, dlssNrDest);
-                changed |= SyncComponent(manifest, marker, "nvngx.dll_dlssnr.dll", AppPaths.DlssNrForwarderPath, dlssNrForwarderDest);
+                // DLSS 5 的组件是 DLSS 4 的超集（多出神经渲染模型与转发器），
+                // 反向切换没有「DLSS 4 独占组件」需要清理。
+                changed |= SyncComponent(manifest, marker, DlssNrRuntimeFileName, AppPaths.DlssNrRuntimePath, dlssNrDest);
+                changed |= SyncComponent(manifest, marker, DlssNrForwarderFileName, AppPaths.DlssNrForwarderPath, dlssNrForwarderDest);
             }
             else
             {
-                changed |= RemoveComponent(marker, "nvngx_dlssnr.dll", dlssNrDest);
-                changed |= RemoveComponent(marker, "nvngx.dll_dlssnr.dll", dlssNrForwarderDest);
+                // DLSS 4 用不到神经渲染模型与转发器：清掉；只有确认是本程序部署的那一份才删，
+                // 文件本来就不存在时什么都不做。
+                changed |= RemoveComponent(marker, DlssNrRuntimeFileName, dlssNrDest, AppPaths.DlssNrRuntimePath);
+                changed |= RemoveComponent(marker, DlssNrForwarderFileName, dlssNrForwarderDest, AppPaths.DlssNrForwarderPath);
             }
 
             if (!string.Equals(marker.GetValueOrDefault("mode"), _mode, StringComparison.OrdinalIgnoreCase))
@@ -246,37 +283,56 @@ internal sealed class UpscalerReplacement : IDisposable
         }
     }
 
-    /// <summary>移除由本程序部署到游戏目录的文件。</summary>
-    private void TryRemoveDeploymentLocked(string? gamePath)
+    /// <summary>
+    /// 移除由本程序部署到游戏目录的文件，返回是否已清理干净。
+    ///
+    /// 曾经的实现要求部署标记文件存在，而且先把标记删掉再谈文件删除：
+    /// 游戏正在运行时 dxgi.dll / nvngx_dlss.dll 被占用删不掉，标记却被删了，
+    /// 于是「关闭替换」之后再也没有任何一轮会去重试 —— 游戏目录里始终留着代理，
+    /// 替换继续生效。现在改为：
+    /// - 不依赖标记：标记丢了就按内容逐个核对身份，确认是本程序的组件才删；
+    /// - 只有全部清干净才删标记，否则保留标记、下一轮继续重试；
+    /// - 删不掉的文件（被游戏占用）返回 false，调用方据此在界面上说明「退出游戏后清理」。
+    /// </summary>
+    private bool TryRemoveDeploymentLocked(string? gamePath)
     {
         var gameDir = Path.GetDirectoryName(gamePath ?? string.Empty);
-        if (string.IsNullOrWhiteSpace(gameDir)) return;
+        if (string.IsNullOrWhiteSpace(gameDir)) return true;
 
         var markerPath = Path.Combine(gameDir, DeployMarkerFileName);
-        if (!File.Exists(markerPath)) return;
-
-        // 游戏运行时不能删除正在使用的 DLL
-        if (_activePid != 0)
+        var markerExists = File.Exists(markerPath);
+        var targets = new List<string>();
+        foreach (var fileName in DeploymentFileNames)
         {
-            try { Process.GetProcessById(_activePid); return; }
-            catch { /* 进程已退出，可以继续清理 */ }
+            var path = Path.Combine(gameDir, fileName);
+            if (!File.Exists(path)) continue;
+            // 有标记 → 这批文件就是本程序放的；没有标记（旧版本/被清理）时逐个核对内容，
+            // 绝不因为「文件名一样」就删掉用户自己放在游戏目录里的东西。
+            if (!markerExists && !IsOurDeployedFile(path, fileName, markerHash: null)) continue;
+            targets.Add(path);
         }
 
-        try
+        var removedAny = false;
+        var allRemoved = true;
+        foreach (var path in targets)
         {
-            SafeDeleteFile(Path.Combine(gameDir, ProxyDllFileName));
-            SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlss.dll"));
-            SafeDeleteFile(Path.Combine(gameDir, "nvngx_dlssnr.dll"));
-            SafeDeleteFile(Path.Combine(gameDir, "nvngx.dll_dlssnr.dll"));
-            SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.ini"));
-            SafeDeleteFile(Path.Combine(gameDir, "OptiScaler.log"));
-            SafeDeleteFile(markerPath);
-            AppLog.Info($"OptiScaler 已从游戏目录移除：{gameDir}");
+            if (SafeDeleteFile(path)) removedAny = true;
+            else allRemoved = false;
         }
-        catch (Exception ex)
+
+        if (allRemoved)
         {
-            AppLog.Debug($"OptiScaler 移除部分失败：{ex.Message}");
+            // 文件都清掉了再删标记；否则留着标记，下一轮从头重试（并保持「已部署」的判定依据）。
+            if (markerExists) SafeDeleteFile(markerPath);
+            if (removedAny || markerExists)
+                AppLog.Info($"OptiScaler 已从游戏目录移除：{gameDir}");
         }
+        else
+        {
+            AppLog.Debug($"OptiScaler 移除未完成（文件被占用，稍后重试）：{gameDir}");
+        }
+
+        return allRemoved;
     }
 
     private static void SafeCopyFile(string source, string dest, bool force = false)
@@ -301,10 +357,97 @@ internal sealed class UpscalerReplacement : IDisposable
         try { File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc); } catch { /* ignore */ }
     }
 
-    private static void SafeDeleteFile(string path)
+    /// <summary>删除文件；返回是否「已经不存在」（本来就没有 / 删除成功）。</summary>
+    private static bool SafeDeleteFile(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* 文件可能被占用，忽略 */ }
+        try
+        {
+            if (!File.Exists(path)) return true;
+            try { File.SetAttributes(path, FileAttributes.Normal); } catch { /* 只读属性清不掉也继续试删 */ }
+            File.Delete(path);
+            return true;
+        }
+        catch
+        {
+            // 游戏运行时 DLL 会被占用，交给下一轮重试；已不存在的情况按成功算。
+            return !File.Exists(path);
+        }
+    }
+
+    /// <summary>安装目录里与游戏目录文件名对应的组件源文件；不认识的名字返回 null。</summary>
+    private static string? SourcePathFor(string fileName)
+    {
+        if (fileName.Equals(ProxyDllFileName, StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("OptiScaler.dll", StringComparison.OrdinalIgnoreCase))
+            return AppPaths.UpscalerProxyPath;
+        if (fileName.Equals(DlssRuntimeFileName, StringComparison.OrdinalIgnoreCase))
+            return AppPaths.DlssRuntimePath;
+        if (fileName.Equals(DlssNrRuntimeFileName, StringComparison.OrdinalIgnoreCase))
+            return AppPaths.DlssNrRuntimePath;
+        if (fileName.Equals(DlssNrForwarderFileName, StringComparison.OrdinalIgnoreCase))
+            return AppPaths.DlssNrForwarderPath;
+        return null;
+    }
+
+    /// <summary>
+    /// 游戏目录里的这个文件是不是本程序部署的那一份。
+    /// 依据依次为：部署标记里记的哈希 → 与安装目录副本逐字节一致 → 文件里带 OptiScaler 标识。
+    /// 三条都不成立时一律不动，避免误删用户自己放进游戏目录的同名文件（例如 ReShade 的 dxgi.dll）。
+    /// </summary>
+    private bool IsOurDeployedFile(string path, string fileName, string? markerHash, string? source = null)
+    {
+        try
+        {
+            var target = new FileInfo(path);
+            if (!target.Exists) return false;
+
+            // 本程序生成的配置认首行标识；日志认内容里出现过 OptiScaler。
+            if (fileName.Equals(OptiScalerConfigFileName, StringComparison.OrdinalIgnoreCase))
+                return File.ReadLines(path).FirstOrDefault()
+                    ?.Contains(ConfigHeaderMarker, StringComparison.Ordinal) == true;
+            if (fileName.Equals(OptiScalerLogFileName, StringComparison.OrdinalIgnoreCase))
+                return FileContainsAsciiMarker(path, "OptiScaler");
+
+            var hash = GetFileHashCached(path);
+            if (!string.IsNullOrEmpty(markerHash)
+                && string.Equals(markerHash, hash, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            source ??= SourcePathFor(fileName);
+            if (source is not null)
+            {
+                var sourceInfo = new FileInfo(source);
+                if (sourceInfo.Exists
+                    && sourceInfo.Length == target.Length
+                    && string.Equals(GetFileHashCached(source), hash, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            // 旧版本的组件与当前安装副本哈希不同，但代理 DLL 里一定带 OptiScaler 标识。
+            return fileName.Equals(ProxyDllFileName, StringComparison.OrdinalIgnoreCase)
+                   && FileContainsAsciiMarker(path, "OptiScaler");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"核对部署文件失败：{path} — {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>文件内容里是否出现给定 ASCII 字样（用于标记丢失时确认文件身份）。</summary>
+    private static bool FileContainsAsciiMarker(string path, string marker)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length == 0 || info.Length > MaximumIdentityScanBytes) return false;
+            var bytes = File.ReadAllBytes(path);
+            return bytes.AsSpan().IndexOf(System.Text.Encoding.ASCII.GetBytes(marker)) >= 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private bool SyncComponent(
@@ -321,34 +464,58 @@ internal sealed class UpscalerReplacement : IDisposable
         var destInfo = new FileInfo(destination);
         var markerKey = "hash_" + componentName;
         var hasMarkerHash = marker.TryGetValue(markerKey, out var deployedHash);
+        // 安装目录里的组件换了（清单哈希变化）→ 游戏目录里那份必须重写。
         var needsHashWrite = !hasMarkerHash
                              || !string.Equals(deployedHash, hash, StringComparison.OrdinalIgnoreCase);
         var unchanged = destInfo.Exists
                         && destInfo.Length == sourceInfo.Length
-                        && ((hasMarkerHash
-                             && string.Equals(deployedHash, hash, StringComparison.OrdinalIgnoreCase))
-                            || (!hasMarkerHash
-                                && string.Equals(GetFileHashCached(destination), hash, StringComparison.OrdinalIgnoreCase)));
+                        && !needsHashWrite
+                        // 大小一致、时间戳仍是复制时写入的那个 → 就是我们部署的那份，
+                        // 不做整文件哈希（nvngx_dlssnr.dll 有 165 MB）。
+                        && (destInfo.LastWriteTimeUtc == sourceInfo.LastWriteTimeUtc
+                            // 时间戳对不上：可能是复制没落上，也可能是文件被改了/被换了 → 哈希确认。
+                            || string.Equals(GetFileHashCached(destination), hash, StringComparison.OrdinalIgnoreCase));
 
         if (!unchanged)
         {
             SafeCopyFile(source, destination, force: true);
             AppLog.Info($"OptiScaler 组件已更新：{componentName}");
         }
+        else if (destInfo.LastWriteTimeUtc != sourceInfo.LastWriteTimeUtc)
+        {
+            // 内容一致、只是时间戳不同（安装目录被重新铺过）：对齐时间戳，
+            // 下次直接走「大小 + 时间戳」快路径，不再对上百 MB 的运行库做哈希。
+            try { File.SetLastWriteTimeUtc(destination, sourceInfo.LastWriteTimeUtc); } catch { /* ignore */ }
+        }
 
         marker[markerKey] = hash;
         return !unchanged || needsHashWrite;
     }
 
-    private static bool RemoveComponent(
+    /// <summary>
+    /// 删除当前模式用不到的组件（例如切到 DLSS 4 后清掉神经渲染模型与转发器）。
+    /// 文件本来就不存在时什么都不做；只有确认目标就是本程序部署的那一份才删。
+    /// </summary>
+    private bool RemoveComponent(
         IDictionary<string, string> marker,
         string componentName,
-        string destination)
+        string destination,
+        string source)
     {
-        var existed = File.Exists(destination);
-        if (existed) SafeDeleteFile(destination);
-        var hadMarker = marker.Remove("hash_" + componentName);
-        return existed || hadMarker;
+        var markerKey = "hash_" + componentName;
+        var markerHash = marker.TryGetValue(markerKey, out var recorded) ? recorded : null;
+        var hadMarker = marker.Remove(markerKey);
+        if (!File.Exists(destination)) return hadMarker;
+
+        if (!IsOurDeployedFile(destination, componentName, markerHash, source))
+        {
+            AppLog.Debug($"保留非本程序部署的文件，未清理：{destination}");
+            return hadMarker;
+        }
+
+        SafeDeleteFile(destination);
+        AppLog.Info($"OptiScaler 组件已按模式清理：{componentName}（{destination}）");
+        return true;
     }
 
     private string GetComponentHash(IReadOnlyDictionary<string, string> manifest, string path, string componentName)
@@ -551,18 +718,18 @@ internal sealed class UpscalerReplacement : IDisposable
         var chineseFontPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc");
         var isDlss5 = IsDlss5Mode();
-        var text = $"; 由原神帧率解锁生成（OptiScaler Aurora），FSR2 输入使用 DLSS 输出（{ModeLabel(_mode)}）\n"
+        var text = $"{ConfigHeaderMarker}，FSR2 输入使用 DLSS 输出（{ModeLabel(_mode)}）\n"
             + "[Upscalers]\n"
             + "Dx11Upscaler=dlss\n"
             + "Dx12Upscaler=dlss\n"
             + "VulkanUpscaler=dlss\n\n"
-            + "[Libraries]\nNvngxDlssPath=nvngx_dlss.dll\n"
-            + (isDlss5 ? "NvngxDlssNrPath=nvngx_dlssnr.dll\n" : string.Empty) + "\n"
+            + $"[Libraries]\nNvngxDlssPath={DlssRuntimeFileName}\n"
+            + (isDlss5 ? $"NvngxDlssNrPath={DlssNrRuntimeFileName}\n" : string.Empty) + "\n"
             + "[DLSS]\nEnabled=true\n\n"
             + (isDlss5
                 ? "[DlssNr]\nEnabled=true\nToggleKey=0x75\n\n"
                 : string.Empty)
-            + "[Log]\nLogToFile=true\nLogLevel=1\nLogFileName=OptiScaler.log\nSingleFile=true\n\n"
+            + $"[Log]\nLogToFile=true\nLogLevel=1\nLogFileName={OptiScalerLogFileName}\nSingleFile=true\n\n"
             + "[QualityOverrides]\nQualityRatioOverrideEnabled=true\n"
             + $"QualityRatioDLAA={ratioText}\n"
             + $"QualityRatioUltraQuality={ratioText}\n"
@@ -585,7 +752,7 @@ internal sealed class UpscalerReplacement : IDisposable
             + "UseHQFont=true\n"
             + (File.Exists(chineseFontPath) ? $"TTFFontPath={chineseFontPath}\n" : string.Empty)
             + "OverlaysUseTheme=true\n";
-        var path = Path.Combine(gameDir, "OptiScaler.ini");
+        var path = Path.Combine(gameDir, OptiScalerConfigFileName);
         try
         {
             if (File.Exists(path) && string.Equals(File.ReadAllText(path), text, StringComparison.Ordinal))
@@ -629,7 +796,7 @@ internal sealed class UpscalerReplacement : IDisposable
         var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
         if (string.IsNullOrWhiteSpace(gameDirectory)) return;
 
-        var logPath = Path.Combine(gameDirectory, "OptiScaler.log");
+        var logPath = Path.Combine(gameDirectory, OptiScalerLogFileName);
         if (!PathUtil.ExistsFile(logPath)) return;
 
         try
@@ -716,7 +883,7 @@ internal sealed class UpscalerReplacement : IDisposable
         _forwardedLogOffset = 0;
         var gameDirectory = Path.GetDirectoryName(_gamePath ?? string.Empty);
         if (string.IsNullOrWhiteSpace(gameDirectory)) return;
-        var path = Path.Combine(gameDirectory, "OptiScaler.log");
+        var path = Path.Combine(gameDirectory, OptiScalerLogFileName);
         if (!PathUtil.ExistsFile(path)) return;
         try
         {

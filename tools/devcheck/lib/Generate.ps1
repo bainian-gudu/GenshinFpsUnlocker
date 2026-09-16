@@ -24,6 +24,7 @@ $script:LogicItems = @(
     @{ Kind = 'fn';     Name = 'is_safe_delete_target' }
     @{ Kind = 'fn';     Name = 'rm_best_effort' }
     @{ Kind = 'fn';     Name = 'clean_extra_registry' }
+    @{ Kind = 'fn';     Name = 'is_safe_task_name' }
     @{ Kind = 'fn';     Name = 'expand_env_vars' }
     @{ Kind = 'fn';     Name = 'expand_path_list' }
     @{ Kind = 'const';  Name = 'PER_USER_CLEANUP_ROOTS' }

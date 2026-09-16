@@ -31,6 +31,9 @@
       "value": "GenshinFpsUnlocker"
     }
   ],
+  "extraUninstallScheduledTasks": [
+    "GenshinFpsUnlocker.AutoStart"
+  ],
   "extraUninstallLnkNames": [
     "原神帧率解锁.lnk",
     "GenshinFpsUnlocker.lnk",

@@ -4,7 +4,7 @@ import { NAV_ITEMS, PAGE_NAMES } from '../lib/nav';
 import type { ToastItem } from '../components/ui';
 import type { LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
 import { CONFIG_LABELS, DEFAULT_CONFIG, STORAGE_KEY, downloadFile, getPage, loadConfig, makeLog, parseConfig } from '../lib/config';
-import type { NativeState, UpscalerState } from '../lib/native';
+import type { AutostartState, NativeState, UpscalerState } from '../lib/native';
 import { isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeNavigate, onNativeState } from '../lib/native';
 
 export type ModalType = 'path' | 'safety' | 'launch' | 'reset' | 'clearLogs' | 'uninstall' | null;
@@ -45,6 +45,7 @@ export function useAppState() {
   const [isElevated, setIsElevated] = useState(false);
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [elevating, setElevating] = useState(false);
+  const [autostart, setAutostart] = useState<AutostartState>({ mode: 'disabled', notice: null });
   const [upscaler, setUpscaler] = useState<UpscalerState>({
     enabled: false,
     active: false,
@@ -87,6 +88,7 @@ export function useAppState() {
     setCurrentFps(state.currentFps);
     setIsElevated(Boolean(state.isElevated));
     setNeedsAdmin(Boolean(state.needsAdminForUnlock));
+    setAutostart(state.autostart);
     setUpscaler(state.upscaler);
     setVersion(state.version || '1.0.0');
     setLaunchState(state.attachedPid > 0 ? 'running' : 'idle');
@@ -431,7 +433,7 @@ export function useAppState() {
   return {
     native, booting, config, setConfig, page, theme, setTheme, sidebarOpen, setSidebarOpen,
     modal, setModal, saveState, toasts, dismissToast, logs, setLogs, launchState, statusText,
-    attachedPid, currentFps, isElevated, needsAdmin, elevating, upscaler, version, effectiveEnabled, readiness,
+    attachedPid, currentFps, isElevated, needsAdmin, elevating, autostart, upscaler, version, effectiveEnabled, readiness,
     importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, beginLaunch,
     restartElevated, startUninstall, handleLaunch, exportConfig, importConfig, exportLogs,
     savePath, browsePath, autoLocatePath,

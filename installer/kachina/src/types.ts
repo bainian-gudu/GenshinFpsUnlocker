@@ -65,6 +65,14 @@ export type ProjectConfig = {
   /** 卸载时额外清理的注册表项 */
   extraUninstallRegistry?: RegistryCleanupItem[];
   /**
+   * 卸载时额外删除的 **Windows 计划任务** 名字（不是路径）。
+   * 宿主在「开机自启动 + 启动时自动以管理员权限运行」组合下会登记一个最高权限
+   * 登录任务（`src/Host/Autostart.cs`），它不是注册表项也不是文件，只能靠
+   * `schtasks /Delete` 回收；卸载器通常以管理员身份运行，正好有权限删它。
+   * 安全阀：只允许以 `regName` 开头、且只含字母数字与 `._- ` 的任务名。
+   */
+  extraUninstallScheduledTasks?: string[];
+  /**
    * 卸载时额外清理的快捷方式**文件名**（不是完整路径）。
    * 目录由卸载器用 Shell API 解析（公共桌面 / 用户桌面 / 公共开始菜单 /
    * 用户开始菜单四侧都试），因此桌面被 OneDrive 重定向也能命中。

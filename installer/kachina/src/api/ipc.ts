@@ -101,6 +101,8 @@ interface IpcRunUninstall {
   uninstall_name: string;
   /** 安装期写入、卸载时回收的注册表项（自启动等） */
   extra_uninstall_registry?: RegistryCleanupItem[];
+  /** 安装期登记、卸载时删除的计划任务名（开机自启管理员任务等） */
+  extra_uninstall_scheduled_tasks?: string[];
   /** 尽力删除的路径（宿主自建/改名的快捷方式），失败不影响卸载 */
   extra_uninstall_shortcuts?: string[];
 }

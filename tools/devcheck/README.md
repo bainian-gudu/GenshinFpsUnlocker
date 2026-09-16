@@ -30,7 +30,7 @@ pwsh tools/devcheck/devcheck.ps1 -Fix            # 只对我们维护的 .rs 跑
 | `gen` | 从 `installer/kachina` 源码生成检查用的 Rust / TS 文件 | pwsh 7 | ~0.3s |
 | `rust` | **整份** `installer/uninstall.rs` + `utils/error.rs` 的类型检查：塞进一个只有 11 个依赖的 crate，`cargo check --target x86_64-pc-windows-msvc`。不需要 tauri、不需要 Windows 机器 | cargo + `rustup target add x86_64-pc-windows-msvc` | 首次 ~30s，之后 ~0.2s |
 | `native` | vendored `rcedit-sys` 的 C++（`rescle.cc` / `librcedit.cpp`）真用 MSVC 编一遍。没有 `cl.exe` 的机器（Linux / 未进 VS 开发环境的 Windows）自动 SKIP | cargo + MSVC（`cl.exe` 在 PATH） | 首次 ~30s，之后 ~2s |
-| `logic` | 同一批函数的**行为断言**（172 条，含循环用例）：注册表 / 快捷方式 / 用户数据目录 / 安装目录内文件清单 / 旧版本残留清单五道安全阀、路径归一化与比较、微软签名判定，以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement` | cargo | 首次 ~15s，之后 ~0.4s |
+| `logic` | 同一批函数的**行为断言**（197 条，含循环用例）：注册表 / 快捷方式 / 计划任务名 / 用户数据目录 / 安装目录内文件清单 / 旧版本残留清单安全阀、路径归一化与比较、微软签名判定，以及拿**仓库真实的** `installer/kachina.config.json` + `USER_AGREEMENT.txt` 跑 `resolve_agreement`（含「配置里的计划任务名与宿主 `Autostart.cs` 一致」这类接线断言） | cargo | 首次 ~15s，之后 ~0.4s |
 | `front` | `utils/agreement.ts` + `types.ts` 的 `tsc --strict`；`installer/kachina/src` 下**全部** `.vue` 的 `@vue/compiler-sfc` 编译；`agreement.ts` 的 prettier 风格 | node + npm | 首次 ~10s，之后 ~2s |
 | `host` | `src/Host` 的 `dotnet build -c Release -p:EnableWindowsTargeting=true` | .NET 9 SDK | ~2–8s |
 | `ui` | `src/Ui` 的 `vite build`（**不在 `all` 里**，要先 `cd src/Ui && npm install`） | node + npm | 视机器 |
@@ -133,7 +133,7 @@ tools/devcheck/
 │   ├── Cargo.toml          依赖版本与 kachina src-tauri/Cargo.toml 对齐
 │   └── src/lib.rs          把生成文件挂到上游的模块路径上 + 2 个最小桩
 ├── rust/logic/             行为断言 crate（mock windows-registry，跨平台）
-│   └── src/main.rs         172 条断言 + mock
+│   └── src/main.rs         197 条断言 + mock
 ├── front/                  package.json / tsconfig.json / sfccheck.mjs
 └── rust/native/target/     native 层的 CARGO_TARGET_DIR（运行时生成，已 gitignore）
 ```
