@@ -99,7 +99,7 @@ internal static class DllInjector
     private static bool TryRemoteLoadLibrary(int processId, string dllPath, out string error)
     {
         error = string.Empty;
-        var hProcess = Native.OpenProcess(Native.PROCESS_ALL, false, processId);
+        var hProcess = Native.OpenProcess(Native.PROCESS_INJECT_REQUIRED, false, processId);
         if (hProcess == IntPtr.Zero)
         {
             error = $"OpenProcess 失败 ({Marshal.GetLastWin32Error()})，请以管理员身份运行";

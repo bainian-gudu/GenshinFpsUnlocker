@@ -100,23 +100,45 @@ internal sealed class IpcSharedMemory : IDisposable
         _file = file;
         _accessor = _file.CreateViewAccessor(0, Marshal.SizeOf<IpcData>(), MemoryMappedFileAccess.ReadWrite);
 
-        var data = new IpcData
-        {
-            Status = IpcStatus.None,
-            LastError = 0,
-            TargetFps = 120,
-            Enabled = 1,
-            CurrentFps = 0,
-            AntiBlurPerspective = 0,
-            AntiBlurDiveMosaic = 0,
-            AntiBlurState = 0,
-            Magic = Magic,
-        };
+        // CreateOrOpen 语义：映射可能是旧宿主遗留（宿主重启而游戏仍注入着旧 Stub，
+        // 其持有的 handle 让映射存活），里面还有上一次会话双方写下的内容。先读再写：
+        // - 复用场景（魔数吻合）：只重置协议要求的初始化位。Status 置 None 充当
+        //   Stub 等待环的「宿主已重启，请重新进入会话」信号（dllmain.cpp 会话环
+        //   依赖这一幕复位）；TargetFps / Enabled / 反虚化开关保留旧值，由监视循环
+        //   的 PushConfigToIpc 在下一拍无缝接管 —— 避免构造瞬间把目标帧率冲回 120、
+        //   反虚化冲成关闭的短暂抖动。Stub 侧字段随「附着即初始化」语义清零。
+        // - 新建场景（魔数不符）：整结构按协议默认值初始化。
+        _accessor.Read(0, out IpcData existing);
+        var data = existing.Magic == Magic
+            ? new IpcData
+            {
+                Status = IpcStatus.None,
+                LastError = 0,
+                TargetFps = existing.TargetFps,
+                Enabled = existing.Enabled,
+                CurrentFps = 0,
+                AntiBlurPerspective = existing.AntiBlurPerspective,
+                AntiBlurDiveMosaic = existing.AntiBlurDiveMosaic,
+                AntiBlurState = 0,
+                Magic = Magic,
+            }
+            : new IpcData
+            {
+                Status = IpcStatus.None,
+                LastError = 0,
+                TargetFps = 120,
+                Enabled = 1,
+                CurrentFps = 0,
+                AntiBlurPerspective = 0,
+                AntiBlurDiveMosaic = 0,
+                AntiBlurState = 0,
+                Magic = Magic,
+            };
         Write(data);
     }
 
     /// <summary>
-    /// 整体覆盖写入。<b>只允许在构造函数里用</b>（此时 Stub 还没连上来）：
+    /// 整体覆盖写入。<b>只允许在构造函数里用</b>：构造期把整份协议一次对齐；
     /// 运行期整块回写会冲掉 Stub 写入的 Status / CurrentFps / AntiBlurState。
     /// </summary>
     public void Write(IpcData data)

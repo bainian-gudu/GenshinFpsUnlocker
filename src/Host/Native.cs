@@ -17,10 +17,10 @@ internal static class Native
     public const uint PROCESS_VM_WRITE = 0x0020;
     public const uint PROCESS_VM_READ = 0x0010;
 
-    /// <summary>远程线程注入所需的综合权限（含 SYNCHRONIZE）。</summary>
-    public const uint PROCESS_ALL =
+    /// <summary>远程线程注入的最小权限集（CreateRemoteThread 官方要求，不含 SYNCHRONIZE）。</summary>
+    public const uint PROCESS_INJECT_REQUIRED =
         PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
-        PROCESS_VM_WRITE | PROCESS_VM_READ | 0x00100000; // SYNCHRONIZE
+        PROCESS_VM_WRITE | PROCESS_VM_READ;
 
     // ---- 虚拟内存 ----
     public const uint MEM_COMMIT = 0x1000;

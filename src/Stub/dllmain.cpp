@@ -453,6 +453,12 @@ namespace
             }
             // 重复 LoadLibrary 不会重新执行 DllMain。保留线程并等待 Host 的
             // ResetForNewInject 请求（None），使错误重试和 Host 重启能够重新初始化。
+            //
+            // 已知边界：宿主的映射对象按 CreateOrOpen 语义复用（宿主重启而本进程仍
+            // 持 handle 时旧映射存活），故 Stub 不感知「宿主销毁后重建同名映射」——
+            // 那会让这里永久读写旧页失联。当前宿主永不销毁重建（IpcSharedMemory
+            // 构造期把 Status 冲回 None，恰好就是本环等待的重入信号），若未来宿主
+            // 改为销毁重建，Stub 必须先补上映射存活探测再谈兼容。
             while (g_running.load(std::memory_order_relaxed) && g_ipc->Status != IpcStatus::None)
                 Sleep(250);
         }
