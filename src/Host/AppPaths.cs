@@ -46,8 +46,6 @@ internal static class AppPaths
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");
 
-    /// <summary>Kachina 更新器（便携目录可选）。</summary>
-    public static string UpdateExePath => Path.Combine(ExeDirectory, ProductName + ".update.exe");
 
 
     private static string? _dataDirectory;

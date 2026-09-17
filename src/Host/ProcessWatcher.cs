@@ -38,17 +38,4 @@ internal static class GameProcess
         return null;
     }
 
-    /// <summary>判断给定进程是否为原神主进程。</summary>
-    public static bool IsGameProcess(Process process)
-    {
-        try
-        {
-            var name = process.ProcessName;
-            return ProcessNames.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }

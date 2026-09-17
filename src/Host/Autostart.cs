@@ -231,8 +231,6 @@ internal static class Autostart
         return IsEnabled() ? AutostartMode.Standard : AutostartMode.Disabled;
     }
 
-    public static void Remove() => SetEnabled(false);
-
     /// <summary>
     /// 确保「登录即以最高权限启动」的计划任务存在且指向当前 exe。
     /// 失败时把原因写进 <paramref name="notice"/>，调用方回退到 HKCU\Run。

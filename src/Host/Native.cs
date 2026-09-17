@@ -29,7 +29,6 @@ internal static class Native
     public const uint PAGE_READWRITE = 0x04;
 
     public const uint WAIT_OBJECT_0 = 0;
-    public const uint INFINITE = 0xFFFFFFFF;
 
     /// <summary>WH_GETMESSAGE：Hook 注入备用路径。</summary>
     public const int WH_GETMESSAGE = 3;
@@ -128,10 +127,4 @@ internal static class Native
     public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern IntPtr CreateMutex(IntPtr lpMutexAttributes, bool bInitialOwner, string lpName);
-
-    [DllImport("kernel32.dll")]
-    public static extern uint GetLastError();
 }

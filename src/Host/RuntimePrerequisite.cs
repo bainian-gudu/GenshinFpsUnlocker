@@ -28,9 +28,6 @@ internal static class RuntimePrerequisite
     public const string DotnetDesktopRuntimeDirectX64 =
         "https://aka.ms/dotnet/9.0/windowsdesktop-runtime-win-x64.exe";
 
-    public const string VcRedistX64Url =
-        "https://aka.ms/vs/17/release/vc_redist.x64.exe";
-
     public const string WebView2RuntimeUrl =
         "https://developer.microsoft.com/microsoft-edge/webview2/";
 

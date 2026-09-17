@@ -13,7 +13,6 @@ internal sealed class SingleInstance : IDisposable
     private Mutex? _mutex;
     private bool _owned;
 
-    public bool IsPrimary => _owned;
     public string? Name { get; private set; }
 
     /// <summary>

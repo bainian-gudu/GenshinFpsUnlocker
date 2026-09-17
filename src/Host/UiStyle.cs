@@ -62,19 +62,6 @@ internal static class UiStyle
         return new Font(baseFont.FontFamily, size, FontStyle.Bold, baseFont.Unit);
     }
 
-    /// <summary>等宽字体（日志/文件列表）；不可用时回退系统 UI 字体。</summary>
-    public static Font MonoFont(float size = 8.5f)
-    {
-        try
-        {
-            return new Font(FontFamily.GenericMonospace, size, FontStyle.Regular);
-        }
-        catch
-        {
-            return UiFont;
-        }
-    }
-
     /// <summary>系统的「应用」深浅色（HKCU Themes\Personalize\AppsUseLightTheme），读不到按浅色算。</summary>
     public static bool IsAppsDarkMode()
     {
@@ -89,32 +76,6 @@ internal static class UiStyle
         catch { /* ignore */ }
         return false;
     }
-
-    /// <summary>次要说明文字色（随浅/深色）。</summary>
-    public static Color SecondaryText =>
-        IsAppsDarkMode()
-            ? Color.FromArgb(180, 180, 180)
-            : SystemColors.GrayText;
-
-    /// <summary>安全提示条背景/前景（深浅自适应）。</summary>
-    public static Color SafetyBannerBack =>
-        IsAppsDarkMode()
-            ? Color.FromArgb(64, 52, 20)
-            : Color.FromArgb(255, 250, 230);
-
-    public static Color SafetyBannerFore =>
-        IsAppsDarkMode()
-            ? Color.FromArgb(255, 210, 120)
-            : Color.FromArgb(120, 80, 0);
-
-    public static Color StatusOk =>
-        IsAppsDarkMode() ? Color.FromArgb(120, 200, 140) : Color.DarkGreen;
-
-    public static Color StatusWarn =>
-        IsAppsDarkMode() ? Color.FromArgb(255, 180, 80) : Color.DarkOrange;
-
-    public static Color StatusError =>
-        IsAppsDarkMode() ? Color.FromArgb(255, 120, 120) : Color.DarkRed;
 
     /// <summary>设计稿深色背景 #121319。</summary>
     public static Color UiDarkBg => Color.FromArgb(0x12, 0x13, 0x19);

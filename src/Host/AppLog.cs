@@ -55,9 +55,6 @@ internal static class AppLog
     /// </summary>
     public static event Action<Entry>? EntryLogged;
 
-    /// <summary>当前日志文件完整路径（可能为 null）。</summary>
-    public static string? CurrentFilePath => _filePath;
-
     /// <summary>是否启用文件日志（DebugLogging）。</summary>
     public static bool Enabled => _enabled;
 
@@ -170,30 +167,6 @@ internal static class AppLog
         }
     }
 
-    /// <summary>打开当日日志文件；不存在则退回打开目录。</summary>
-    public static void OpenCurrentLogFile()
-    {
-        try
-        {
-            FlushPending();
-            if (_filePath is null || !PathUtil.ExistsFile(_filePath))
-            {
-                OpenLogFolder();
-                return;
-            }
-
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = _filePath,
-                UseShellExecute = true,
-            })?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Error(ex, "打开日志文件");
-            OpenLogFolder();
-        }
-    }
 
     /// <summary>进程退出前刷盘并写 session end。</summary>
     public static void Shutdown()
