@@ -133,14 +133,27 @@ export function useAppState() {
       clearKeyboardFocus();
       clearTabFocus();
     };
+    // 焦点经宿主边界回绕重新进入文档时（Tab 循环一整圈后），把焦点送回页面的
+    // 那次按键页面收不到 keydown，keyboard-focus 标记补不上，导致回绕后的第一
+    // 停靠点（游戏概览）有焦点却无框。重获焦点时若活动元素仍命中 :focus-visible
+    // 即键盘模态 → 补打标记；鼠标点击聚焦的 button/a 不匹配 :focus-visible，不误标；
+    // 文本类输入控件点击时也命中 :focus-visible，显式排除，保持与快捷键判定一致。
+    const onWindowFocus = () => {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement
+        && !el.matches('input, textarea, select')
+        && el.matches(':focus-visible')) markKeyboardFocus();
+    };
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('focus', onWindowFocus);
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('focus', onWindowFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
