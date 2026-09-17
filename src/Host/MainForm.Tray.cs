@@ -60,16 +60,37 @@ internal sealed partial class MainForm
         return $"已就绪  ·  {_config.TargetFps} FPS";
     }
 
+    /// <summary>
+    /// 托盘悬停提示：首行固定产品名（先让人确认「它是谁」），次行一句可读状态。
+    /// 悬停在托盘图标上时必然处于托盘态，原先「| 托盘 / 窗口」字段是纯噪音，删；
+    /// PID 对悬停查看无意义，附着态改为展示 Stub 反馈的当前帧率。
+    /// </summary>
     private string BuildTrayTipText()
     {
-        var effective = _config.MasterEnabled && _config.Enabled ? "开" : "关";
-        var watch = _config.AutoWatch ? "监视" : "待命";
+        var unlock = _config.MasterEnabled && _config.Enabled;
         var pid = _service.AttachedPid;
-        var mode = _inTray ? "托盘" : "窗口";
-        var core = pid > 0
-            ? $"FPS {_config.TargetFps} | {effective} | PID {pid} | {mode}"
-            : $"FPS {_config.TargetFps} | {effective} | {watch} | {mode}";
-        return Truncate(core, 63);
+
+        var feedback = 0;
+        if (pid > 0)
+        {
+            try { feedback = _service.CurrentFpsFeedback; } catch { /* ignore */ }
+        }
+
+        var status = pid > 0
+            ? (!unlock
+                ? "已附着游戏 · 解锁已暂停"
+                : feedback > 0
+                    ? $"已附着游戏 · 当前 {feedback} → 目标 {_config.TargetFps} FPS"
+                    : $"已附着游戏 · 目标 {_config.TargetFps} FPS")
+            : (!_config.MasterEnabled
+                ? $"解锁已暂停 · 目标 {_config.TargetFps} FPS"
+                : !_config.Enabled
+                    ? $"解锁已关闭 · 目标 {_config.TargetFps} FPS"
+                    : _config.AutoWatch
+                        ? $"监视中 · 目标 {_config.TargetFps} FPS"
+                        : $"待命中 · 目标 {_config.TargetFps} FPS");
+
+        return Truncate(AppPaths.ProductDisplayName + Environment.NewLine + status, 63);
     }
 
     /// <summary>
