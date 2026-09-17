@@ -10,9 +10,24 @@ internal sealed partial class MainForm : Form
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int RegisterWindowMessage(string lpString);
 
-    /// <summary>Explorer 重启或登录后就绪时，重新注册托盘图标。</summary>
+    /// <summary>Explorer 重启或登录后就绪时，重新注册托盘图标；标题栏最小化 → 托盘。</summary>
     protected override void WndProc(ref Message m)
     {
+        // 拦截标题栏 ▁ 的系统最小化命令：直接进托盘，窗口永不进入 Minimized 态。
+        // 否则 Resize 兜底路径会在「已最小化 + 摘除任务栏」的窗口上触发 RecreateHandle，
+        // Windows 把这个瞬时窗口以遗留「最小化图标条」画在工作区左下角并闪现一帧。
+        // （退出 / 启动进托盘阶段不拦；Win+↓、任务栏「最小化所有窗口」等不发
+        //   SC_MINIMIZE 的旁路仍由 Resize 事件兜底。）
+        const int wmSyscommand = 0x0112; // WM_SYSCOMMAND
+        const int scMinimize = 0xF020;   // SC_MINIMIZE
+        if (m.Msg == wmSyscommand
+            && (m.WParam.ToInt32() & 0xFFF0) == scMinimize
+            && !_reallyExit && !_startupTrayPending)
+        {
+            HideToTrayPublic(showTip: true, fromStartup: false);
+            return; // 不交给 base → 永远不发生系统最小化
+        }
+
         if (m.Msg == TaskbarCreatedMessage && _tray is not null && !IsDisposed)
         {
             try
@@ -187,9 +202,11 @@ internal sealed partial class MainForm : Form
                 // 保证不残留透明（历史路径 / 异常）
                 try { Opacity = 1; } catch { /* ignore */ }
 
-                // 先摘任务栏再 Hide，避免最小化动画闪烁
-                ShowInTaskbar = false;
+                // 先藏窗再摘任务栏：Hide 即时隐藏、无最小化动画；
+                // 且 ShowInTaskbar 变更触发 RecreateHandle 时窗口已不可见，
+                // 不会在左下角造出「最小化图标条」残影。
                 Hide();
+                ShowInTaskbar = false;
 
                 // 隐藏后再把状态改回 Normal，下次 Show 直接正常窗（用户看不到）
                 try
