@@ -114,9 +114,10 @@ function ensureListeners() {
     }
   };
 
-  // 只挂 chrome.webview 通道：宿主的 PostWebMessageAsJson 消息同时可见于
-  // window 'message'（两者语义等价），双挂会让同一 hostMessage 被 handler 处理两次
-  // （重复响应无害，但增量日志会被追加两遍）。window 路径一律忽略。
+  // 只挂 chrome.webview 通道：官方文档中宿主 PostWebMessageAsJson 的接收端
+  // 就是 chrome.webview 的 message 事件（含官方示例）。window 'message' 在本
+  // 应用没有任何生产者，挂上属于冗余，且其派发语义未被子文档明确承诺，
+  // 移除后可排除同一条宿主消息被 handler 处理多遍的隐患。
   window.chrome?.webview?.addEventListener('message', handler);
 }
 

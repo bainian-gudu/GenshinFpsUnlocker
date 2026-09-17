@@ -50,6 +50,7 @@ namespace
 
     HMODULE g_gameModule = nullptr;
     HANDLE g_workerThread = nullptr;
+    HMODULE g_hModule = nullptr;
     std::atomic_bool g_running{ false };
 
     IpcData* g_ipc = nullptr;
@@ -340,10 +341,19 @@ namespace
         // 次数内尝试，解析不到则跳过该功能，不阻塞帧率解锁。
         bool resolved = false;
         bool antiBlurDone = false;
+        bool scanAborted = false;
         int antiBlurTries = 0;
         constexpr int kAntiBlurMaxTries = 20;  // 约 10s，独立于 FPS 解析的重试计数
         for (int i = 0; i < 120 && g_running.load(std::memory_order_relaxed); ++i)
         {
+            // Host 重启（构造期冲 None）或 ResetForNewInject 写 None 都意味着
+            // 「请放弃本轮、重新回到外层等待环」；扫描环最长 60s，不设检出会把
+            // 重启恢复信号吞掉一整轮。
+            if (!g_ipc || g_ipc->Status == IpcStatus::None || g_ipc->Status == IpcStatus::Exiting)
+            {
+                scanAborted = true;
+                break;
+            }
             if (!resolved)
             {
                 resolved = ResolveFpsFunctions();
@@ -364,6 +374,15 @@ namespace
                 break;
             }
             Sleep(500);
+        }
+
+        if (scanAborted)
+        {
+            // 会话重建请求打断扫描：撤回本轮可能已创建的 Patch/Hook（与 worker
+            // 的异常收尾同一语义），由外层等待环重新进入会话。
+            AntiBlur::Shutdown(g_ipc);
+            MH_DisableHook(MH_ALL_HOOKS);
+            return 0;
         }
 
         if (!resolved)
@@ -397,7 +416,10 @@ namespace
         // 轮询共享内存；仅在需要时写 FPS
         while (g_running.load(std::memory_order_relaxed))
         {
-            if (!g_ipc || g_ipc->Status == IpcStatus::Exiting)
+            // None 与 Exiting 同属「结束本会话」信号：Host 重启 / ResetForNewInject
+            // 会把 Status 冲回 None 请求重建（Socket 一样的重入协议），只响应
+            // Exiting 的话旧会话永远占着位置，新 Host 等 Ready 必超时。
+            if (!g_ipc || g_ipc->Status == IpcStatus::Exiting || g_ipc->Status == IpcStatus::None)
             {
                 break;
             }
@@ -432,14 +454,54 @@ namespace
         return 0;
     }
 
+    /// <summary>
+    /// 工作线程内的初始化失败出口：经共享内存 Status=Error 上报给 Host
+    /// （重试协议本来就靠 IPC 判定，LoadLibrary 返回值只在 DllMain FALSE 时有用），
+    /// 然后停线程。仅用于 MH_Initialize / PIN 这两步。
+    /// </summary>
+    void FailInit(int32_t code)
+    {
+        g_ipc->Status = IpcStatus::Error;
+        g_ipc->LastError = code;
+        g_running.store(false, std::memory_order_relaxed);
+    }
+
     DWORD WINAPI WorkerThread(LPVOID)
     {
+        // 所有初始化与失败清理都在 DllMain 返回之后进行，原因有二：
+        // 1) Loader Lock 语义：DllMain 在 loader lock 下执行，CreateThread 成功后
+        //    新线程要等 DllMain 返回、loader 完成 THREAD_ATTACH 分发才开始运行；
+        //    若在 DllMain 里等待本线程必然死等超时，超时后 LoadLibrary 按失败
+        //    流程卸载模块，本线程却在卸载后才开始执行 —— 悬空代码地址。
+        // 2) 重试协议：重复 LoadLibrary 不会重跑 DllMain；注入后的初始化失败
+        //    必须经 Status=Error 上报，而不是靠 LoadLibrary 返回值。
         while (g_running.load(std::memory_order_relaxed))
         {
             if (OpenSharedMemory()) break;
             Sleep(500);
         }
         if (!g_ipc) return 1;
+
+        if (MH_Initialize() != MH_OK)
+        {
+            FailInit(0xE004);  // MinHook 初始化失败
+            return 2;
+        }
+
+        // 把模块固定到目标进程生命周期：PIN 把引用计数钉死到 0xFFFF，此后
+        // FreeLibrary 一律不再生效（LDRP_PIN），卸载只能等进程退出统一回收。
+        // 因此必须在一切初始化就绪之后才钉 —— PIN 不可逆，过早钉死会让失败
+        // 路径下的模块永远无法卸载。PIN 失败时模块以普通引用计数驻留（无人
+        // 释放），惰性但无害，工作线程退出后同样经 Status=Error 可观测。
+        HMODULE pinned = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                reinterpret_cast<LPCWSTR>(g_hModule), &pinned))
+        {
+            MH_Uninitialize();
+            FailInit(0xE005);  // 模块 PIN 失败
+            return 3;
+        }
 
         while (g_running.load(std::memory_order_relaxed))
         {
@@ -485,35 +547,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
     case DLL_PROCESS_ATTACH:
     {
         DisableThreadLibraryCalls(hModule);
+        g_hModule = hModule;
         g_running.store(true, std::memory_order_relaxed);
-        if (MH_Initialize() != MH_OK)
-        {
-            g_running.store(false, std::memory_order_relaxed);
-            return FALSE;
-        }
-        // 在独立线程完成扫描与循环，避免阻塞装载器锁
+        // DllMain 只做「失败即可整段放弃」的最小动作：起工作线程。
+        // 连接共享内存 / MH_Initialize / PIN 全部下放给 WorkerThread，因为本
+        // 函数在 loader lock 下执行，而新线程要等 DllMain 返回后才开始运行；
+        // 这里对 worker 做任何等待都是确定性死锁，等不到再 return FALSE 还会
+        // 把模块从尚未起跑的线程脚下卸载掉。初始化失败由 worker 经 IPC
+        // Status=Error 上报，Host 本来就按 IPC 判定成败。
         g_workerThread = CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr);
         if (!g_workerThread)
         {
+            // 线程没起来：此刻还没有任何 MH / 钩子状态要清理，直接失败回滚；
+            // 模块随 LoadLibrary 失败被正常卸载，此后再无本方代码在运行。
             g_running.store(false, std::memory_order_relaxed);
-            MH_Uninitialize();
-            return FALSE;
-        }
-        // 把模块固定到目标进程生命周期：PIN 把引用计数钉死到 0xFFFF，此后
-        // FreeLibrary 一律不再生效（LDRP_PIN），卸载只能等进程退出统一回收。
-        // 因此 PIN 必须是 attach 的最后一步 —— 先 PIN 再走失败分支的话，
-        // 注入失败的模块会驻留目标进程再也无法卸载。
-        HMODULE pinned = nullptr;
-        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_PIN,
-                                reinterpret_cast<LPCWSTR>(hModule), &pinned))
-        {
-            // 与触发注入失败一致地整体回滚：先停稳工作线程再卸 MinHook
-            g_running.store(false, std::memory_order_relaxed);
-            WaitForSingleObject(g_workerThread, 3000);
-            CloseHandle(g_workerThread);
-            g_workerThread = nullptr;
-            MH_Uninitialize();
             return FALSE;
         }
         break;
@@ -521,7 +568,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 
     case DLL_PROCESS_DETACH:
     {
-        // 模块已在 attach 时 PIN；动态 FreeLibrary 不会进入这里。
+        // 正常流程里模块已被 worker 钉住（PIN 是初始化成功路径的最后一步），
+        // 只有 worker 初始化失败且未钉住的场景才会真实抵达这里 —— 此时 worker
+        // 已经退出，没有需要收尾的 Hook 状态。
         // 进程终止时不要在 loader lock 上等待或访问正在销毁的游戏地址空间。
         g_running.store(false, std::memory_order_relaxed);
         break;
