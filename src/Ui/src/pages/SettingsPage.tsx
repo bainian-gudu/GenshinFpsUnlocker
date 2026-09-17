@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { LogLevel, UnlockerConfig, UpdateConfig } from '../lib/config';
 import type { AutostartState } from '../lib/native';
+import { markKeyboardFocus } from '../lib/focus';
 import { FpsControl } from '../components/FpsControl';
 import { PageHeading, ToggleRow } from '../components/ui';
 
@@ -41,6 +42,7 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
       : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
     if (next < 0) return;
     event.preventDefault();
+    markKeyboardFocus();
     setTab(tabs[next].id);
     document.getElementById(`tab-${tabs[next].id}`)?.focus();
   }

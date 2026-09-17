@@ -4,6 +4,7 @@ import { NAV_ITEMS, PAGE_NAMES } from '../lib/nav';
 import type { ToastItem } from '../components/ui';
 import type { LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
 import { CONFIG_LABELS, DEFAULT_CONFIG, STORAGE_KEY, downloadFile, getPage, loadConfig, makeLog, parseConfig } from '../lib/config';
+import { clearKeyboardFocus, clearTabFocus, markKeyboardFocus } from '../lib/focus';
 import type { AutostartState, NativeState } from '../lib/native';
 import { isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeNavigate, onNativeState } from '../lib/native';
 
@@ -116,11 +117,43 @@ export function useAppState() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // WebView2 的 :focus-visible 在程序化聚焦时不够稳定，改用显式键盘焦点标记：
+  // 只有按 Tab（或标签页方向键）后显示外框，鼠标点击、失焦和隐藏窗口都清掉。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') markKeyboardFocus();
+    };
+    const onPointerDown = () => clearKeyboardFocus();
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') return;
+      clearKeyboardFocus();
+      clearTabFocus();
+    };
+    const onWindowBlur = () => {
+      clearKeyboardFocus();
+      clearTabFocus();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('blur', onWindowBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('blur', onWindowBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
   // 宿主在窗口进托盘（最小化 / 关窗）时发 navigate，把界面复位到「游戏概览」：
   // 下次从托盘打开主界面不会还停在上次浏览的页面。
   useEffect(() => {
     if (!native) return;
-    const offNavigate = onNativeNavigate((next) => navigate(next));
+    const offNavigate = onNativeNavigate((next) => {
+      clearKeyboardFocus();
+      clearTabFocus();
+      navigate(next);
+    });
     return () => { offNavigate(); };
   }, [native, navigate]);
 
