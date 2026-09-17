@@ -1,3 +1,4 @@
+/** 应用对话框：游戏路径设置、用户协议与安全声明、启动确认与通用危险操作确认。 */
 import { ArrowUpRight, Check, CircleHelp, FileCode2, FolderOpen, Info, Monitor, Play, ScanLine, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cleanPath, DEMO_GAME_PATH, isValidGamePath, PROJECT_URL } from '../lib/config';
@@ -5,6 +6,7 @@ import type { UnlockerConfig } from '../lib/config';
 import { nativeInvoke } from '../lib/native';
 import { Checkbox, Modal } from './ui';
 
+/** 游戏路径设置对话框：浏览本地文件 / 自动查找（仅桌面版）、示例路径（仅网页预览）与查找指引。 */
 export function PathDialog({ path, onSave, onClose, isNative, onBrowse, onAutoLocate }: {
   path: string | null;
   onSave: (path: string) => void | Promise<void>;
@@ -52,6 +54,7 @@ export function PathDialog({ path, onSave, onClose, isNative, onBrowse, onAutoLo
   );
 }
 
+/** 安全声明正文：优先显示宿主下发的协议全文，获取失败时回退到内置摘要。 */
 function SafetyContent({ fullText }: { fullText?: string }) {
   if (fullText) {
     return <div className="safety-content"><pre className="safety-pre">{fullText}</pre></div>;
@@ -68,6 +71,7 @@ function SafetyContent({ fullText }: { fullText?: string }) {
   );
 }
 
+/** 用户协议与安全声明对话框：桌面版从宿主拉取协议全文；可勾选不再自动显示。 */
 export function SafetyDialog({ onClose, onAcknowledge, isNative }: {
   onClose: () => void;
   onAcknowledge?: (showOnStartup: boolean) => void | Promise<void>;
@@ -79,7 +83,7 @@ export function SafetyDialog({ onClose, onAcknowledge, isNative }: {
     if (!isNative) return;
     void nativeInvoke<{ fullText?: string }>('getSafetyText').then((r) => {
       if (r?.fullText) setFullText(r.fullText);
-    }).catch(() => { /* fallback content */ });
+    }).catch(() => { /* 获取失败时使用内置摘要文案 */ });
   }, [isNative]);
   return (
     <Modal title="用户协议与安全声明" description="安装与使用前，请阅读并了解相关风险与责任。" icon={ShieldCheck} onClose={onClose}
@@ -99,6 +103,7 @@ export function SafetyDialog({ onClose, onAcknowledge, isNative }: {
   );
 }
 
+/** 启动确认框：汇总目标帧率与运行方式，勾选「已知悉风险」后才允许启动。 */
 export function LaunchDialog({ config, onStart, onClose, isNative }: {
   config: UnlockerConfig;
   onStart: (dontAskAgain: boolean) => void | Promise<void>;
@@ -119,6 +124,7 @@ export function LaunchDialog({ config, onStart, onClose, isNative }: {
   );
 }
 
+/** 通用确认框（红色按钮的危险操作）：恢复默认、清空日志、卸载等场景复用。 */
 export function ConfirmDialog({ title, description, action, onConfirm, onClose }: {
   title: string; description: string; action: string; onConfirm: () => void | Promise<void>; onClose: () => void;
 }) {

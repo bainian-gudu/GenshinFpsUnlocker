@@ -347,13 +347,13 @@ internal static partial class GameLocator
                         }
                         catch
                         {
-                            // continue
+                            // 跳过该目录项，继续扫描
                         }
                     }
                 }
                 catch
                 {
-                    // continue
+                    // 跳过该项，继续扫描
                 }
             }
         }

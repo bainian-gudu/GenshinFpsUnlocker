@@ -218,7 +218,7 @@ export function useAppState() {
     document.title = `${PAGE_NAMES[page]} | Genshin FPS Unlocker`;
   }, [page]);
 
-  // Web-only localStorage persistence
+  // 仅网页预览（非宿主）模式：将配置持久化到 localStorage
   useEffect(() => {
     if (native) return;
     setSaveState('saving');

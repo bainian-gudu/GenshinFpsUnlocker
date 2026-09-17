@@ -1,3 +1,4 @@
+/** 使用指南页：入门步骤、FAQ 手风琴与底部安全声明入口。 */
 import { ArrowRight, ArrowUpRight, ChevronDown, ShieldCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
@@ -5,6 +6,7 @@ import type { Page } from '../lib/config';
 import { PROJECT_URL } from '../lib/config';
 import { PageHeading } from '../components/ui';
 
+/** FAQ 文案：桌面版（WebView2 宿主）——含提权、托盘驻留等宿主能力说明。 */
 const FAQ_NATIVE = [
   { q: '为什么设置了 120 FPS，游戏还是只有 60 FPS？', a: '先确认游戏内「设置 → 图像 → 垂直同步」已关闭，再检查「解锁服务总开关」与「帧率解锁」是否同时开启。设置的是帧率上限，实际帧率仍取决于设备性能与显示器刷新率。' },
   { q: '提示需要管理员权限 / 注入失败怎么办？', a: '向游戏进程注入模块时，通常需要管理员权限（OpenProcess）。在概览页或「游戏设置 → 启动与行为」点击「以管理员重新启动」，在 UAC 中选「是」即可。想让登录后就直接以管理员权限运行，请同时开启「开机自启动」与「启动时自动以管理员权限运行」：登录自启会登记成最高权限计划任务，登录时不会弹 UAC；只开前者时登录自启以标准权限运行，需要解锁时再手动提权一次。' },
@@ -14,6 +16,7 @@ const FAQ_NATIVE = [
   { q: '使用这个工具会有账号风险吗？', a: '有风险。本工具通过第三方模块注入调整帧率，并非官方功能，可能违反游戏服务条款。项目无法保证账号安全；是否使用由你自行决定。请先完整阅读用户协议与安全声明。' },
 ];
 
+/** FAQ 文案：网页预览——不含宿主能力，措辞相应调整（如导出配置导入桌面版）。 */
 const FAQ_WEB = [
   { q: '为什么设置了 120 FPS，游戏还是只有 60 FPS？', a: '先确认游戏内「设置 → 图像 → 垂直同步」已关闭，再检查解锁服务总开关与帧率解锁开关是否同时开启。网页预览不会改变真实游戏帧率。' },
   { q: '关闭窗口后，解锁器还会运行吗？', a: '在原生桌面版中，关闭窗口会将应用隐藏到系统托盘。网页预览在关闭标签页后不会继续运行，但保存的偏好会保留。' },
@@ -22,9 +25,11 @@ const FAQ_WEB = [
   { q: '使用这个工具会有账号风险吗？', a: '有风险。本工具通过第三方模块注入调整帧率，并非官方功能，可能违反游戏服务条款。项目无法保证账号安全；是否使用由你自行决定。' },
 ];
 
+/** 使用指南页组件：`isNative` 决定 FAQ 与末步文案版本；FAQ 一次只展开一条。 */
 export function GuidePage({ navigate, onSafety, isNative }: { navigate: (page: Page) => void; onSafety: () => void; isNative?: boolean }) {
   const [expanded, setExpanded] = useState<number | null>(0);
   const faq = isNative ? FAQ_NATIVE : FAQ_WEB;
+  // 入门四步；带 action 的步骤可点击跳转到对应功能页
   const steps = [
     { title: '定位你的游戏', text: '选择 YuanShen.exe 或 GenshinImpact.exe，确认完整安装路径。', action: '设置游戏路径', page: 'settings' as Page },
     { title: '关闭垂直同步', text: '进入游戏「设置 → 图像」，关闭垂直同步（V-Sync）。' },

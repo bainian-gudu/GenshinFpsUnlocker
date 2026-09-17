@@ -65,7 +65,7 @@
 .status-bar-right > button { display: inline-flex; align-items: center; gap: 4px; background: transparent; color: var(--muted); padding: 0; font-size: inherit; }
 .status-bar-right > button:hover { color: var(--accent); }
 
-/* Settings share the same controls and state as the overview. */
+/* 设置页与概览页共用同一套控件与状态样式。 */
 .autosave-label { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); }
 .autosave-label svg { color: var(--success); }
 .tabs { display: flex; gap: 28px; align-items: center; border-bottom: 1px solid var(--border); margin: 3px 0 24px; }

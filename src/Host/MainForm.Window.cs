@@ -378,7 +378,7 @@ internal sealed partial class MainForm : Form
         var h = Handle;
         if (h == IntPtr.Zero) return;
 
-        // SW_SHOWNA=8 / SW_RESTORE=9 / SW_SHOW=5
+        // SW_SHOWNA=8（显示但不激活）/ SW_RESTORE=9（还原被最小化的窗口）/ SW_SHOW=5（显示）
         ShowWindow(h, 5);  // SW_SHOW
         ShowWindow(h, 9);  // SW_RESTORE
 

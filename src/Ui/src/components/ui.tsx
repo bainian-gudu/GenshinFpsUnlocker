@@ -1,3 +1,4 @@
+/** 公共基础组件：开关（Toggle）、页头、模态框（焦点圈定 + 背景 inert）、Toast 与复选框。 */
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, CheckCircle2, CircleAlert, Info, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -5,6 +6,7 @@ import { useEffect, useId, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
+/** 开关按钮（role=switch）：滑块位移由 framer-motion 弹性动画驱动。 */
 export function Toggle({ checked, onChange, label, disabled = false, describedBy }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
@@ -28,6 +30,7 @@ export function Toggle({ checked, onChange, label, disabled = false, describedBy
   );
 }
 
+/** 带图标/标题/描述的开关行；描述文本通过 useId 与开关的 aria-describedby 关联。 */
 export function ToggleRow({ icon: Icon, title, description, checked, onChange, disabled }: {
   icon?: LucideIcon;
   title: string;
@@ -49,6 +52,7 @@ export function ToggleRow({ icon: Icon, title, description, checked, onChange, d
   );
 }
 
+/** 页面标题行：左侧标题与描述，右侧可放置操作按钮。 */
 export function PageHeading({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
   return (
     <div className="page-heading">
@@ -58,6 +62,7 @@ export function PageHeading({ title, description, children }: { title: string; d
   );
 }
 
+/** 模态框基底：打开时背景 inert 并锁定滚动、Esc 关闭、Tab 焦点圈定在框内、关闭后焦点回落。 */
 export function Modal({ title, description, children, footer, onClose, icon: Icon, wide = false }: {
   title: string;
   description?: string;
@@ -78,6 +83,7 @@ export function Modal({ title, description, children, footer, onClose, icon: Ico
     const previousOverflow = document.body.style.overflow;
     const appRoot = document.getElementById('root');
     const wasInert = appRoot?.inert ?? false;
+    // 打开时：应用根设为 inert（背景不可聚焦/不可交互）并锁定页面滚动
     if (appRoot) appRoot.inert = true;
     document.body.style.overflow = 'hidden';
     const frame = requestAnimationFrame(() => {
@@ -86,6 +92,7 @@ export function Modal({ title, description, children, footer, onClose, icon: Ico
     });
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
+      // Tab 焦点圈定：令焦点始终在对话框可交互元素间循环，不逃逸到背景
       if (event.key !== 'Tab') return;
       const elements = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex="0"]',
@@ -104,6 +111,7 @@ export function Modal({ title, description, children, footer, onClose, icon: Ico
       document.body.style.overflow = previousOverflow;
       if (appRoot) appRoot.inert = wasInert;
       document.removeEventListener('keydown', handleKey);
+      // 焦点回落：还给打开对话框前的元素；其已卸载则落到主内容区
       if (previousFocus?.isConnected && !previousFocus.matches(':disabled')) previousFocus.focus();
       else document.getElementById('main-content')?.focus({ preventScroll: true });
     };
@@ -130,7 +138,10 @@ export function Modal({ title, description, children, footer, onClose, icon: Ico
   );
 }
 
+/** 单条通知的数据结构。 */
 export interface ToastItem { id: number; title: string; description?: string; type: 'success' | 'info' | 'error' }
+
+/** 单条 Toast：按类型定时自动消散（错误类型停留更久）。 */
 
 function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) => void }) {
   useEffect(() => {
@@ -148,10 +159,12 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) =
   );
 }
 
+/** Toast 容器（aria-live=polite）：新增通知会被屏幕阅读器播报。 */
 export function Toasts({ items, onDismiss }: { items: ToastItem[]; onDismiss: (id: number) => void }) {
   return <div className="toast-container" aria-live="polite" aria-atomic="false"><AnimatePresence>{items.map((item) => <Toast key={item.id} item={item} onDismiss={onDismiss} />)}</AnimatePresence></div>;
 }
 
+/** 自绘复选框：原生 input 由 CSS 视觉替换为勾选槽，键盘可达。 */
 export function Checkbox({ checked, onChange, children }: { checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
   return (
     <label className="checkbox-label">

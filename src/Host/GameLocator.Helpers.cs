@@ -96,7 +96,7 @@ internal static partial class GameLocator
         }
         catch
         {
-            // ignore
+            // 忽略
         }
 
         return null;
@@ -220,7 +220,7 @@ internal static partial class GameLocator
         }
         catch
         {
-            // ignore
+            // 忽略
         }
     }
 }

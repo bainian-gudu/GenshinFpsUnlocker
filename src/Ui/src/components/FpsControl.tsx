@@ -1,10 +1,13 @@
+/** 帧率解锁控制面板：总开关联动、数值输入、滑块与快捷预设档位。 */
 import { Gauge, Monitor, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Toggle } from './ui';
 
+/** 预设帧率档位；与宿主托盘菜单预设（MainForm.Tray.cs 的 TrayFpsPresets）保持一致。 */
 const PRESETS = [60, 90, 120, 144, 165, 240];
 
+/** 帧率控制主组件；总开关或解锁开关关闭时（`inactive`）整组禁用并在底部说明原因。 */
 export function FpsControl({ value, enabled, masterEnabled, onChange, onToggle }: {
   value: number;
   enabled: boolean;
@@ -17,6 +20,7 @@ export function FpsControl({ value, enabled, masterEnabled, onChange, onToggle }
   useEffect(() => { setDraft(String(value)); setError(''); }, [value]);
   const inactive = !enabled || !masterEnabled;
 
+  // 输入框为草稿态：失焦或回车才做整数/范围校验并提交，非法值提示并保留上次生效值
   const selectValue = (next: number) => {
     setDraft(String(next));
     setError('');
