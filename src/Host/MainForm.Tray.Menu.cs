@@ -113,6 +113,7 @@ internal sealed partial class MainForm
         // —— 退出 ——
         menu.Items.Add(MakeActionItem("退出", (_, _) =>
         {
+            AppLog.Info("退出（托盘菜单）");
             _reallyExit = true;
             Close();
         }));

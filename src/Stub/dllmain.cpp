@@ -479,17 +479,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
     case DLL_PROCESS_ATTACH:
     {
         DisableThreadLibraryCalls(hModule);
-        // 把模块固定到目标进程生命周期，避免 FreeLibrary 在工作线程仍执行时
-        // 触发 DLL_PROCESS_DETACH 并卸载本模块代码。工作线程会自行清理 Hook，
-        // 地址空间由目标进程退出统一回收。
-        HMODULE pinned = nullptr;
-        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_PIN,
-                                reinterpret_cast<LPCWSTR>(hModule), &pinned))
-            return FALSE;
         g_running.store(true, std::memory_order_relaxed);
         if (MH_Initialize() != MH_OK)
         {
+            g_running.store(false, std::memory_order_relaxed);
             return FALSE;
         }
         // 在独立线程完成扫描与循环，避免阻塞装载器锁
@@ -497,6 +490,23 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
         if (!g_workerThread)
         {
             g_running.store(false, std::memory_order_relaxed);
+            MH_Uninitialize();
+            return FALSE;
+        }
+        // 把模块固定到目标进程生命周期：PIN 把引用计数钉死到 0xFFFF，此后
+        // FreeLibrary 一律不再生效（LDRP_PIN），卸载只能等进程退出统一回收。
+        // 因此 PIN 必须是 attach 的最后一步 —— 先 PIN 再走失败分支的话，
+        // 注入失败的模块会驻留目标进程再也无法卸载。
+        HMODULE pinned = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                reinterpret_cast<LPCWSTR>(hModule), &pinned))
+        {
+            // 与触发注入失败一致地整体回滚：先停稳工作线程再卸 MinHook
+            g_running.store(false, std::memory_order_relaxed);
+            WaitForSingleObject(g_workerThread, 3000);
+            CloseHandle(g_workerThread);
+            g_workerThread = nullptr;
             MH_Uninitialize();
             return FALSE;
         }

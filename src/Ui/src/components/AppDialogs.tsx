@@ -26,7 +26,10 @@ export function AppDialogs({ app }: { app: AppState }) {
       }} />}
       {modal === 'launch' && <LaunchDialog key="launch" config={config} isNative={native} onClose={() => setModal(null)} onStart={async (dontAskAgain) => {
         if (native) {
-          await nativeInvoke('acknowledgeSafety', { showOnStartup: !dontAskAgain });
+          // 与 SafetyDialog 分支对称：回写宿主返回的最新配置，
+          // 否则同一会话再次启动会重复弹出本确认框。
+          const state = await nativeInvoke<any>('acknowledgeSafety', { showOnStartup: !dontAskAgain });
+          applyNativeState(state as NativeState);
         } else {
           setConfig((previous) => ({ ...previous, safetyNoticeAcknowledged: true, showSafetyNoticeOnStartup: !dontAskAgain }));
         }

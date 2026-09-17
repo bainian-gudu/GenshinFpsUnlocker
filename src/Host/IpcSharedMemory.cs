@@ -135,7 +135,9 @@ internal sealed class IpcSharedMemory : IDisposable
         {
             if (_disposed) return default;
             _accessor.Read(0, out IpcData data);
-            return data;
+            // 魔数不符 = 映射里的内容不是本协议（理论上的同名异构对象），
+            // 按未连接处理，宁缺毋滥，避免把垃圾字节当 Stub 状态消费。
+            return data.Magic == Magic ? data : default;
         }
     }
 

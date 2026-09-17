@@ -103,7 +103,7 @@ internal static partial class GameLocator
             List<string> found;
             try
             {
-                // 桌面/开始菜单都只有两层深（Programs 下可能再分厂商目录）
+                // 全树递归枚举桌面/开始菜单目录，命中上限由 MaxShortcutsListedPerLocation 截断
                 found = Directory.EnumerateFiles(dir, "*.lnk", SearchOption.AllDirectories)
                     .Take(MaxShortcutsListedPerLocation)
                     .ToList();

@@ -72,7 +72,9 @@ internal static class DllInjector
             return true;
         }
 
-        AppLog.Warn($"RemoteLoadLibrary 失败: {error}");
+        // 游戏进程被反作弊以内核回调削权时，OpenProcess 成功但 VirtualAllocEx 会
+        // 秒拒（错误 5）——属预期场景，Hook 兜底通常仍可成功，文案里点明别当故障排查。
+        AppLog.Warn($"RemoteLoadLibrary 失败: {error}（若为游戏反作弊保护则属预期，自动尝试 Hook 兜底）");
         var remoteError = error;
         if (!allowHookFallback)
         {

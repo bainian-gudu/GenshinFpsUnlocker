@@ -177,8 +177,4 @@ internal sealed partial class AppConfig
         }
     }
 
-    /// <summary>实际是否应解锁 = 总开关 &amp;&amp; 功能开关。</summary>
-    [JsonIgnore]
-    public bool EffectiveUnlockEnabled => MasterEnabled && Enabled;
-
 }

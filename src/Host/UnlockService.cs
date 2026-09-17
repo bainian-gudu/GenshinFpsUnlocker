@@ -23,7 +23,6 @@ internal sealed partial class UnlockService : IDisposable
     private int _injectAttemptedPid;
     /// <summary>连续注入失败次数，用于指数退避。</summary>
     private int _injectFailStreak;
-    /// <summary>最近一次注入确实因权限被拒绝，才提示用户提权。</summary>
     private string _statusText = "空闲 — 等待游戏启动";
     private string _gamePathStatus = "";
     private bool _disposed;

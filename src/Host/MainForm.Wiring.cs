@@ -322,6 +322,9 @@ internal sealed partial class MainForm
             }
 
             _reallyExit = true;
+            // 记录真实关闭原因：用户托盘退出 / WindowsShutdown / TaskManagerClosing 等，
+            // 让日志能区分「正常退出」与「无声消失」。
+            AppLog.Info($"主窗关闭: reason={e.CloseReason}");
             try { _wakeCts?.Cancel(); } catch { /* ignore */ }
             try { _wakeCts?.Dispose(); } catch { /* ignore */ }
             try { _trayRecoveryTimer?.Stop(); _trayRecoveryTimer?.Dispose(); } catch { /* ignore */ }

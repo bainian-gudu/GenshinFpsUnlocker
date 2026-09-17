@@ -156,6 +156,9 @@ internal static class Program
         if (!OsCompatibility.EnsureOrPrompt(quiet || isAutostart))
         {
             AppLog.Error("OS 兼容性检查未通过 — 退出" + (isAutostart ? "（autostart launch）" : ""));
+            // 早退路径也要落盘原因行并写 session end，否则 autostart 静默启动
+            // 的失败会表现为「进程无声消失」
+            AppLog.Shutdown();
             return;
         }
 
@@ -178,6 +181,7 @@ internal static class Program
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
+            AppLog.Shutdown();
             return;
         }
 
@@ -214,6 +218,7 @@ internal static class Program
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
+            AppLog.Shutdown();
             return;
         }
         _activeInstance = instance;
@@ -224,6 +229,7 @@ internal static class Program
         {
             AppLog.Error("运行时前置条件不满足 — 退出" +
                          (isAutostart ? "（autostart launch：.NET Desktop Runtime / WebView2 缺失或损坏）" : ""));
+            AppLog.Shutdown();
             return;
         }
 
@@ -295,6 +301,9 @@ internal static class Program
                 if (Elevation.TryRelaunchElevated("--elevated-auto --elevated-handoff", out var elevationError))
                 {
                     AppLog.Info("已交接至自动管理员启动实例");
+                    // 交接成功即退出：刷盘并写 session end，避免缓冲刷盘定时器
+                    // 还没来得及跑进程就没了（日志里表现为交接原因行丢失）
+                    AppLog.Shutdown();
                     return;
                 }
 

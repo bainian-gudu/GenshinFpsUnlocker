@@ -76,10 +76,14 @@ internal sealed partial class UnlockService
                     var live = _ipc.Read();
                     if (live.Status == IpcStatus.Error)
                     {
+                        // 该分支此前不写状态文本，用户在 UI 上看不到 Stub 报错的恢复过程；
+                        // 与下游 Error 路径同一措辞给出原因与退避时长。
                         SetAttached(0);
                         Volatile.Write(ref _injectAttemptedPid, 0);
                         _injectFailStreak++;
-                        _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(Math.Min(90, 15 * _injectFailStreak));
+                        var backoff = Math.Min(90, 15 * _injectFailStreak);
+                        _nextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(backoff);
+                        SetStatus($"Stub 报告错误 0x{live.LastError:X}（{backoff}s 后可重试注入）");
                         continue;
                     }
                     if (live.Status == IpcStatus.Exiting)

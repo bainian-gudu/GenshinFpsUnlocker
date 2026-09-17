@@ -47,4 +47,3 @@ struct IpcData
 
 inline constexpr uint64_t kIpcMagic = 0x465053554E4C4B52ull; // "FPSUNLKR"
 inline constexpr wchar_t kIpcMappingName[] = L"Global\\GenshinFpsUnlocker.Shared.v2";
-inline constexpr wchar_t kIpcMutexName[]   = L"Global\\GenshinFpsUnlocker.Instance.v1";
