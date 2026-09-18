@@ -121,9 +121,11 @@
 .fps-presets button:hover:not(:disabled) { border-color: var(--accent-border); color: var(--accent); transform: translateY(-1px); }
 .fps-presets button.selected { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); }
 .fps-feedback { min-height: 15px; color: var(--muted); font-size: 10px; line-height: 1.6; margin-top: 12px; }
-.quick-settings { height: 100%; box-sizing: border-box; padding-bottom: 14px; }
+/* 右列会被拉到与左列等高（两列同一行高）。等高多出来的空间交给行距均摊，
+   否则会全部堆在面板底部，看起来像面板里空了一块。 */
+.quick-settings { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding-bottom: 14px; }
 .quick-settings .panel-heading { margin-bottom: 10px; }
-.quick-settings-rows { display: flex; flex-direction: column; }
+.quick-settings-rows { display: flex; flex-direction: column; flex: 1; justify-content: space-between; }
 .quick-settings-rows .toggle-row:first-child { border-top: 0; }
 .text-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: transparent; padding: 0; color: var(--accent); font-size: 11.5px; line-height: 1.7; font-weight: 400; transition: color .2s; }
 .text-button:hover { color: var(--accent-hover); }
