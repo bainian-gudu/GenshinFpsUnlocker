@@ -1014,33 +1014,11 @@ async function installPrepare(version: string): Promise<boolean> {
         target_exe_path.toLowerCase().replace(/\\/g, '/'),
     )
   ) {
-    const result =
-      INSTALLER_CONFIG.args.non_interactive ||
-      INSTALLER_CONFIG.args.silent ||
-      (await confirm(
-        `检测到${PROJECT_CONFIG.appName}正在运行，是否结束进程并继续安装？`,
-        '提示',
-      ));
-    if (!result) {
-      step.value = 1;
-      return false;
-    } else {
-      try {
-        try {
-          await Promise.all(
-            runningExes.map((e) => ipcKillProcess(e[0], needElevate.value)),
-          );
-        } catch (e) {
-          await Promise.all(runningExes.map((e) => ipcKillProcess(e[0], true)));
-        }
-        return true;
-      } catch (e) {
-        error(e);
-        await dialog_error(`结束进程失败: ${e}`, '出错了');
-        step.value = 1;
-        return false;
-      }
-    }
+    // 安装 / 更新都不再询问：检测到正在运行就静默结束，失败也只记日志
+    return await killProcessesSilently(
+      runningExes,
+      isUpdate.value ? '更新' : '安装',
+    );
   }
   return false;
 }
@@ -2253,20 +2231,16 @@ async function dialog_error(message: string, title = '出错了'): Promise<void>
 async function confirm(message: string, title = '提示'): Promise<boolean> {
   return await invoke<boolean>('confirm_dialog', { message, title });
 }
-/// 卸载前结束正在运行的主程序：静默处理，只写日志。
+/// 静默结束一批进程：不弹询问框、不弹报错框，只写日志。
 ///
-/// 进程活着的时候，它自己的 exe、`logs\` 与 WebView2 的界面缓存
-/// （`%LOCALAPPDATA%\GenshinFpsUnlocker\EBWebView`）都被占用，删除会失败 ——
-/// 上游只在安装流程（`installPrepare`）里做了「检测 → 询问 → 结束进程」，
-/// 卸载流程没有，于是从「设置 → 应用」或开始菜单发起卸载时（主程序常驻托盘）
-/// 必然留下残留。卸载是用户已经确认过的动作，这里不再二次弹窗：
-/// 检测到就静默结束进程，结束不掉也只记日志，后面照旧尽力删除。
-async function killRunningAppForUninstall(): Promise<void> {
-  const runningExes =
-    (await ipcFindProcessByName(PROJECT_CONFIG.exeName).catch(log)) || [];
-  if (runningExes.length === 0) return;
+/// 返回是否发过结束请求且没抛错：调用方据此决定要不要等句柄释放；
+/// 结束失败一律不拦后续流程 —— 占用中的文件会在各自的失败清单里记日志。
+async function killProcessesSilently(
+  runningExes: [number, string][],
+  scene: string,
+): Promise<boolean> {
   log(
-    `卸载：检测到 ${runningExes.length} 个 ${PROJECT_CONFIG.exeName} 进程（PID ${runningExes
+    `${scene}：检测到 ${runningExes.length} 个 ${PROJECT_CONFIG.exeName} 进程（PID ${runningExes
       .map((e) => e[0])
       .join(', ')}），静默结束`,
   );
@@ -2276,13 +2250,28 @@ async function killRunningAppForUninstall(): Promise<void> {
         runningExes.map((e) => ipcKillProcess(e[0], needElevate.value)),
       );
     } catch (e) {
+      // 普通权限结束不掉时，再走提权通道重试一次
       await Promise.all(runningExes.map((e) => ipcKillProcess(e[0], true)));
     }
+    return true;
   } catch (e) {
-    // 结束不掉不拦卸载：后面的删除都是尽力而为，删不掉的会记日志
-    warn('结束进程失败:', e);
-    return;
+    warn(`${scene}结束进程失败:`, e);
+    return false;
   }
+}
+/// 卸载前结束正在运行的主程序：静默处理，只写日志。
+///
+/// 进程活着的时候，它自己的 exe、`logs\` 与 WebView2 的界面缓存
+/// （`%LOCALAPPDATA%\GenshinFpsUnlocker\EBWebView`）都被占用，删除会失败 ——
+/// 上游只在安装流程里做了「检测 → 结束进程」，卸载流程没有，于是从
+/// 「设置 → 应用」或开始菜单发起卸载时（主程序常驻托盘）必然留下残留。
+/// 安装、更新与卸载现在都是静默处理：检测到就结束进程，失败只记日志。
+async function killRunningAppForUninstall(): Promise<void> {
+  const runningExes =
+    (await ipcFindProcessByName(PROJECT_CONFIG.exeName).catch(log)) || [];
+  if (runningExes.length === 0) return;
+  // 结束不掉不拦卸载：后面的删除都是尽力而为，删不掉的会记日志
+  if (!(await killProcessesSilently(runningExes, '卸载'))) return;
   // 等句柄释放：WebView2 的缓存文件在进程退出后仍会被短暂占用
   await new Promise((resolve) => setTimeout(resolve, 1000));
 }
