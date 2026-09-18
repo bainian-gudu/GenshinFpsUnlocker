@@ -52,6 +52,9 @@ internal sealed partial class UnlockService : IDisposable
     public IpcStatus StubStatus => _ipc.Read().Status;
     public int CurrentFpsFeedback => _ipc.Read().CurrentFps;
 
+    /// <summary>Stub 上报的错误码（0xE001 起，0 表示无错误）。</summary>
+    public int LastErrorFeedback => _ipc.Read().LastError;
+
     /// <summary>Stub 上报的反虚化就绪状态掩码（bit0 虚化 / bit1 马赛克 / bit2 马赛克已生效）。</summary>
     public int AntiBlurStateFeedback => _ipc.Read().AntiBlurState;
 

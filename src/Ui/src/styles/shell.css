@@ -138,6 +138,23 @@
 .toggle-row-copy p { color: var(--muted); font-size: 11px; line-height: 1.7; margin-top: 3px; }
 .toggle-row .toggle { margin-left: auto; }
 .quick-settings-rows .toggle-row:last-child { padding-bottom: 4px; }
+/* flex: 1 0 auto —— 右列（快捷设置）通常更高，让状态卡吃掉左列剩余高度，
+   避免帧率解锁下方再出现悬空空白；内容不足时只长高，不被压缩。 */
+.runtime-panel { flex: 1 0 auto; padding-bottom: 16px; }
+.runtime-rows { display: flex; flex-direction: column; margin: 2px 0 0; }
+.runtime-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 7px 0; }
+.runtime-row dt { color: var(--secondary); font-size: 11px; line-height: 18px; white-space: nowrap; }
+.runtime-row dd { min-width: 0; margin: 0; color: var(--text); font-size: 12px; line-height: 18px; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.runtime-divider { height: 1px; margin: 12px 0 11px; background: var(--border-soft); }
+.runtime-subheading { color: var(--secondary); font-size: 11px; font-weight: 500; line-height: 18px; }
+.runtime-features { display: flex; flex-direction: column; margin: 5px 0 0; padding: 0; list-style: none; }
+.runtime-features li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.runtime-features li:first-child { border-top: 0; }
+.runtime-feature-name { min-width: 0; color: var(--text); font-size: 12px; line-height: 18px; }
+.runtime-chip { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); background: var(--panel-raised); font-size: 10px; line-height: 16px; white-space: nowrap; }
+.runtime-chip::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.runtime-chip.is-on { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
+.runtime-chip.is-wait { color: var(--warning); background: #bb9b6f14; border-color: #bb9b6f38; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 37px; padding: 8px 14px; border-radius: 6px; border: 1px solid transparent; color: var(--text); font-size: 11.5px; font-weight: 500; line-height: 1.7; white-space: nowrap; transition: color .2s, background .2s, border-color .2s, transform .15s; }
 .button:active:not(:disabled) { transform: translateY(1px); }
 .button-primary { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }

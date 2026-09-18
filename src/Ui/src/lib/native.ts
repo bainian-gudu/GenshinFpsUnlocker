@@ -7,7 +7,14 @@ export type NativeState = {
   gamePathStatus: string;
   attachedPid: number;
   currentFps: number;
+  /** Stub 生命周期状态：0 未注入 / 1 解析中 / 2 就绪 / 3 失败 / 4 退出中 */
   stubStatus: number;
+  /** Stub 上报的错误码，0 表示无错误（0xE001 起为自定义错误） */
+  stubLastError: number;
+  /** 反虚化就绪位掩码：bit0 反角色虚化 / bit1 水下马赛克 / bit2 马赛克已生效 */
+  antiBlurState: number;
+  /** UID 隐藏状态位掩码：bit0 已就绪 / bit1 隐藏生效中 */
+  hideUidState: number;
   saveState: 'saving' | 'saved' | 'error';
   isNative: true;
   /** 宿主进程是否已提权（管理员） */
@@ -131,6 +138,9 @@ function normalizeState(raw: any): NativeState {
     attachedPid: Number(raw.attachedPid ?? 0),
     currentFps: Number(raw.currentFps ?? 0),
     stubStatus: Number(raw.stubStatus ?? 0),
+    stubLastError: Number(raw.stubLastError ?? 0),
+    antiBlurState: Number(raw.antiBlurState ?? 0),
+    hideUidState: Number(raw.hideUidState ?? 0),
     saveState: raw.saveState === 'saving' || raw.saveState === 'error' ? raw.saveState : 'saved',
     isNative: true,
     isElevated,

@@ -220,6 +220,7 @@ internal sealed partial class UiBridge : IDisposable
             attachedPid = _service.AttachedPid,
             currentFps = _service.CurrentFpsFeedback,
             stubStatus = (int)_service.StubStatus,
+            stubLastError = _service.LastErrorFeedback,
             antiBlurState = _service.AntiBlurStateFeedback,
             hideUidState = _service.HideUidStateFeedback,
             saveState = save == 1 ? "saving" : save == 2 ? "error" : "saved",

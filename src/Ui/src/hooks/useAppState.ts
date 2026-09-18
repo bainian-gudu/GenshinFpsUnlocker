@@ -43,6 +43,11 @@ export function useAppState() {
   const [statusText, setStatusText] = useState('准备中');
   const [attachedPid, setAttachedPid] = useState(0);
   const [currentFps, setCurrentFps] = useState(0);
+  // Stub 反馈：生命周期状态、错误码与两项注入功能的就绪位掩码（概览页运行状态卡用）
+  const [stubStatus, setStubStatus] = useState(0);
+  const [stubLastError, setStubLastError] = useState(0);
+  const [antiBlurState, setAntiBlurState] = useState(0);
+  const [hideUidState, setHideUidState] = useState(0);
   const [isElevated, setIsElevated] = useState(false);
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [elevating, setElevating] = useState(false);
@@ -74,6 +79,10 @@ export function useAppState() {
     setStatusText(state.statusText || '就绪');
     setAttachedPid(state.attachedPid);
     setCurrentFps(state.currentFps);
+    setStubStatus(state.stubStatus ?? 0);
+    setStubLastError(state.stubLastError ?? 0);
+    setAntiBlurState(state.antiBlurState ?? 0);
+    setHideUidState(state.hideUidState ?? 0);
     setIsElevated(Boolean(state.isElevated));
     setNeedsAdmin(Boolean(state.needsAdminForUnlock));
     setAutostart(state.autostart);
@@ -468,6 +477,7 @@ export function useAppState() {
     native, booting, config, setConfig, page, theme, setTheme, sidebarOpen, setSidebarOpen,
     modal, setModal, saveState, toasts, dismissToast, logs, setLogs, launchState, statusText,
     attachedPid, currentFps, isElevated, needsAdmin, elevating, autostart, version, effectiveEnabled, readiness,
+    stubStatus, stubLastError, antiBlurState, hideUidState,
     importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, beginLaunch,
     restartElevated, startUninstall, handleLaunch, exportConfig, importConfig, exportLogs,
     savePath, browsePath, autoLocatePath,
