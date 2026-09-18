@@ -11,6 +11,11 @@
 //   5) 反角色虚化：Hook 虚化函数，开启时跳过
 //   6) 移除水下马赛克：开启时把马赛克调用的 call 原地 Patch 为 mov eax,0
 //
+// UID 隐藏模块（HideUid.cpp，同源迁移自 Snap.Hutao.Remastered.UnlockerIsland）：
+//   7) 隐藏水印 / 资料页 UID：Hook 游戏写入水印与打开资料页的时机，
+//      在游戏主线程按 UI 层级路径把 UID 对象 setActive(false)；
+//      另挂主线程调度钩子做兜底补隐藏与关闭开关后的恢复
+//
 // 与 Host 通过命名共享内存通信（见 Common/IpcData.h）。
 //
 // 健壮性约定：
@@ -31,6 +36,7 @@
 #include "MinHook.h"
 #include "Scanner.h"
 #include "AntiBlur.h"
+#include "HideUid.h"
 #include "../Common/IpcData.h"
 
 #pragma comment(lib, "Psapi.lib")
@@ -147,7 +153,7 @@ namespace
         g_mapHandle = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kIpcMappingName);
         if (!g_mapHandle)
         {
-            g_mapHandle = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, L"GenshinFpsUnlocker.Shared.v2");
+            g_mapHandle = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, L"GenshinFpsUnlocker.Shared.v3");
         }
         if (!g_mapHandle)
         {
@@ -296,7 +302,11 @@ namespace
         g_lastApplyTick = now;
     }
 
-    /// <summary>一轮工作：写帧率 + 反虚化开关落地。</summary>
+    /// <summary>
+    /// 一轮工作：写帧率 + 反虚化开关落地。
+    /// UID 隐藏不在这里：它的 il2cpp 调用必须在游戏主线程执行，由 HideUid 自己的
+    /// 事件钩子与主线程调度钩子驱动。
+    /// </summary>
     void TickOnce()
     {
         ApplyTargetFps();
@@ -337,13 +347,16 @@ namespace
         g_ipc->Status = IpcStatus::Waiting;
 
         // 游戏模块可能尚未完全加载，重试扫描。
-        // FPS 函数必须解析成功；反虚化特征（游戏版本更新可能失效）只在有限
-        // 次数内尝试，解析不到则跳过该功能，不阻塞帧率解锁。
+        // FPS 函数必须解析成功；反虚化与 UID 隐藏的特征（游戏版本更新可能失效）
+        // 各自独立计数、只在有限次数内尝试，解析不到就跳过该功能，不阻塞帧率解锁。
         bool resolved = false;
         bool antiBlurDone = false;
+        bool hideUidDone = false;
         bool scanAborted = false;
         int antiBlurTries = 0;
+        int hideUidTries = 0;
         constexpr int kAntiBlurMaxTries = 20;  // 约 10s，独立于 FPS 解析的重试计数
+        constexpr int kHideUidMaxTries = 20;   // 同上，UID 隐藏独立计数
         for (int i = 0; i < 120 && g_running.load(std::memory_order_relaxed); ++i)
         {
             // Host 重启（构造期冲 None）或 ResetForNewInject 写 None 都意味着
@@ -358,18 +371,29 @@ namespace
             {
                 resolved = ResolveFpsFunctions();
             }
-            else if (!antiBlurDone)
+            else
             {
-                // 计数独立：旧实现与 FPS 解析共用循环变量，游戏加载慢时
-                // 反虚化会只剩一次尝试机会，表现为「启动慢就没生效」。
-                ++antiBlurTries;
-                if (AntiBlur::Initialize(g_gameModule, g_ipc) || antiBlurTries >= kAntiBlurMaxTries)
+                if (!antiBlurDone)
                 {
-                    antiBlurDone = true;
+                    // 计数独立：旧实现与 FPS 解析共用循环变量，游戏加载慢时
+                    // 反虚化会只剩一次尝试机会，表现为「启动慢就没生效」。
+                    ++antiBlurTries;
+                    if (AntiBlur::Initialize(g_gameModule, g_ipc) || antiBlurTries >= kAntiBlurMaxTries)
+                    {
+                        antiBlurDone = true;
+                    }
+                }
+                if (!hideUidDone)
+                {
+                    ++hideUidTries;
+                    if (HideUid::Initialize(g_gameModule, g_ipc) || hideUidTries >= kHideUidMaxTries)
+                    {
+                        hideUidDone = true;
+                    }
                 }
             }
 
-            if (resolved && antiBlurDone)
+            if (resolved && antiBlurDone && hideUidDone)
             {
                 break;
             }
@@ -381,6 +405,7 @@ namespace
             // 会话重建请求打断扫描：撤回本轮可能已创建的 Patch/Hook（与 worker
             // 的异常收尾同一语义），由外层等待环重新进入会话。
             AntiBlur::Shutdown(g_ipc);
+            HideUid::Shutdown(g_ipc);
             MH_DisableHook(MH_ALL_HOOKS);
             return 0;
         }
@@ -447,6 +472,7 @@ namespace
         }
 
         AntiBlur::Shutdown(g_ipc);
+        HideUid::Shutdown(g_ipc);
         MH_DisableHook(MH_ALL_HOOKS);
         // Error 必须保留给 Host 读取，Exiting 也保留到下次 Host 重置。
         if (g_ipc && g_ipc->Status != IpcStatus::Error && g_ipc->Status != IpcStatus::Exiting)
@@ -511,6 +537,7 @@ namespace
                 // 扫描或启用失败也要撤回本轮可能已创建的 Patch/Hook，
                 // 否则下一次 Host 重试会叠加旧状态。
                 AntiBlur::Shutdown(g_ipc);
+                HideUid::Shutdown(g_ipc);
                 MH_DisableHook(MH_ALL_HOOKS);
             }
             // 重复 LoadLibrary 不会重新执行 DllMain。保留线程并等待 Host 的

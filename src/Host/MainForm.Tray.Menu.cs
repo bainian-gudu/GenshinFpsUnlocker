@@ -84,7 +84,19 @@ internal sealed partial class MainForm
         menu.Items.Add(_trayAutoWatchItem);
         menu.Items.Add(MakeSep());
 
-        // —— 反虚化组（画面效果注入，随游戏进程即时生效；联机/UGC 玩法勿开）——
+        // —— 画面效果注入组（随游戏进程即时生效；联机/UGC 玩法勿开）——
+        _trayHideUidItem = MakeCheckItem(
+            "隐藏 UID",
+            _config.HideUid,
+            "隐藏水印与资料页上的 UID 文本（仅供单机体验）");
+        _trayHideUidItem.CheckedChanged += (_, _) =>
+        {
+            if (_syncingUi) return;
+            _service.SetHideUid(_trayHideUidItem.Checked);
+            AfterTrayConfigChange("隐藏 UID");
+        };
+        menu.Items.Add(_trayHideUidItem);
+
         _trayAntiBlurPerspectiveItem = MakeCheckItem(
             "反角色虚化",
             _config.AntiBlurPerspective,

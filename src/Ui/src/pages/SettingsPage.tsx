@@ -71,7 +71,8 @@ export function SettingsPage({ config, updateConfig, onPath, onExport, onImport,
         <section className="control-panel settings-control settings-antiblur"><div className="panel-heading"><h2><WandSparkles size={18} />画面效果注入</h2></div>
           <ToggleRow title="反角色虚化" description="开启后镜头拉近时，角色不再透明化（虚化效果被跳过）" checked={config.antiBlurPerspective} onChange={(value) => updateConfig('antiBlurPerspective', value)} />
           <ToggleRow title="移除水下马赛克" description="开启后角色入水时，不再显示马赛克虚化效果" checked={config.antiBlurDiveMosaic} onChange={(value) => updateConfig('antiBlurDiveMosaic', value)} />
-          <p className="settings-small-note"><Info size={14} />两项功能随游戏进程注入即时生效。仅供单机体验，联机与千星奇域等玩法中请保持关闭；游戏版本更新后若未生效，请等待特征适配更新。</p>
+          <ToggleRow title="隐藏 UID" description="隐藏游戏水印与资料页上的 UID 文本" checked={config.hideUid} onChange={(value) => updateConfig('hideUid', value)} />
+          <p className="settings-small-note"><Info size={14} />三项功能随游戏进程注入即时生效。仅供单机体验，联机与千星奇域等玩法中请保持关闭；游戏版本更新后若未生效，请等待特征适配更新。</p>
         </section>
         <section className="control-panel settings-path-panel"><div className="panel-heading"><h2><FolderOpen size={18} />游戏安装位置</h2><button className="text-button" onClick={onPath} disabled={busy}>更改路径<ChevronRight size={15} /></button></div><p className="path-display">{config.gamePath || '尚未设置游戏路径'}</p><p className="input-help">请选择游戏本体，而非米哈游启动器。支持国服和国际服客户端。</p></section>
       </>}

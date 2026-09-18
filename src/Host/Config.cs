@@ -35,6 +35,12 @@ internal sealed partial class AppConfig
     public bool AntiBlurDiveMosaic { get; set; } = false;
 
     /// <summary>
+    /// 隐藏 UID 注入功能（同源迁移自 Snap.Hutao.Remastered）：开启后隐藏水印与资料页上的
+    /// UID 文本。默认关闭；联机/UGC 玩法中请勿开启。
+    /// </summary>
+    public bool HideUid { get; set; } = false;
+
+    /// <summary>
     /// 启动时是否最小化到系统托盘。
     /// 默认 false：打开软件显示主窗口；关窗/点最小化仍进托盘后台。
     /// 勾选后：下次启动直接进托盘。

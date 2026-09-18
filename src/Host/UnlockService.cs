@@ -54,6 +54,10 @@ internal sealed partial class UnlockService : IDisposable
 
     /// <summary>Stub 上报的反虚化就绪状态掩码（bit0 虚化 / bit1 马赛克 / bit2 马赛克已生效）。</summary>
     public int AntiBlurStateFeedback => _ipc.Read().AntiBlurState;
+
+    /// <summary>Stub 上报的 UID 隐藏状态掩码（bit0 已就绪 / bit1 隐藏生效中）。</summary>
+    public int HideUidStateFeedback => _ipc.Read().HideUidState;
+
     public AppConfig Config => _config;
 
     /// <summary>
@@ -62,7 +66,7 @@ internal sealed partial class UnlockService : IDisposable
     /// </summary>
     private bool ShouldInject =>
         _config.MasterEnabled && _config.AutoWatch &&
-        (_config.Enabled || _config.AntiBlurPerspective || _config.AntiBlurDiveMosaic);
+        (_config.Enabled || _config.AntiBlurPerspective || _config.AntiBlurDiveMosaic || _config.HideUid);
 
     public UnlockService(AppConfig config)
     {
@@ -142,7 +146,8 @@ internal sealed partial class UnlockService : IDisposable
         }
         _ipc.UpdateHostFields(fps, en != 0,
             featuresActive && _config.AntiBlurPerspective,
-            featuresActive && _config.AntiBlurDiveMosaic);
+            featuresActive && _config.AntiBlurDiveMosaic,
+            featuresActive && _config.HideUid);
         _lastPushedFps = fps;
         _lastPushedEnabled = en;
         _lastIpcPushUtc = now;
@@ -208,6 +213,14 @@ internal sealed partial class UnlockService : IDisposable
     public void SetAntiBlurDiveMosaic(bool enabled)
     {
         _config.AntiBlurDiveMosaic = enabled;
+        _config.TrySave(out _);
+        PushConfigToIpc(force: true);
+    }
+
+    /// <summary>隐藏 UID 注入开关（同源迁移自 Snap.Hutao.Remastered）：保存并推送 IPC。</summary>
+    public void SetHideUid(bool enabled)
+    {
+        _config.HideUid = enabled;
         _config.TrySave(out _);
         PushConfigToIpc(force: true);
     }

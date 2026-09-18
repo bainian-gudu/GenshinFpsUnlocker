@@ -163,7 +163,8 @@ internal sealed partial class UnlockService
                 var activeUnlock = ShouldInject && _config.Enabled;
                 _ipc.ResetForNewInject(_config.TargetFps, activeUnlock,
                     _config.MasterEnabled && _config.AutoWatch && _config.AntiBlurPerspective,
-                    _config.MasterEnabled && _config.AutoWatch && _config.AntiBlurDiveMosaic);
+                    _config.MasterEnabled && _config.AutoWatch && _config.AntiBlurDiveMosaic,
+                    _config.MasterEnabled && _config.AutoWatch && _config.HideUid);
                 _lastPushedFps = _config.TargetFps;
                 _lastPushedEnabled = activeUnlock ? 1 : 0;
                 _lastIpcPushUtc = DateTime.UtcNow;

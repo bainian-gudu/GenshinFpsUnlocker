@@ -14,6 +14,7 @@ internal sealed partial class MainForm
     private ToolStripMenuItem? _trayAutoWatchItem;
     private ToolStripMenuItem? _trayAntiBlurPerspectiveItem;
     private ToolStripMenuItem? _trayAntiBlurDiveMosaicItem;
+    private ToolStripMenuItem? _trayHideUidItem;
     private ToolStripMenuItem? _trayFpsRoot;
     private ContextMenuStrip? _trayMenu;
     private Icon? _trayIconOwned;
@@ -61,9 +62,13 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
-    /// 托盘悬停提示：首行固定产品名（先让人确认「它是谁」），次行一句可读状态。
+    /// 托盘悬停提示：首行固定产品名（先让人确认「它是谁」），次行一句可读状态，
+    /// 第三行是画面注入功能（反虚化 / 水下马赛克 / UID 隐藏）的开关与就绪状态。
     /// 悬停在托盘图标上时必然处于托盘态，原先「| 托盘 / 窗口」字段是纯噪音，删；
     /// PID 对悬停查看无意义，附着态改为展示 Stub 反馈的当前帧率。
+    ///
+    /// 提示总长受 NotifyIcon.Text 限制（63 字符，含换行），因此注入行按「只列已开启
+    /// 的功能 + 附着后带就绪标记」写，最长也留得下。
     /// </summary>
     private string BuildTrayTipText()
     {
@@ -90,8 +95,52 @@ internal sealed partial class MainForm
                         ? $"监视中 · 目标 {_config.TargetFps} FPS"
                         : $"待命中 · 目标 {_config.TargetFps} FPS");
 
-        return Truncate(AppPaths.ProductDisplayName + Environment.NewLine + status, 63);
+        var text = AppPaths.ProductDisplayName + Environment.NewLine + status;
+        var injection = BuildInjectionTipLine(pid);
+        if (injection.Length > 0)
+            text += Environment.NewLine + injection;
+
+        return Truncate(text, 63);
     }
+
+    /// <summary>
+    /// 画面注入功能的一行状态：只列已开启的功能；附着且功能生效时按 Stub 回报的
+    /// 位掩码标注就绪情况（✓ 已就绪 / … 等待适配或尚未生效），未附着时只报配置。
+    /// 总开关或自动监视关闭时注入不会下发，直接报「注入已暂停」。
+    /// </summary>
+    private string BuildInjectionTipLine(int pid)
+    {
+        var anyEnabled = _config.AntiBlurPerspective || _config.AntiBlurDiveMosaic || _config.HideUid;
+        if (!anyEnabled) return string.Empty;
+
+        var active = _config.MasterEnabled && _config.AutoWatch;
+        if (!active) return "注入已暂停";
+
+        var antiBlurMask = 0;
+        var hideUidMask = 0;
+        if (pid > 0)
+        {
+            try
+            {
+                antiBlurMask = _service.AntiBlurStateFeedback;
+                hideUidMask = _service.HideUidStateFeedback;
+            }
+            catch { /* 读共享内存失败时按「未就绪」显示，不打断托盘提示 */ }
+        }
+
+        // 位定义见 src/Common/IpcData.h：AntiBlurState bit0=虚化就绪 / bit1=马赛克就绪，
+        // HideUidState bit0=就绪。
+        var items = new List<string>(3);
+        if (_config.AntiBlurPerspective) items.Add(FormatInjectionItem("反虚化", pid, (antiBlurMask & 1) != 0));
+        if (_config.AntiBlurDiveMosaic) items.Add(FormatInjectionItem("马赛克", pid, (antiBlurMask & 2) != 0));
+        if (_config.HideUid) items.Add(FormatInjectionItem("UID", pid, (hideUidMask & 1) != 0));
+
+        return string.Join(" · ", items);
+    }
+
+    /// <summary>单个注入功能的显示名：未附着不带标记，附着后按就绪情况带 ✓ / …。</summary>
+    private static string FormatInjectionItem(string name, int pid, bool ready)
+        => pid <= 0 ? name : ready ? name + "✓" : name + "…";
 
     /// <summary>
     /// 弹一条 Windows 通知（Win10/11 上即操作中心 Toast）。
@@ -139,6 +188,8 @@ internal sealed partial class MainForm
                     _trayAntiBlurPerspectiveItem.Checked = _config.AntiBlurPerspective;
                 if (_trayAntiBlurDiveMosaicItem is not null)
                     _trayAntiBlurDiveMosaicItem.Checked = _config.AntiBlurDiveMosaic;
+                if (_trayHideUidItem is not null)
+                    _trayHideUidItem.Checked = _config.HideUid;
                 if (_trayFpsRoot is not null)
                 {
                     _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";

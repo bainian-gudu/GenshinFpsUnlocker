@@ -10,7 +10,7 @@
 > - **与米哈游无关**：「原神 / Genshin Impact」及其角色、图标、场景素材的版权归
 >   米哈游 / HoYoverse 所有，本项目未获授权或背书，详见下文「素材与版权」。
 
-自定义目标 FPS · 反角色虚化 / 移除水下马赛克（反虚化注入） · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（标准权限 / 最高权限计划任务，都不弹 UAC）
+自定义目标 FPS · 反角色虚化 / 移除水下马赛克 / 隐藏 UID（画面效果注入） · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（标准权限 / 最高权限计划任务，都不弹 UAC）
 
 界面为 **gpt-6-astra-max** 设计的设计稿一比一实现的 Web UI（WebView2 嵌入）：概览 / 设置 / 日志 / 指南 / 关于；深浅色切换。
 
@@ -303,9 +303,10 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 
 ### 思路参考的项目
 
-- 帧率解锁与反虚化（反角色虚化 / 移除水下马赛克）的特征码与 Hook/Patch 思路参考
+- 帧率解锁与画面效果注入（反角色虚化 / 移除水下马赛克 / 隐藏 UID）的特征码与
+  Hook / 隐藏思路参考
   [DGP Studio 的 Snap.Hutao.Remastered.UnlockerIsland](https://github.com/SnapHutaoRemasteringProject/Snap.Hutao.Remastered.UnlockerIsland)（MIT），
-  已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp`。
+  已改编为特征码自适配扫描并整合进 `src/Stub/AntiBlur.cpp` 与 `src/Stub/HideUid.cpp`。
 - 安装 / 卸载 / 更新器整体方案来自 [YuehaiTeam/kachina-installer](https://github.com/YuehaiTeam/kachina-installer)
   （源码快照见 `installer/kachina/`，版本与来源见 `installer/kachina/UPSTREAM.md`）。
 - 应用图标等图片素材取自 [babalae/better-genshin-impact](https://github.com/babalae/better-genshin-impact)

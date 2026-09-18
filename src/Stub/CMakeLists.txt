@@ -21,6 +21,7 @@ add_library(FpsUnlockerStub SHARED
     Scanner.cpp
     Patch.cpp
     AntiBlur.cpp
+    HideUid.cpp
     FpsUnlockerStub.def
     ${MINHOOK_SOURCES}
 )

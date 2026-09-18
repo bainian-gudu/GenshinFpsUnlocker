@@ -16,6 +16,7 @@ internal enum IpcStatus : int
 /// <summary>
 /// Host ↔ Stub 共享结构体（Pack=8，字段顺序与 IpcData.h 必须一致）。
 /// 协议 v2：新增反虚化开关（Host 写）与就绪状态掩码（Stub 写）。
+/// 协议 v3：新增 UID 隐藏开关与状态；布局变更同时换映射名，避免与旧 Stub 错位读写。
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
 internal struct IpcData
@@ -28,6 +29,8 @@ internal struct IpcData
     public int AntiBlurPerspective;
     public int AntiBlurDiveMosaic;
     public int AntiBlurState;
+    public int HideUid;
+    public int HideUidState;
     public ulong Magic;
 }
 
@@ -42,10 +45,10 @@ internal sealed class IpcSharedMemory : IDisposable
     public const ulong Magic = 0x465053554E4C4B52ul;
 
     /// <summary>全局命名（服务会话/提权场景更稳）。</summary>
-    public const string MappingName = @"Global\GenshinFpsUnlocker.Shared.v2";
+    public const string MappingName = @"Global\GenshinFpsUnlocker.Shared.v3";
 
     /// <summary>本地命名回退（无 Global 权限时）。</summary>
-    public const string MappingNameLocal = @"GenshinFpsUnlocker.Shared.v2";
+    public const string MappingNameLocal = @"GenshinFpsUnlocker.Shared.v3";
 
     private readonly MemoryMappedFile _file;
     private readonly MemoryMappedViewAccessor _accessor;
@@ -66,6 +69,8 @@ internal sealed class IpcSharedMemory : IDisposable
     private static readonly long OffAntiBlurPerspective = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.AntiBlurPerspective));
     private static readonly long OffAntiBlurDiveMosaic = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.AntiBlurDiveMosaic));
     private static readonly long OffAntiBlurState = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.AntiBlurState));
+    private static readonly long OffHideUid = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.HideUid));
+    private static readonly long OffHideUidState = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.HideUidState));
     private static readonly long OffMagic = (long)Marshal.OffsetOf<IpcData>(nameof(IpcData.Magic));
 
     public IpcSharedMemory()
@@ -120,6 +125,8 @@ internal sealed class IpcSharedMemory : IDisposable
                 AntiBlurPerspective = existing.AntiBlurPerspective,
                 AntiBlurDiveMosaic = existing.AntiBlurDiveMosaic,
                 AntiBlurState = 0,
+                HideUid = existing.HideUid,
+                HideUidState = 0,
                 Magic = Magic,
             }
             : new IpcData
@@ -132,6 +139,8 @@ internal sealed class IpcSharedMemory : IDisposable
                 AntiBlurPerspective = 0,
                 AntiBlurDiveMosaic = 0,
                 AntiBlurState = 0,
+                HideUid = 0,
+                HideUidState = 0,
                 Magic = Magic,
             };
         Write(data);
@@ -164,10 +173,12 @@ internal sealed class IpcSharedMemory : IDisposable
     }
 
     /// <summary>
-    /// 仅更新 Host 侧字段（TargetFps / Enabled / 反虚化开关 / Magic），保留 Stub 写入的 Status 等。
+    /// 仅更新 Host 侧字段（TargetFps / Enabled / 反虚化开关 / UID 隐藏开关 / Magic），
+    /// 保留 Stub 写入的 Status 等。
     /// 监视循环应优先调用本方法，避免把 Stub 状态抹成 None。
     /// </summary>
-    public void UpdateHostFields(int targetFps, bool enabled, bool antiBlurPerspective = false, bool antiBlurDiveMosaic = false)
+    public void UpdateHostFields(int targetFps, bool enabled, bool antiBlurPerspective = false,
+        bool antiBlurDiveMosaic = false, bool hideUid = false)
     {
         lock (_sync)
         {
@@ -176,6 +187,7 @@ internal sealed class IpcSharedMemory : IDisposable
             _accessor.Write(OffEnabled, enabled ? 1 : 0);
             _accessor.Write(OffAntiBlurPerspective, antiBlurPerspective ? 1 : 0);
             _accessor.Write(OffAntiBlurDiveMosaic, antiBlurDiveMosaic ? 1 : 0);
+            _accessor.Write(OffHideUid, hideUid ? 1 : 0);
             _accessor.Write(OffMagic, Magic);
         }
     }
@@ -183,7 +195,8 @@ internal sealed class IpcSharedMemory : IDisposable
     /// <summary>
     /// 新一次注入前：清 Stub 状态/错误，写入 Host 目标，保留 Magic。
     /// </summary>
-    public void ResetForNewInject(int targetFps, bool enabled, bool antiBlurPerspective = false, bool antiBlurDiveMosaic = false)
+    public void ResetForNewInject(int targetFps, bool enabled, bool antiBlurPerspective = false,
+        bool antiBlurDiveMosaic = false, bool hideUid = false)
     {
         lock (_sync)
         {
@@ -194,10 +207,12 @@ internal sealed class IpcSharedMemory : IDisposable
             _accessor.Write(OffLastError, 0);
             _accessor.Write(OffCurrentFps, 0);
             _accessor.Write(OffAntiBlurState, 0);
+            _accessor.Write(OffHideUidState, 0);
             _accessor.Write(OffTargetFps, Math.Clamp(targetFps, 1, 540));
             _accessor.Write(OffEnabled, enabled ? 1 : 0);
             _accessor.Write(OffAntiBlurPerspective, antiBlurPerspective ? 1 : 0);
             _accessor.Write(OffAntiBlurDiveMosaic, antiBlurDiveMosaic ? 1 : 0);
+            _accessor.Write(OffHideUid, hideUid ? 1 : 0);
             _accessor.Write(OffMagic, Magic);
         }
     }

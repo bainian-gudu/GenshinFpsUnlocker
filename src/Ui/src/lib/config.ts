@@ -15,6 +15,7 @@ export interface UnlockerConfig {
   autoWatch: boolean;
   antiBlurPerspective: boolean;
   antiBlurDiveMosaic: boolean;
+  hideUid: boolean;
   startMinimized: boolean;
   autoStartWithWindows: boolean;
   autoStartAsAdministrator: boolean;
@@ -45,6 +46,7 @@ export const DEFAULT_CONFIG: UnlockerConfig = {
   autoWatch: true,
   antiBlurPerspective: false,
   antiBlurDiveMosaic: false,
+  hideUid: false,
   startMinimized: false,
   autoStartWithWindows: false,
   autoStartAsAdministrator: false,
@@ -66,6 +68,7 @@ export const CONFIG_LABELS: Record<keyof UnlockerConfig, string> = {
   autoWatch: '自动解锁',
   antiBlurPerspective: '反角色虚化',
   antiBlurDiveMosaic: '移除水下马赛克',
+  hideUid: '隐藏 UID',
   startMinimized: '启动后最小化到托盘',
   autoStartWithWindows: '开机自启动',
   autoStartAsAdministrator: '启动时自动以管理员权限运行',

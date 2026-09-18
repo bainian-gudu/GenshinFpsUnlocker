@@ -30,6 +30,8 @@ internal sealed partial class UiBridge
                 _service.SetAntiBlurPerspective(abp.GetValue<bool>());
             if (p["antiBlurDiveMosaic"] is JsonNode abm)
                 _service.SetAntiBlurDiveMosaic(abm.GetValue<bool>());
+            if (p["hideUid"] is JsonNode uid)
+                _service.SetHideUid(uid.GetValue<bool>());
             // 两个自启开关可能落在同一次 patch 里：这里只改配置，收尾时统一同步一次，
             // 免得先按普通权限登记、再改成管理员，中途出现两条自启项并存的窗口。
             if (p["autoStartWithWindows"] is JsonNode auto)
@@ -89,6 +91,7 @@ internal sealed partial class UiBridge
         SetBool(root, "autoWatch", v => _config.AutoWatch = v);
         SetBool(root, "antiBlurPerspective", v => _config.AntiBlurPerspective = v);
         SetBool(root, "antiBlurDiveMosaic", v => _config.AntiBlurDiveMosaic = v);
+        SetBool(root, "hideUid", v => _config.HideUid = v);
         SetBool(root, "startMinimized", v => _config.StartMinimized = v);
         SetBool(root, "autoStartWithWindows", v => _config.AutoStartWithWindows = v);
         SetBool(root, "autoStartAsAdministrator", v => _config.AutoStartAsAdministrator = v);
@@ -132,6 +135,7 @@ internal sealed partial class UiBridge
         to.Enabled = from.Enabled;
         to.AntiBlurPerspective = from.AntiBlurPerspective;
         to.AntiBlurDiveMosaic = from.AntiBlurDiveMosaic;
+        to.HideUid = from.HideUid;
         to.MasterEnabled = from.MasterEnabled;
         to.AutoWatch = from.AutoWatch;
         to.StartMinimized = from.StartMinimized;
@@ -169,6 +173,7 @@ internal sealed partial class UiBridge
         autoWatch = _config.AutoWatch,
         antiBlurPerspective = _config.AntiBlurPerspective,
         antiBlurDiveMosaic = _config.AntiBlurDiveMosaic,
+        hideUid = _config.HideUid,
         startMinimized = _config.StartMinimized,
         autoStartWithWindows = _config.AutoStartWithWindows,
         autoStartAsAdministrator = _config.AutoStartAsAdministrator,
