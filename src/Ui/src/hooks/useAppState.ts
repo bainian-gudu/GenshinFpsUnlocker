@@ -117,11 +117,15 @@ export function useAppState() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // WebView2 的 :focus-visible 在程序化聚焦时不够稳定，改用显式键盘焦点标记：
-  // 只有按 Tab（或标签页方向键）后显示外框，鼠标点击、失焦和隐藏窗口都清掉。
+  // 主界面不参与 Tab 焦点遍历：按下 Tab 直接吞掉，焦点不移动、界面没有任何反应。
+  // 键盘焦点标记（focus-visible 外框）改由标签页方向键这类显式键盘操作触发；
+  // 鼠标点击、失焦和隐藏窗口仍会清掉标记。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Tab') markKeyboardFocus();
+      if (event.key !== 'Tab') return;
+      // 捕获阶段就拦下：既不移动焦点，也不让对话框 / 抽屉的 Tab 圈定逻辑收到这次按键
+      event.preventDefault();
+      event.stopPropagation();
     };
     const onPointerDown = () => clearKeyboardFocus();
     const onVisibilityChange = () => {
@@ -133,11 +137,9 @@ export function useAppState() {
       clearKeyboardFocus();
       clearTabFocus();
     };
-    // 焦点经宿主边界回绕重新进入文档时（Tab 循环一整圈后），把焦点送回页面的
-    // 那次按键页面收不到 keydown，keyboard-focus 标记补不上，导致回绕后的第一
-    // 停靠点（游戏概览）有焦点却无框。重获焦点时若活动元素仍命中 :focus-visible
-    // 即键盘模态 → 补打标记；鼠标点击聚焦的 button/a 不匹配 :focus-visible，不误标；
-    // 文本类输入控件点击时也命中 :focus-visible，显式排除，保持与快捷键判定一致。
+    // 重获焦点时若活动元素仍命中 :focus-visible（说明这次聚焦来自键盘，例如标签页
+    // 方向键），补回 keyboard-focus 标记；鼠标点击聚焦的 button/a 不匹配
+    // :focus-visible，不会误标；文本类输入控件点击时也命中 :focus-visible，显式排除。
     const onWindowFocus = () => {
       const el = document.activeElement;
       if (el instanceof HTMLElement
