@@ -2231,10 +2231,11 @@ async function dialog_error(message: string, title = '出错了'): Promise<void>
 async function confirm(message: string, title = '提示'): Promise<boolean> {
   return await invoke<boolean>('confirm_dialog', { message, title });
 }
-/// 静默结束一批进程：不弹询问框、不弹报错框，只写日志。
+/// 静默结束一批进程：不弹询问框，只写日志；结束失败时交互式运行弹一次报错。
 ///
-/// 返回是否发过结束请求且没抛错：调用方据此决定要不要等句柄释放；
-/// 结束失败一律不拦后续流程 —— 占用中的文件会在各自的失败清单里记日志。
+/// 返回是否结束成功：调用方据此决定要不要等句柄释放；失败不拦后续流程 ——
+/// 占用中的文件会在各自的失败清单里记日志。静默 / 非交互运行（控制面板静默卸载、
+/// 自动化调用）下连报错都不弹，避免卡住无人值守流程。
 async function killProcessesSilently(
   runningExes: [number, string][],
   scene: string,
@@ -2256,6 +2257,13 @@ async function killProcessesSilently(
     return true;
   } catch (e) {
     warn(`${scene}结束进程失败:`, e);
+    if (
+      !INSTALLER_CONFIG.args.silent &&
+      !INSTALLER_CONFIG.args.non_interactive
+    ) {
+      const detail = e instanceof Error ? e.message : String(e);
+      await dialog_error(`${scene}结束进程失败: ${detail}`);
+    }
     return false;
   }
 }
