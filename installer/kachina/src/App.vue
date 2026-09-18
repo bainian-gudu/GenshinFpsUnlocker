@@ -2253,25 +2253,23 @@ async function dialog_error(message: string, title = '出错了'): Promise<void>
 async function confirm(message: string, title = '提示'): Promise<boolean> {
   return await invoke<boolean>('confirm_dialog', { message, title });
 }
-/// 卸载前结束正在运行的主程序。
+/// 卸载前结束正在运行的主程序：静默处理，只写日志。
 ///
 /// 进程活着的时候，它自己的 exe、`logs\` 与 WebView2 的界面缓存
 /// （`%LOCALAPPDATA%\GenshinFpsUnlocker\EBWebView`）都被占用，删除会失败 ——
 /// 上游只在安装流程（`installPrepare`）里做了「检测 → 询问 → 结束进程」，
 /// 卸载流程没有，于是从「设置 → 应用」或开始菜单发起卸载时（主程序常驻托盘）
-/// 必然留下残留。
-async function killRunningAppForUninstall(): Promise<boolean> {
+/// 必然留下残留。卸载是用户已经确认过的动作，这里不再二次弹窗：
+/// 检测到就静默结束进程，结束不掉也只记日志，后面照旧尽力删除。
+async function killRunningAppForUninstall(): Promise<void> {
   const runningExes =
     (await ipcFindProcessByName(PROJECT_CONFIG.exeName).catch(log)) || [];
-  if (runningExes.length === 0) return true;
-  const ok =
-    INSTALLER_CONFIG.args.non_interactive ||
-    INSTALLER_CONFIG.args.silent ||
-    (await confirm(
-      `检测到${PROJECT_CONFIG.appName}正在运行。不结束进程的话，程序文件与用户数据（配置、日志、界面缓存）会因为被占用而删不掉，卸载后会留下残留。是否结束进程并继续卸载？`,
-      '提示',
-    ));
-  if (!ok) return false;
+  if (runningExes.length === 0) return;
+  log(
+    `卸载：检测到 ${runningExes.length} 个 ${PROJECT_CONFIG.exeName} 进程（PID ${runningExes
+      .map((e) => e[0])
+      .join(', ')}），静默结束`,
+  );
   try {
     try {
       await Promise.all(
@@ -2283,19 +2281,15 @@ async function killRunningAppForUninstall(): Promise<boolean> {
   } catch (e) {
     // 结束不掉不拦卸载：后面的删除都是尽力而为，删不掉的会记日志
     warn('结束进程失败:', e);
-    return true;
+    return;
   }
   // 等句柄释放：WebView2 的缓存文件在进程退出后仍会被短暂占用
   await new Promise((resolve) => setTimeout(resolve, 1000));
-  return true;
 }
 
 async function uninstall() {
   step.value = 5;
-  if (!(await killRunningAppForUninstall())) {
-    step.value = 1;
-    return;
-  }
+  await killRunningAppForUninstall();
   try {
     const uninstallConfig = (await invoke(
       'read_uninstall_metadata',
