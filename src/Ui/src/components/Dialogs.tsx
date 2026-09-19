@@ -1,7 +1,7 @@
 /** 应用对话框：游戏路径设置、用户协议与安全声明、启动确认与通用危险操作确认。 */
 import { ArrowUpRight, Check, CircleHelp, FileCode2, FolderOpen, Info, Monitor, Play, ScanLine, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { APP_NAME, GAME_META, cleanPath, gamePathHint, isValidGamePath, PROJECT_URL } from '../lib/config';
+import { GAME_META, THIRD_PARTY_DISCLAIMER, cleanPath, gamePathHint, isValidGamePath, PROJECT_URL } from '../lib/config';
 import type { GameId, UnlockerConfig } from '../lib/config';
 import { nativeInvoke } from '../lib/native';
 import { Checkbox, Modal } from './ui';
@@ -66,7 +66,7 @@ function SafetyContent({ fullText }: { fullText?: string }) {
   }
   return (
     <div className="safety-content">
-      <p>{APP_NAME} 是个人自用的第三方开源工具，代码与文档主要由 AI 生成；与米哈游 / HoYoverse 无关联，也未获得官方授权。「原神」「崩坏：星穹铁道」及其角色、图标、场景素材版权均归米哈游所有。</p>
+      <p>{THIRD_PARTY_DISCLAIMER}</p>
       <div className="safety-points">
         <div><TriangleAlert size={17} /><span><strong>使用风险由你决定</strong><p>桌面版通过向游戏进程注入模块调整帧率，可能违反游戏服务条款。无法保证不会触发反作弊或账号限制。</p></span></div>
         <div><Monitor size={17} /><span><strong>先关闭垂直同步</strong><p>请在游戏的「设置 → 图像」中关闭垂直同步（V-Sync），并根据显示器刷新率和设备性能选择帧率。</p></span></div>
