@@ -3,20 +3,20 @@
     {
       "id": "github",
       "name": "GitHub",
-      "uri": "https://github.com/bainian-gudu/GenshinFpsUnlocker/releases/download/v${version}/GenshinFpsUnlocker.Install.${version}.exe"
+      "uri": "https://github.com/bainian-gudu/HoYoEnhance/releases/download/v${version}/GenshinFpsUnlocker.Install.${version}.exe"
     }
   ],
   "appName": "GenshinFpsUnlocker",
-  "shortcutName": "原神帧率解锁",
-  "publisher": "GenshinFpsUnlocker",
+  "shortcutName": "HoYoEnhance",
+  "publisher": "HoYoEnhance",
   "regName": "GenshinFpsUnlocker",
   "exeName": "GenshinFpsUnlocker.exe",
   "uninstallName": "GenshinFpsUnlocker.uninst.exe",
   "updaterName": "GenshinFpsUnlocker.update.exe",
   "programFilesPath": "GenshinFpsUnlocker",
-  "title": "原神帧率解锁",
-  "description": "自定义 FPS · 后台注入 · 托盘设置",
-  "windowTitle": "原神帧率解锁 安装程序",
+  "title": "HoYoEnhance",
+  "description": "原神 / 崩坏：星穹铁道 · 自定义 FPS · 后台注入 · 托盘设置",
+  "windowTitle": "HoYoEnhance 安装程序",
   "ignoreFolderPath": [],
   "userDataPath": [
     "%LOCALAPPDATA%/GenshinFpsUnlocker",
@@ -35,7 +35,11 @@
     "GenshinFpsUnlocker.AutoStart"
   ],
   "extraUninstallLnkNames": [
+    "HoYoEnhance.lnk",
+    "Uninstall HoYoEnhance.lnk",
+    "卸载HoYoEnhance.lnk",
     "原神帧率解锁.lnk",
+    "卸载 HoYoEnhance.lnk",
     "GenshinFpsUnlocker.lnk",
     "GenshinFpsUnlocker.exe.lnk",
     "Genshin FPS Unlocker.lnk"

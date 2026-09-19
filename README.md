@@ -1,4 +1,4 @@
-# 原神帧率解锁 (GenshinFpsUnlocker)
+# HoYoEnhance
 
 > **项目性质（请先读这一段）**
 >
@@ -7,12 +7,16 @@
 > - **AI 辅助开发**：部分代码、界面和文档使用 AI 辅助生成与整理，由作者负责需求确认、
 >   结果验收和风险承担。**UI 使用 gpt-6-astra-max 设计**：界面设计稿由该模型出稿，
 >   代码按稿 1:1 实现。**项目未经独立安全审计，请不要将其视为生产级软件。**
-> - **与米哈游无关**：「原神 / Genshin Impact」及其角色、图标、场景素材的版权归
->   米哈游 / HoYoverse 所有，本项目未获授权或背书，详见下文「素材与版权」。
+> - **与米哈游无关**：「原神 / Genshin Impact」「崩坏：星穹铁道 / Honkai: Star Rail」
+>   及其角色、图标、场景素材的版权归米哈游 / HoYoverse 所有，本项目未获授权或背书，
+>   详见下文「素材与版权」。
 
-自定义目标 FPS · 反角色虚化 / 移除水下马赛克 / 隐藏 UID（画面效果注入） · 检测游戏启动后后台注入 · 托盘设置 · 开机自启（标准权限 / 最高权限计划任务，都不弹 UAC）
+同时支持《原神》与《崩坏：星穹铁道》，两款游戏各自独立配置：自定义目标 FPS、反角色虚化、
+移除水下马赛克、隐藏 UID（原神画面效果注入）；星铁走注册表解锁 120 帧，并提供解除角色虚化
+与隐藏 UID 水印。检测游戏启动后自动应用 · 托盘设置 · 开机自启（标准权限 / 最高权限计划任务，都不弹 UAC）
 
-界面为 **gpt-6-astra-max** 设计的设计稿一比一实现的 Web UI（WebView2 嵌入）：概览 / 设置 / 日志 / 指南 / 关于；深浅色切换。
+界面为 **gpt-6-astra-max** 设计的设计稿一比一实现的 Web UI（WebView2 嵌入）：
+游戏概览 / 游戏设置 / 使用指南 / 日志 / 关于；深浅色切换。
 
 关闭或最小化窗口会**驻留系统托盘**（与「启动后最小化」一致）；托盘菜单文案与快捷设置对齐，左键恢复主窗口。
 右键菜单为自绘：文字在整行内水平居中、√ 固定在左侧勾选槽内，弹出窗口四角为圆边
@@ -33,7 +37,7 @@
 
 1. 从 Releases 下载 `GenshinFpsUnlocker.Install.<版本>.exe`，运行安装器并选择安装目录。
 2. 首次启动时按提示安装缺少的 .NET Desktop Runtime、VC++ 或 WebView2 运行库。
-3. 在「设置」中启用帧率解锁并选择目标 FPS；启动游戏后保持程序运行即可注入。
+3. 在「游戏设置」中启用帧率解锁并选择目标 FPS（星铁为注册表 120 帧）；启动游戏后保持程序运行即可自动应用。
 4. 关闭或最小化窗口会进入系统托盘，左键托盘图标可恢复窗口。
 
 安装器会创建开始菜单快捷方式、可选的桌面快捷方式和卸载项。卸载时可选择是否同时删除
@@ -56,6 +60,10 @@
 
 默认构建主程序和安装器。安装器由项目内 Kachina 源码构建出的 `kachina-builder.exe`
 生成，打包代码集中在 [`installer/`](installer/)。
+
+> 说明：为兼容老用户升级与卸载，安装目录、可执行文件名、注册表键与开机自启任务名仍沿用
+> `GenshinFpsUnlocker` 内部标识；快捷方式显示名、界面、窗口标题与文档品牌统一为
+> **HoYoEnhance**，历史快捷方式在启动或卸载时自动清理。
 
 ### 常用命令
 
@@ -139,7 +147,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 - 程序内：设置页「高级设置 → 卸载 → 卸载本软件」，或关于页底部的「卸载本软件」
   （弹窗确认后拉起 `uninst.exe` 并退出主程序；便携版没有 `uninst.exe`，会提示直接删目录）
 - 安装目录下的 **`GenshinFpsUnlocker.uninst.exe`**
-- 开始菜单「原神帧率解锁」文件夹里的「卸载 原神帧率解锁」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
+- 开始菜单「GenshinFpsUnlocker」文件夹里的「Uninstall HoYoEnhance」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
 - Windows「设置 → 应用 → 安装的应用」/ 控制面板「应用和功能」（Kachina 写的 ARP 卸载项）
 
 卸载时会一并处理：
@@ -149,7 +157,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
   用户**，外加 `%TEMP%` 里安装期的残留（按固定文件名白名单）。**不勾选则一个数据目录都不碰**，
   只删快捷方式与开始菜单里的产品文件夹；重装后可沿用原设置。
 - 主程序还在运行时（常驻托盘很常见）会先询问并结束进程，否则文件被占用删不掉。
-- 开机自启项与快捷方式（含改名后的 `原神帧率解锁.lnk`）按配置一并删除，**不需要先手动关自启动**：
+- 开机自启项与快捷方式（含 `HoYoEnhance.lnk` 与历史名 `原神帧率解锁.lnk`）按配置一并删除，**不需要先手动关自启动**：
   普通权限自启是 `HKCU\...\Run` 下的值，管理员自启是任务计划程序里的
   `GenshinFpsUnlocker.AutoStart`（配置项 `extraUninstallScheduledTasks`）。
 - 所有「按配置删除」的通道都有安全阀（共享注册表容器不整棵删、路径必须绝对且不在系统目录内、
@@ -327,7 +335,7 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 | `installer/kachina/src-tauri/icons/icon.ico` | 安装器 / 卸载器 exe 图标 | 上游 kachina-installer 自带（与 tag `0.5.1` 一致）；该文件本身又与 BetterGI `Build/micasetup/FaviconSetup.ico` 同字节 | 同上 |
 | `installer/kachina/src/left.webp` | 安装器左侧立绘：绮良良同款立绘 | 上游 kachina-installer 自带（与 tag `0.5.1` 逐字节一致，未改动） | 上游仓库素材（上游未提供 LICENSE） |
 | `src/Ui/public/images/teyvat-landscape.webp` | 概览页 / 指南页的璃月风格山水横幅 | **gpt-6-astra-max 生成的原神风格插画**（个人自用前提下生成，非官方素材），转 WebP | 风格致敬《原神》；场景本身非米哈游素材 |
-| `src/Ui/public/images/starrail-icon.webp` | 《崩坏：星穹铁道》游戏图标（游戏库与顶栏切换器用） | 用户提供素材，转 WebP | © 米哈游 / HoYoverse |
+| `src/Ui/public/images/starrail-icon.webp` | 《崩坏：星穹铁道》游戏图标（游戏库与顶栏切换器用） | 米哈游官方素材，转 WebP | © 米哈游 / HoYoverse |
 | `src/Ui/public/favicon.svg` | 星芒形单色 logo（纯几何路径，304 字节） | 本项目手写 SVG（矢量，不转位图） | 本项目（MIT） |
 
 > 注 0：仓库里的位图素材统一为 **WebP**（`src/Ui/public/images/*.webp`、
@@ -340,13 +348,14 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 > 上游 kachina 快照或 BetterGI 仓库中的某个文件**逐字节相同**（核对方式：`md5sum`，
 > 路径见上表「来源」列）。BetterGI 以 **GPL-3.0** 发布，这些素材**不随本项目的
 > MIT 许可再授权**；升级上游 kachina 时按 `installer/kachina/UPSTREAM.md` 一起更新。
-> 注 2：凡涉及《原神》角色、官方图标或美术风格的素材，角色与形象的版权均归米哈游。
-> 若任何一张图的权利人提出异议，将从仓库中移除并替换。
+> 注 2：凡涉及《原神》《崩坏：星穹铁道》角色、官方图标或美术风格的素材，角色与形象的
+> 版权均归米哈游。若任何一张图的权利人提出异议，将从仓库中移除并替换。
 
 ### 商标与作品归属（米哈游）
 
-「原神」「Genshin Impact」「派蒙」「绮良良」等名称、角色形象、游戏内场景与官方图标，
-版权均归**上海米哈游网络科技股份有限公司 / miHoYo / HoYoverse（COGNOSPHERE PTE. LTD.）**所有。
+「原神」「Genshin Impact」「派蒙」「绮良良」「崩坏：星穹铁道」「Honkai: Star Rail」
+「Star Rail」等名称、角色形象、游戏内场景与官方图标，版权均归
+**上海米哈游网络科技股份有限公司 / miHoYo / HoYoverse（COGNOSPHERE PTE. LTD.）**所有。
 本项目是独立第三方工具，与米哈游**无任何关联**，未获得其授权、赞助或背书；
 上述素材仅随本自用项目保存与展示，不用于任何商业目的。
 

@@ -38,7 +38,7 @@ param(
     [string]$DistDir = "",
     [string]$OutDir = "",
     [string]$Version = "",
-    [string]$RepoId = "bainian-gudu/GenshinFpsUnlocker",
+    [string]$RepoId = "bainian-gudu/HoYoEnhance",
     [int]$Jobs = 6,
     [switch]$SkipKachinaBuild,
     [switch]$ForceKachinaBuild

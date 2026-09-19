@@ -325,8 +325,8 @@ internal static class Program
         }
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
 
-        // 只对 Kachina 安装副本维护开始菜单快捷方式；桌面快捷方式由安装器一次性创建，
-        // 宿主启动时不再扫描、创建或删除桌面图标。
+        // 只对 Kachina 安装副本维护快捷方式：桌面新快捷方式由安装器一次性创建，
+        // 宿主只清理历史旧名（校验目标指向本程序），不创建或改动其他桌面图标。
         var isInstalledCopy =
             PathUtil.ExistsFile(AppPaths.UninstExePath)
             || AppPaths.IsInstalledUnderProgramFiles()
@@ -336,6 +336,7 @@ internal static class Program
         {
             try
             {
+                ShortcutHelper.CleanupLegacyDesktopShortcuts();
                 ShortcutHelper.CleanupDuplicateShortcuts();
                 ShortcutHelper.CreateStartMenuShortcuts(AppPaths.ExePath, AppPaths.ExeDirectory);
             }

@@ -17,11 +17,8 @@ internal static class AppPaths
     /// <summary>面向用户的显示名（品牌名，托盘提示、快捷方式、通知都用它）。</summary>
     public const string ProductDisplayName = "HoYoEnhance";
 
-    /// <summary>中文副名（窗口标题用）。</summary>
-    public const string ProductDisplayNameCn = "米游增强器";
-
-    /// <summary>窗口标题：品牌名 + 中文副名。</summary>
-    public const string ProductTitle = ProductDisplayName + " · " + ProductDisplayNameCn;
+    /// <summary>窗口标题。</summary>
+    public const string ProductTitle = ProductDisplayName;
 
     /// <summary>当前运行中可执行文件所在目录（规范化）。</summary>
     public static string ExeDirectory

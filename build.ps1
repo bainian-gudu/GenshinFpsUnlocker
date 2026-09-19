@@ -1,4 +1,4 @@
-# 原神帧率解锁 — 构建脚本
+# HoYoEnhance — 构建脚本
 # 依赖策略：
 #   - 应用 DLL / Stub（静态 CRT + 内嵌 MinHook）等 → 打进安装载荷（自带）
 #   - 无 Node / Python 等语言运行时依赖

@@ -79,7 +79,7 @@ kachina-builder.exe pack -c installer\kachina.config.json -o <app>\GenshinFpsUnl
 
 # 2) 生成 metadata + 分块 hashed 目录
 kachina-builder.exe gen -j 6 -i GenshinFpsUnlocker -m metadata.json -o hashed `
-    -r bainian-gudu/GenshinFpsUnlocker -t <ver> -u .\GenshinFpsUnlocker\GenshinFpsUnlocker.update.exe
+    -r bainian-gudu/HoYoEnhance -t <ver> -u .\GenshinFpsUnlocker\GenshinFpsUnlocker.update.exe
 
 # 3) 离线安装器
 kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d hashed `
@@ -105,7 +105,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 
 | 事项 | 归属 | 说明 |
 | --- | --- | --- |
-| 快捷方式的**中文显示名** | `src/Host/ShortcutHelper.cs` | Kachina 建的是 `GenshinFpsUnlocker.lnk`（英文 `appName`），宿主每次启动把它规范成 `原神帧率解锁.lnk` 并清掉英文重复项；改名后上游卸载器认不出这个文件，靠 `extraUninstallLnkNames` 补删（见下） |
+| 快捷方式的**显示名** | `src/Host/ShortcutHelper.cs` | Kachina 按 `shortcutName` 建 `HoYoEnhance.lnk`（桌面 + 开始菜单），宿主每次启动统一主项为 `HoYoEnhance.lnk`、卸载项为 `Uninstall HoYoEnhance.lnk`，并清掉内部名 / 历史中文名重复项；上游卸载器认不出的历史名靠 `extraUninstallLnkNames` 补删（见下） |
 | 开机自启 | `src/Host/Autostart.cs` | 按配置项「开机自启动」+「启动时自动以管理员权限运行」同步，两种登记方式二选一：普通权限写 `HKCU\...\Run`，管理员权限登记任务计划程序里的 `GenshinFpsUnlocker.AutoStart`（`RunLevel=HighestAvailable`，登录不弹 UAC）。卸载时分别由 `kachina.config.json` 的 `extraUninstallRegistry` 与 `extraUninstallScheduledTasks` 交给卸载器回收（见下），不需要用户先手动关闭 |
 
 ## 本项目给 Kachina 加 / 改的配置项
@@ -162,7 +162,11 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 
 ```json
 "extraUninstallLnkNames": [
+  "HoYoEnhance.lnk",
+  "Uninstall HoYoEnhance.lnk",
+  "卸载HoYoEnhance.lnk",
   "原神帧率解锁.lnk",
+  "卸载 HoYoEnhance.lnk",
   "GenshinFpsUnlocker.lnk",
   "GenshinFpsUnlocker.exe.lnk",
   "Genshin FPS Unlocker.lnk"

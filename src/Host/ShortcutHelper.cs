@@ -6,14 +6,14 @@ namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
 /// 开始菜单快捷方式。
-/// 统一显示名为 <see cref="AppPaths.ProductDisplayName"/>（中文），并清理 Kachina 等
-/// 以英文 <see cref="AppPaths.ProductName"/> 创建的重复项，避免「一个英文无图标 + 一个中文有图标」。
+/// 统一显示名为 <see cref="AppPaths.ProductDisplayName"/>，并清理 Kachina 等
+/// 以内部名 <see cref="AppPaths.ProductName"/> 或历史中文名创建的重复项。
 /// </summary>
 internal static class ShortcutHelper
 {
     /// <summary>
-    /// 开始菜单：仅「原神帧率解锁」主项 + 卸载。
-    /// 文件夹名仍用 ProductName（与安装目录/注册表一致）；.lnk 文件名为中文显示名。
+    /// 开始菜单：仅 HoYoEnhance 主项 + 卸载。
+    /// 文件夹名仍用 ProductName（与安装目录/注册表一致）；.lnk 文件名用英文显示名。
     /// 位置策略：公共（所有用户）开始菜单若已有本产品目录即为规范位置——
     /// 即使当前进程（标准用户）无写权限，也不在用户开始菜单再建一份，
     /// 避免开始菜单出现两个一模一样条目。
@@ -36,11 +36,14 @@ internal static class ShortcutHelper
 
         Directory.CreateDirectory(dir);
 
-        // 清同目录下英文主快捷方式 / 错误命名
+        // 清同目录下内部名 / 历史中文名 / 错误命名
         TryDelete(Path.Combine(dir, AppPaths.ProductName + ".lnk"));
         TryDelete(Path.Combine(dir, AppPaths.ProductName + ".exe.lnk"));
         TryDelete(Path.Combine(dir, "卸载" + AppPaths.ProductName + ".lnk"));
         TryDelete(Path.Combine(dir, "卸载 " + AppPaths.ProductName + ".lnk"));
+        TryDelete(Path.Combine(dir, "原神帧率解锁.lnk"));
+        TryDelete(Path.Combine(dir, "卸载 原神帧率解锁.lnk"));
+        TryDelete(Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk"));
         TryDelete(Path.Combine(dir, "打开日志目录.lnk"));
 
         var icon = ResolveIconPath(exePath, workDir);
@@ -62,7 +65,7 @@ internal static class ShortcutHelper
             uninstExe = File.Exists(legacy) ? legacy : null;
         }
 
-        var uninstLnk = Path.Combine(dir, "卸载 " + AppPaths.ProductDisplayName + ".lnk");
+        var uninstLnk = Path.Combine(dir, "Uninstall " + AppPaths.ProductDisplayName + ".lnk");
         if (uninstExe is not null)
         {
             CreateShortcut(
@@ -70,7 +73,7 @@ internal static class ShortcutHelper
                 uninstExe,
                 arguments: null,
                 workDir,
-                description: "卸载 " + AppPaths.ProductDisplayName,
+                description: "Uninstall " + AppPaths.ProductDisplayName,
                 iconPath: uninstExe);
         }
         else
@@ -81,7 +84,7 @@ internal static class ShortcutHelper
     }
 
     /// <summary>
-    /// 清理开始菜单中指向本 exe 的重复项，以及英文命名的 Kachina 默认快捷方式。
+    /// 清理开始菜单中指向本 exe 的重复项，以及内部名 / 历史命名的快捷方式。
     /// </summary>
     public static void CleanupDuplicateShortcuts(string? exePath = null)
     {
@@ -102,24 +105,62 @@ internal static class ShortcutHelper
                 foreach (var lnk in Directory.EnumerateFiles(dir, "*.lnk"))
                 {
                     var leaf = Path.GetFileName(lnk);
-                    // 保留规范中文名
+                    // 保留规范名（主项与卸载项）
                     if (leaf.Equals(AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    if (leaf.Equals("卸载 " + AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
+                    if (leaf.Equals("Uninstall " + AppPaths.ProductDisplayName + ".lnk", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    // 英文主项 / 旧卸载 / 日志
+                    // 内部名 / 历史中文名 / 旧卸载 / 日志
                     if (leaf.Equals(AppPaths.ProductName + ".lnk", StringComparison.OrdinalIgnoreCase)
+                        || leaf.Equals("原神帧率解锁.lnk", StringComparison.OrdinalIgnoreCase)
                         || leaf.StartsWith("卸载", StringComparison.OrdinalIgnoreCase)
                         || leaf.Contains("日志", StringComparison.Ordinal)
                         || ShortcutTargetsExe(lnk, exeFull))
                     {
-                        // 卸载项若是英文也删，后面会重建中文卸载
+                        // 旧卸载项也删，后面按英文名重建
                         TryDelete(lnk);
                         AppLog.Info("移除开始菜单重复项: " + leaf);
                     }
                 }
             }
             catch (Exception ex) { AppLog.Debug("scan start menu lnk: " + ex.Message); }
+        }
+    }
+
+    /// <summary>
+    /// 清理桌面上的历史快捷方式（旧中文名 / 内部名）。
+    /// 只删除文件名命中历史名单、且目标确实是本程序 exe 的 <c>.lnk</c>，不碰其他桌面文件。
+    /// </summary>
+    public static void CleanupLegacyDesktopShortcuts(string? exePath = null)
+    {
+        exePath ??= AppPaths.ExePath;
+        var exeFull = PathUtil.Normalize(exePath);
+        var legacyNames = new[]
+        {
+            "原神帧率解锁.lnk",
+            "GenshinFpsUnlocker.lnk",
+            "GenshinFpsUnlocker.exe.lnk",
+            "Genshin FPS Unlocker.lnk",
+        };
+
+        foreach (var dir in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                     Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
+                 })
+        {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+            foreach (var name in legacyNames)
+            {
+                var lnk = Path.Combine(dir, name);
+                try
+                {
+                    if (!File.Exists(lnk) || !ShortcutTargetsExe(lnk, exeFull)) continue;
+                    File.Delete(lnk);
+                    AppLog.Info("移除桌面历史快捷方式: " + name);
+                }
+                catch (Exception ex) { AppLog.Debug("delete desktop lnk " + name + ": " + ex.Message); }
+            }
         }
     }
 
@@ -181,7 +222,7 @@ internal static class ShortcutHelper
             : common;
     }
 
-    /// <summary>清理「另一侧」开始菜单目录（历史双写 / 英文命名残留）。</summary>
+    /// <summary>清理「另一侧」开始菜单目录（历史双写 / 内部名与历史名残留）。</summary>
     private static void CleanupOtherStartMenuDir(string? dir)
     {
         if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
@@ -190,7 +231,10 @@ internal static class ShortcutHelper
                      AppPaths.ProductName + ".lnk",
                      AppPaths.ProductName + ".exe.lnk",
                      AppPaths.ProductDisplayName + ".lnk",
+                     "Uninstall " + AppPaths.ProductDisplayName + ".lnk",
                      "卸载 " + AppPaths.ProductDisplayName + ".lnk",
+                     "原神帧率解锁.lnk",
+                     "卸载 原神帧率解锁.lnk",
                      "打开日志目录.lnk",
                  })
         {

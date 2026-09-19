@@ -1,4 +1,4 @@
-export const PROJECT_URL = 'https://github.com/bainian-gudu/GenshinFpsUnlocker';
+export const PROJECT_URL = 'https://github.com/bainian-gudu/HoYoEnhance';
 /**
  * 应用名称：品牌区、窗口标题、关于页与安全声明共用这几个常量，改名只动这里。
  * 现在同时支持原神与崩坏：星穹铁道，所以不再沿用只带一款游戏的名字。
@@ -7,7 +7,6 @@ export const BRAND_NAME = 'HoYoEnhance';
 export const BRAND_SUB = 'FPS Unlocker';
 /** 窗口标题、主视觉标题与日志里显示的产品名。 */
 export const APP_NAME = BRAND_NAME;
-export const APP_NAME_CN = '米游增强器';
 /** 配置存储键（v2：每个游戏一份 games[game] 档案）。旧键只用于一次性迁移读取。 */
 export const STORAGE_KEY = 'genshin-fps-unlocker.config.v2';
 export const LEGACY_STORAGE_KEY = 'genshin-fps-unlocker.config.v1';

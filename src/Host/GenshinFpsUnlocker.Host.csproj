@@ -26,12 +26,12 @@
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0</InformationalVersion>
     <Authors>HoYoEnhance</Authors>
-    <Description>HoYoEnhance（米游增强器）— 原神 / 崩坏：星穹铁道帧率解锁与画面增强</Description>
+    <Description>HoYoEnhance — 原神 / 崩坏：星穹铁道帧率解锁与画面增强</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- BetterGenshinImpact logo.ico → 窗体/任务栏/快捷方式/托盘 -->
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Product>HoYoEnhance</Product>
-    <AssemblyTitle>HoYoEnhance 米游增强器</AssemblyTitle>
+    <AssemblyTitle>HoYoEnhance</AssemblyTitle>
     <!-- WFO5001: SystemColorMode 实验 API（跟随系统主题所需） -->
     <!-- WFO0003: app.manifest 已声明 PerMonitorV2，与 SetHighDpiMode 并存可接受 -->
     <NoWarn>$(NoWarn);WFO5001;WFO0003</NoWarn>

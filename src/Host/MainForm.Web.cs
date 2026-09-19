@@ -188,7 +188,7 @@ internal sealed partial class MainForm : Form
 
         var title = new Label
         {
-            Text = "原神帧率解锁",
+            Text = AppPaths.ProductDisplayName,
             AutoSize = true,
             Font = UiStyle.UiFontBold(6f),
             ForeColor = Color.FromArgb(0xBD, 0xA2, 0xF2),
