@@ -204,7 +204,7 @@ internal sealed partial class MainForm : Form
                 "1. 已安装 Edge WebView2 Runtime\n" +
                 "2. 安装目录下存在 ui\\index.html\n" +
                 "3. 系统托盘（含 ^ 溢出区）是否有本程序图标\n\n" +
-                "日志：%LocalAppData%\\GenshinFpsUnlocker\\logs\\\n" +
+                "日志：用户数据目录\\logs\\\n" +
                 "右键托盘仍可改帧率 / 开关 / 退出。",
             AutoSize = false,
             Size = new Size(900, 360),

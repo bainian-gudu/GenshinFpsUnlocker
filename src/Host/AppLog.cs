@@ -15,7 +15,7 @@ internal enum LogLevel
 
 /// <summary>
 /// 缓冲型文件日志。默认开启 Debug。
-/// 路径：%LocalAppData%\GenshinFpsUnlocker\logs\app-yyyyMMdd.log（跨日自动换文件）
+/// 路径：用户数据目录\logs\app-yyyyMMdd.log（跨日自动换文件）
 /// 通过队列批量刷盘降低 I/O 开销；Error 立即刷盘。UTF-8 编码支持中文。
 ///
 /// 内存里保留最近若干条<b>结构化</b>记录（<see cref="Entry"/>），一方面供 UI 的

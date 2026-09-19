@@ -50,7 +50,7 @@
 上游卸载器只做三件事：删文件、删 `extraUninstallPath` / `userDataPath` 目录、
 删 ARP 卸载项（`...\Uninstall\{regName}`，HKLM + HKCU）。它**不知道**宿主自己写过
 哪些注册表——本项目宿主的开机自启（`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
-下的 `GenshinFpsUnlocker` 值，见 `src/Host/Autostart.cs`）就会残留。
+下的历史兼容值，见 `src/Host/Autostart.cs`）就会残留。
 
 ### `src-tauri/src/installer/uninstall.rs`
 
@@ -94,7 +94,7 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 ```json
 "extraUninstallRegistry": [
-  { "hive": "HKCU", "key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "value": "GenshinFpsUnlocker" }
+  { "hive": "HKCU", "key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "value": "<历史兼容值名>" }
 ]
 ```
 
@@ -105,7 +105,7 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 上游卸载器只删自己建的两个快捷方式：`<桌面>\{appName}.lnk` 与整个
 `<开始菜单>\{appName}\` 文件夹，且「桌面 / 开始菜单」按 `needElevate` 二选一
 （公共桌面 or 用户桌面）。本项目宿主会把桌面快捷方式**改名成中文显示名**
-`原神帧率解锁.lnk`（`src/Host/ShortcutHelper.cs`，还会删掉英文名那份），
+或英文品牌显示名（`src/Host/ShortcutHelper.cs`，还会清掉内部名那份），
 于是卸载后桌面会留下一个指向已删除 exe 的死图标。
 
 ### `src-tauri/src/installer/uninstall.rs`
@@ -143,10 +143,9 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 ```json
 "extraUninstallLnkNames": [
-  "原神帧率解锁.lnk",
-  "GenshinFpsUnlocker.lnk",
-  "GenshinFpsUnlocker.exe.lnk",
-  "Genshin FPS Unlocker.lnk"
+  "HoYoEnhance.lnk",
+  "Uninstall HoYoEnhance.lnk",
+  "<历史兼容快捷方式名>.lnk"
 ]
 ```
 
@@ -161,8 +160,8 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 | 配置组合 | 实际登记 | 卸载时怎么清 |
 | --- | --- | --- |
-| 只开「开机自启动」 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `GenshinFpsUnlocker` 值 | `extraUninstallRegistry`（第 1 节） |
-| 「开机自启动」+「启动时自动以管理员权限运行」 | 任务计划程序里的 `GenshinFpsUnlocker.AutoStart`（`RunLevel=HighestAvailable`） | 本节 |
+| 只开「开机自启动」 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的历史兼容值 | `extraUninstallRegistry`（第 1 节） |
+| 「开机自启动」+「启动时自动以管理员权限运行」 | 任务计划程序里的历史兼容任务（`RunLevel=HighestAvailable`） | 本节 |
 
 计划任务既不是注册表项也不是文件，上游卸载器完全不知道它，只能靠
 `schtasks /Delete /TN <名字> /F` 回收。**不清理的后果**：卸载后每次登录，
@@ -204,7 +203,7 @@ extra_uninstall_scheduled_tasks: PROJECT_CONFIG.extraUninstallScheduledTasks ?? 
 
 ```json
 "extraUninstallScheduledTasks": [
-  "GenshinFpsUnlocker.AutoStart"
+  "<历史兼容任务名>"
 ]
 ```
 
@@ -308,7 +307,7 @@ extra_uninstall_scheduled_tasks: PROJECT_CONFIG.extraUninstallScheduledTasks ?? 
 
 命中安全阀一律「跳过 + 写日志」，**不会因为安全阀让卸载失败**；被跳过的路径会记在
 `%TEMP%\KachinaInstaller.log` 里。本项目真实配置（`HKCU\...\Run` 下的
-`GenshinFpsUnlocker` 值、`%LOCALAPPDATA%/GenshinFpsUnlocker`、4 个快捷方式名字）
+历史兼容值、用户数据目录、4 个快捷方式名字）
 全部落在放行范围内，功能不受影响。
 
 > 实现集中在 `uninstall.rs` 的四个判定函数里：`is_safe_registry_target` /
@@ -333,7 +332,7 @@ extra_uninstall_scheduled_tasks: PROJECT_CONFIG.extraUninstallScheduledTasks ?? 
 ### 宿主侧（`src/Host/`，不属于本目录，列在这里便于对照）
 
 - `UninstallLauncher.IsTrustworthyUninstaller`：宿主里的「卸载本软件」只负责启动
-  `<安装目录>\GenshinFpsUnlocker.uninst.exe`，启动前校验：路径仍在自身目录内、
+  安装目录下的卸载程序，启动前校验：路径仍在自身目录内、
   文件名符合约定、非空文件、自身与所在目录都不是符号链接 / junction、目录不是
   盘符根 / 系统目录 / 用户配置目录；**且宿主已提权时要求安装目录位于 `Program Files` 下**
   —— 否则普通用户可以在可写目录里放一个同名 exe，借宿主的管理员令牌执行任意代码
@@ -430,7 +429,7 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 | # | 洞 | 现象 |
 | --- | --- | --- |
-| 1 | `%VAR%` 形式的路径**从不展开** | 前端 `replacePathEnvirables` 只认 `${INSTALL_PATH}` / `${APP_NAME}` 两种写法，配置里的 `%LOCALAPPDATA%/GenshinFpsUnlocker` 原样传进 Rust；`is_safe_delete_target` 又要求绝对路径，于是这条被当成「不安全路径」**静默跳过**——勾了「同时删除用户数据」也一个字节都不会删 |
+| 1 | `%VAR%` 形式的路径**从不展开** | 前端 `replacePathEnvirables` 只认 `${INSTALL_PATH}` / `${APP_NAME}` 两种写法，配置里的 `%LOCALAPPDATA%/<用户数据目录名>` 原样传进 Rust；`is_safe_delete_target` 又要求绝对路径，于是这条被当成「不安全路径」**静默跳过**——勾了「同时删除用户数据」也一个字节都不会删 |
 | 2 | 只清理**当前进程**的用户目录 | 卸载器一般以管理员身份运行，`%LOCALAPPDATA%` 指向管理员账户；当初装软件的普通用户那份数据（连同该用户桌面上的 `.lnk`、开始菜单文件夹）全部留在原地 |
 | 3 | 安装 / 卸载过程写进 `%TEMP%` 的文件没人管 | 运行时安装包（几十 MB）、`KachinaInstaller.log`、WebView2 引导器、卸载器自己的临时副本，失败时全留在 `%TEMP%` 里 |
 | 4 | 卸载流程**不结束正在运行的主程序** | 上游只在安装流程 `installPrepare` 里做「检测 → 询问 → 结束进程」；从「设置 → 应用」/ 开始菜单发起卸载时主程序还常驻托盘，它的 exe、`logs\`、WebView2 的 `EBWebView` 缓存全被占用，删不掉 → 残留 |
@@ -486,8 +485,8 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
     现实中的触发路径：`extra_uninstall_path` 里的开始菜单文件夹是前端拼的
     `Programs\{appName}`，`appName` 万一是空串，尾巴就退化成 `…\Start Menu\Programs`，
     重放到所有用户 = 把每个人的「程序」菜单整个端掉。产品自己的目录名
-    （`GenshinFpsUnlocker`）与中文快捷方式名（`原神帧率解锁.lnk`）都不在表里；
-  - `AppData` 下的尾巴至少**三级**（`AppData\Local\GenshinFpsUnlocker`）：两级就
+    与历史快捷方式名都不在表里；
+  - `AppData` 下的尾巴至少**三级**（`AppData\Local\<用户数据目录名>`）：两级就
     意味着直接挂在 `AppData\Local` / `AppData\Roaming` 那一层，只可能是容器。
     `Documents` / `Desktop` 下两级是正常形状，不受这条限制；
   - 另外把 `is_protected_root` 也补全了：除了 `%USERPROFILE%` / `%APPDATA%` 这些
@@ -543,7 +542,7 @@ footer 回到文档流、正文用 flex 吃剩余高度之后，**两者在结�
 
 `userDataPath` 从 1 项扩到 3 项，覆盖历史版本可能用过的落盘位置：
 `%LOCALAPPDATA%`、`%APPDATA%`、`%USERPROFILE%/Documents` 下各一个
-`GenshinFpsUnlocker`。三项都走同一套安全阀，并被多用户重放覆盖。
+产品数据目录。三项都走同一套安全阀，并被多用户重放覆盖。
 
 ### 已知仍不覆盖
 
@@ -813,9 +812,9 @@ Other(Vec<String>),
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次
    `installer\pack.ps1`，确认：安装界面能弹出协议全文；卸载后
-   `HKCU\...\Run` 里的 `GenshinFpsUnlocker` 值消失；桌面上的
-   `原神帧率解锁.lnk` 与开始菜单文件夹一并消失；勾选「同时删除用户数据」后
-   **每一个**登录过的用户账户下的 `%LocalAppData%\GenshinFpsUnlocker` 都消失
+   `HKCU\...\Run` 里的历史兼容值消失；桌面上的当前与历史快捷方式、
+   开始菜单文件夹一并消失；勾选「同时删除用户数据」后
+   **每一个**登录过的用户账户下的 `%LocalAppData%\<用户数据目录名>` 都消失
    （以管理员身份从普通用户装的副本上卸载时尤其要验这一条，即洞 2）；
    主程序在托盘里运行时发起卸载，会先弹「是否结束进程」的询问，结束后
    `EBWebView` 缓存与 `logs\` 也一并删掉（洞 4）。

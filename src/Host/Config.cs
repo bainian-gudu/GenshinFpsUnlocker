@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
-/// 应用配置（JSON）。主路径：%LocalAppData%\GenshinFpsUnlocker\config.json。
+/// 应用配置（JSON）。主路径：用户数据目录下的 config.json。
 /// 持久化策略：写临时文件 → Flush → File.Replace 原子替换 → 保留 .bak 备份；
 /// 读失败时依次尝试主文件 / .bak / .tmp / 便携旁路，降低丢失与半截写入风险。
 /// 配置里不认识的字段由反序列化器直接忽略，旧 config.json 仍能读入，

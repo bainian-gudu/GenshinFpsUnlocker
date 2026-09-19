@@ -1,8 +1,7 @@
 # Kachina Installer（本项目构建工具）
 
-本目录是 Kachina 安装器的源码快照和本地修改。它只用于构建
-`GenshinFpsUnlocker.Install.<版本>.exe`、`GenshinFpsUnlocker.uninst.exe` 和
-`GenshinFpsUnlocker.update.exe`，不是终端用户需要单独运行的程序。项目实际配置在
+本目录是 Kachina 安装器的源码快照和本地修改。它只用于构建 HoYoEnhance 的安装包、
+卸载程序和更新程序，不是终端用户需要单独运行的程序。项目实际配置在
 上一级的 [`../kachina.config.json`](../kachina.config.json)，本地修改记录在
 [`LOCAL_PATCHES.md`](LOCAL_PATCHES.md)。
 

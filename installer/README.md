@@ -65,9 +65,9 @@ pnpm install --frozen-lockfile
 
 | 文件 | 说明 |
 | --- | --- |
-| `GenshinFpsUnlocker.Install.<ver>.exe` | 离线安装器。装完的安装目录里含 `GenshinFpsUnlocker.uninst.exe`（卸载）与 `GenshinFpsUnlocker.update.exe`（在线更新） |
-| `GenshinFpsUnlocker-portable-win-x64.zip` | 便携包（内含 `update.exe`，可直接升级） |
-| `GenshinFpsUnlocker_v<ver>.7z` | 便携 7z（本机检测到 7-Zip 时才生成） |
+| `<HoYoEnhance 安装包>.exe` | 离线安装器。装完的安装目录里含卸载程序与更新程序 |
+| `<HoYoEnhance 便携包>.zip` | 便携包（内含更新程序，可直接升级） |
+| `<HoYoEnhance 便携包>.7z` | 便携 7z（本机检测到 7-Zip 时才生成） |
 
 ## 打包步骤（`pack.ps1` 内部做的事）
 
@@ -75,19 +75,21 @@ pnpm install --frozen-lockfile
 
 ```powershell
 # 1) 更新器（也会被塞进便携包，用于在线升级）
-kachina-builder.exe pack -c installer\kachina.config.json -o <app>\GenshinFpsUnlocker.update.exe
+kachina-builder.exe pack -c installer\kachina.config.json -o <app>\<更新程序>.exe
 
 # 2) 生成 metadata + 分块 hashed 目录
-kachina-builder.exe gen -j 6 -i GenshinFpsUnlocker -m metadata.json -o hashed `
-    -r bainian-gudu/HoYoEnhance -t <ver> -u .\GenshinFpsUnlocker\GenshinFpsUnlocker.update.exe
+kachina-builder.exe gen -j 6 -i <兼容产品标识> -m metadata.json -o hashed `
+    -r bainian-gudu/HoYoEnhance -t <ver> -u .\<app>\<更新程序>.exe
 
 # 3) 离线安装器
 kachina-builder.exe pack -c installer\kachina.config.json -m metadata.json -d hashed `
-    -o GenshinFpsUnlocker.Install.<ver>.exe
+    -o <HoYoEnhance 安装包>.exe
 ```
 
 中间目录用 `out\kachina-pack\`（已被 `.gitignore` 排除）。
 > 不要用 `build\`：Windows 路径大小写不敏感，会和历史上的 `Build\` 目录混淆。
+> 上述命令里的产品标识与输出文件名以 `installer\pack.ps1`、`kachina.config.json`
+> 的实际兼容配置为准。
 
 ## Kachina 负责什么 / 不负责什么
 
@@ -95,7 +97,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 删除安装目录或注册表。用户侧入口和数据保留规则请先看根目录 [`README.md`](../README.md)
 的「安装、更新与卸载」；本文件下面的内容主要用于维护配置和审查删除范围。
 
-**负责**：铺文件到 `Program Files\GenshinFpsUnlocker`、写「应用和功能」卸载项、
+**负责**：铺文件到打包配置指定的安装目录、写「应用和功能」卸载项、
 生成 `uninst.exe` / `update.exe`、按 `runtimes` 装 .NET Desktop Runtime 9 与 VCRedist、
 按 `uacStrategy` 提权、安装时创建桌面 + 开始菜单快捷方式（安装界面有勾选项，默认勾上）、
 卸载时删除这些快捷方式、删除 ARP 注册表项，并按 `userDataPath` 清用户数据
@@ -106,7 +108,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 | 事项 | 归属 | 说明 |
 | --- | --- | --- |
 | 快捷方式的**显示名** | `src/Host/ShortcutHelper.cs` | Kachina 按 `shortcutName` 建 `HoYoEnhance.lnk`（桌面 + 开始菜单），宿主每次启动统一主项为 `HoYoEnhance.lnk`、卸载项为 `Uninstall HoYoEnhance.lnk`，并清掉内部名 / 历史中文名重复项；上游卸载器认不出的历史名靠 `extraUninstallLnkNames` 补删（见下） |
-| 开机自启 | `src/Host/Autostart.cs` | 按配置项「开机自启动」+「启动时自动以管理员权限运行」同步，两种登记方式二选一：普通权限写 `HKCU\...\Run`，管理员权限登记任务计划程序里的 `GenshinFpsUnlocker.AutoStart`（`RunLevel=HighestAvailable`，登录不弹 UAC）。卸载时分别由 `kachina.config.json` 的 `extraUninstallRegistry` 与 `extraUninstallScheduledTasks` 交给卸载器回收（见下），不需要用户先手动关闭 |
+| 开机自启 | `src/Host/Autostart.cs` | 按配置项「开机自启动」+「启动时自动以管理员权限运行」同步，两种登记方式二选一：普通权限写 `HKCU\...\Run`，管理员权限登记任务计划程序里的兼容自启任务（`RunLevel=HighestAvailable`，登录不弹 UAC）。卸载时分别由 `kachina.config.json` 的 `extraUninstallRegistry` 与 `extraUninstallScheduledTasks` 交给卸载器回收（见下），不需要用户先手动关闭 |
 
 ## 本项目给 Kachina 加 / 改的配置项
 
@@ -117,7 +119,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 
 ```json
 "extraUninstallRegistry": [
-  { "hive": "HKCU", "key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "value": "GenshinFpsUnlocker" }
+  { "hive": "HKCU", "key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "value": "<历史兼容值名>" }
 ]
 ```
 
@@ -127,7 +129,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 | `key` | 子键路径 |
 | `value` | 给了就只删这一个值；省略则**递归删除整个子键**（`remove_tree`），慎用 |
 
-本项目宿主的开机自启写在 `HKCU\...\Run` 的 `GenshinFpsUnlocker` 值上
+本项目宿主的开机自启写在 `HKCU\...\Run` 的历史兼容值上
 （`src/Host/Autostart.cs`），所以卸载必须回收它。注意卸载器一般以管理员身份运行，
 此时 `HKCU` 指向的是管理员账户；因此 `hive: HKCU` 会**额外遍历 `HKEY_USERS`**
 下已加载的用户配置单元（跳过 `*_Classes`、`.DEFAULT`、`S-1-5-18`），
@@ -138,7 +140,7 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 
 ```json
 "extraUninstallScheduledTasks": [
-  "GenshinFpsUnlocker.AutoStart"
+  "<历史兼容任务名>"
 ]
 ```
 
@@ -165,17 +167,14 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
   "HoYoEnhance.lnk",
   "Uninstall HoYoEnhance.lnk",
   "卸载HoYoEnhance.lnk",
-  "原神帧率解锁.lnk",
-  "卸载 HoYoEnhance.lnk",
-  "GenshinFpsUnlocker.lnk",
-  "GenshinFpsUnlocker.exe.lnk",
-  "Genshin FPS Unlocker.lnk"
+  "<历史兼容快捷方式名>.lnk"
 ]
 ```
 
 只写**文件名**，目录由卸载器用 shell API 解析后拼出来，四侧都试：
 公共桌面 / 用户桌面、公共开始菜单 / 用户开始菜单下的 `{appName}\` 文件夹。
 这样即使用户桌面被 OneDrive 重定向、或宿主当初写在了另一侧，也能删干净。
+完整兼容别名以 `installer\kachina.config.json` 为准。
 
 这些路径走的是**尽力删除**：删不掉（无权限、被占用）只写日志，
 不会把卸载判为失败——上游 `extraUninstallPath` 的语义是删不掉就报错中断，
@@ -185,9 +184,9 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 
 ```json
 "userDataPath": [
-  "%LOCALAPPDATA%/GenshinFpsUnlocker",
-  "%APPDATA%/GenshinFpsUnlocker",
-  "%USERPROFILE%/Documents/GenshinFpsUnlocker"
+  "%LOCALAPPDATA%/<用户数据目录名>",
+  "%APPDATA%/<用户数据目录名>",
+  "%USERPROFILE%/Documents/<用户数据目录名>"
 ]
 ```
 
@@ -331,8 +330,8 @@ CI 仍会联网获取 crates.io / npm registry / rustup 工具链 / marketplace 
 
 | 产物 | 大小 |
 | --- | --- |
-| `GenshinFpsUnlocker.Install.1.0.0.exe`（离线安装器） | 14.39 MB |
-| `GenshinFpsUnlocker_v1.0.0.7z`（便携版） | 7.60 MB |
+| HoYoEnhance 离线安装器 | 14.39 MB |
+| HoYoEnhance 便携版 | 7.60 MB |
 | `kachina-builder.exe`（从 `installer/kachina/` 源码构建） | 11.59 MB |
 
 ### Build 日志里这些告警是正常的（都不是本项目的代码）

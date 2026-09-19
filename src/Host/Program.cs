@@ -4,8 +4,8 @@ namespace GenshinFpsUnlocker.Host;
 /// 进程入口：单实例、运行时检测、启动监视服务与主窗体。
 /// 清单为 asInvoker：非管理员日常启动不弹 UAC，必须能显示主窗 + 托盘。
 ///
-/// 安装 / 卸载只有一种实现：Kachina 安装器（installer/ 打包出的
-/// GenshinFpsUnlocker.Install.{ver}.exe，安装目录内自带 *.uninst.exe / *.update.exe）。
+/// 安装 / 卸载只有一种实现：Kachina 安装器（installer/ 打包出的安装包，
+/// 安装目录内自带卸载程序与更新程序）。
 /// 宿主自身不再提供 --install / --uninstall、Uninstall.cmd 垫片、自写 ARP 卸载项、
 /// 内置白名单删目录等任何「第二种安装卸载方式」；本进程也不会为安装目的主动提权。
 /// </summary>
@@ -63,7 +63,7 @@ internal static class Program
             {
                 MessageBox.Show(
                     "界面线程异常：\n" + e.Exception.Message +
-                    "\n\n日志：%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
+                    "\n\n日志：用户数据目录\\logs\\",
                     AppPaths.ProductDisplayName,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -79,7 +79,7 @@ internal static class Program
                 MessageBox.Show(
                     "启动失败：\n" + (ex?.Message ?? e.ExceptionObject?.ToString() ?? "unknown") +
                     "\n\n若以标准用户运行，请确认已安装 .NET Desktop Runtime 9 与 WebView2。\n" +
-                    "日志：%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
+                    "日志：用户数据目录\\logs\\",
                     AppPaths.ProductTitle,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -108,7 +108,7 @@ internal static class Program
                 MessageBox.Show(
                     "无法启动：\n" + ex.Message +
                     "\n\n" + ex.GetType().FullName +
-                    "\n\n日志目录：\n%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
+                    "\n\n日志目录：\n用户数据目录\\logs\\",
                     AppPaths.ProductTitle,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -163,7 +163,7 @@ internal static class Program
         }
 
         // ---- 安装/卸载命令行 ----
-        // 安装与卸载统一由 Kachina 完成（安装目录内的 GenshinFpsUnlocker.uninst.exe，
+        // 安装与卸载统一由 Kachina 完成（安装目录内的卸载程序，
         // 或「设置 → 应用和功能」里由 Kachina 注册的卸载项）。带这些参数启动时只提示
         // 用户改用 Kachina，程序自己不碰文件系统。
         if (args.Any(a => a is "--install" or "/install" or "--uninstall" or "/uninstall"))
@@ -173,10 +173,10 @@ internal static class Program
             {
                 MessageBox.Show(
                     "本程序已不再自带安装 / 卸载功能。\n\n" +
-                    "• 卸载：运行安装目录下的 GenshinFpsUnlocker.uninst.exe，\n" +
+                    "• 卸载：运行安装目录下的卸载程序，\n" +
                     "  或在「设置 → 应用 → 安装的应用」里卸载「" + AppPaths.ProductDisplayName + "」。\n" +
-                    "• 安装 / 更新：使用 GenshinFpsUnlocker.Install.{版本}.exe，\n" +
-                    "  或安装目录下的 GenshinFpsUnlocker.update.exe。",
+                    "• 安装 / 更新：使用最新 HoYoEnhance 安装包，\n" +
+                    "  或安装目录下的更新程序。",
                     AppPaths.ProductDisplayName,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -213,7 +213,7 @@ internal static class Program
                 MessageBox.Show(
                     "程序已在运行。\n\n" +
                     "请查看系统托盘（任务栏 ^「显示隐藏的图标」）。\n" +
-                    "若仍找不到，请在任务管理器结束 GenshinFpsUnlocker.exe 后重试。",
+                    "若仍找不到，请在任务管理器结束本程序进程后重试。",
                     AppPaths.ProductDisplayName,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);

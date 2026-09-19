@@ -16,7 +16,7 @@
 
 .EXAMPLE
   # 推荐：先启动游戏进到有 UID 水印的界面，再跑一次（能采到模块列表）
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\wsl.localhost\Ubuntu\home\tushanhonghong\workspace\GenshinFpsUnlocker-main\tools\hsr-capture.ps1"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<仓库>\tools\hsr-capture.ps1"
 
 .EXAMPLE
   # 也可以直接双击 hsr-capture.cmd（同一个脚本的免命令入口）
@@ -166,7 +166,7 @@ public static class HsrModEnum
 
 # ---------------------------------------------------------------- 输出目录
 if (-not $OutDir) {
-    # 脚本在 <workspace>\GenshinFpsUnlocker-main\tools\ 下，采集结果放到 <workspace>\hsr-capture\
+    # 脚本在 <仓库>\tools\ 下，采集结果放到 <workspace>\hsr-capture\
     $repoRoot = Split-Path -Parent $PSScriptRoot
     $OutDir = Join-Path (Split-Path -Parent $repoRoot) 'hsr-capture'
 }

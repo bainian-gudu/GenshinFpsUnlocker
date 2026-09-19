@@ -4,14 +4,14 @@
 
 .DESCRIPTION
     这是本仓库唯一的打包入口。步骤与上游 README 一致：
-      1. kachina-builder pack -c kachina.config.json -o <app>\GenshinFpsUnlocker.update.exe
+      1. kachina-builder pack -c kachina.config.json -o <app>\<更新程序>.exe
       2. kachina-builder gen  -i <appDir> -m metadata.json -o hashed -r <repoId> -t <ver> -u <updater>
       3. kachina-builder pack -c kachina.config.json -m metadata.json -d hashed -o <app>.Install.<ver>.exe
 
     产物统一落到 artifacts\：
-      GenshinFpsUnlocker.Install.<ver>.exe        离线安装器（含 uninst / update）
-      GenshinFpsUnlocker-portable-win-x64.zip     便携包（内含 update.exe）
-      GenshinFpsUnlocker_v<ver>.7z                便携 7z（检测到 7z 时才生成）
+      <HoYoEnhance 安装包>.exe        离线安装器（含 uninst / update）
+      <HoYoEnhance 便携包>.zip        便携包（内含 update.exe）
+      <HoYoEnhance 便携包>.7z         便携 7z（检测到 7z 时才生成）
 
 .PARAMETER DistDir
     宿主发布输出目录，默认 <repo>\dist（由根目录 build.ps1 生成）。

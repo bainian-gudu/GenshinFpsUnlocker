@@ -48,7 +48,7 @@ internal static class UninstallLauncher
         {
             error = "未找到卸载程序：" + AppPaths.UninstExePath +
                     "。便携版没有注册卸载项，直接删除所在目录即可；" +
-                    "配置与日志位于 %LocalAppData%\\GenshinFpsUnlocker。";
+                    "配置与日志位于用户数据目录。";
             AppLog.Warn("卸载中止: " + error);
             return false;
         }

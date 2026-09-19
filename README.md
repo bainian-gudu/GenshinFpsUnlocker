@@ -35,14 +35,14 @@
 
 ## 快速使用
 
-1. 从 Releases 下载 `GenshinFpsUnlocker.Install.<版本>.exe`，运行安装器并选择安装目录。
+1. 从 Releases 下载最新 HoYoEnhance 安装包，运行安装器并选择安装目录。
 2. 首次启动时按提示安装缺少的 .NET Desktop Runtime、VC++ 或 WebView2 运行库。
 3. 在「游戏设置」中启用帧率解锁并选择目标 FPS（星铁为注册表 120 帧）；启动游戏后保持程序运行即可自动应用。
 4. 关闭或最小化窗口会进入系统托盘，左键托盘图标可恢复窗口。
 
 安装器会创建开始菜单快捷方式、可选的桌面快捷方式和卸载项。卸载时可选择是否同时删除
 配置、日志和 WebView2 缓存；不删除用户数据时，重新安装仍会沿用原设置。便携版直接运行
-压缩包内的 `GenshinFpsUnlocker.exe`，退出程序后删除整个目录即可。
+压缩包内的 HoYoEnhance 主程序，退出程序后删除整个目录即可。
 
 ## 技术栈
 
@@ -61,9 +61,9 @@
 默认构建主程序和安装器。安装器由项目内 Kachina 源码构建出的 `kachina-builder.exe`
 生成，打包代码集中在 [`installer/`](installer/)。
 
-> 说明：为兼容老用户升级与卸载，安装目录、可执行文件名、注册表键与开机自启任务名仍沿用
-> `GenshinFpsUnlocker` 内部标识；快捷方式显示名、界面、窗口标题与文档品牌统一为
-> **HoYoEnhance**，历史快捷方式在启动或卸载时自动清理。
+> 说明：为兼容老用户升级与卸载，安装目录、可执行文件名、注册表键与开机自启任务名保留
+> 内部兼容标识；快捷方式显示名、界面、窗口标题与文档品牌统一为 **HoYoEnhance**，
+> 历史快捷方式在启动或卸载时自动清理。
 
 ### 常用命令
 
@@ -93,18 +93,18 @@
 产物：
 
 ```text
-dist\GenshinFpsUnlocker.exe
+dist\<主程序>.exe
 dist\FpsUnlockerStub.dll
 dist\StarRailStub.dll
 dist\ui\index.html
 
-artifacts\GenshinFpsUnlocker.Install.{ver}.exe        # Kachina 离线安装器
-artifacts\GenshinFpsUnlocker-portable-win-x64.zip    # 便携包（含 .update.exe）
-artifacts\GenshinFpsUnlocker_v{ver}.7z               # 便携 7z（本机有 7-Zip 时）
+artifacts\<HoYoEnhance 安装包>.exe                    # Kachina 离线安装器
+artifacts\<HoYoEnhance 便携包>.zip                    # 便携包（含更新程序）
+artifacts\<HoYoEnhance 便携包>.7z                     # 便携 7z（本机有 7-Zip 时）
 ```
 
 Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.json)
-（默认安装目录 `Program Files\GenshinFpsUnlocker`、GitHub 在线源、运行库列表）。
+（默认安装目录、GitHub 在线源、运行库列表）。
 上游源码快照的来源、版本与构建前置见 [`installer/kachina/UPSTREAM.md`](installer/kachina/UPSTREAM.md)。
 
 ## 开发自检（devcheck）
@@ -129,14 +129,14 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 （入口：设置页「高级设置 → 卸载」、关于页底部）。
 
 ```powershell
-.\artifacts\GenshinFpsUnlocker.Install.1.0.0.exe
+.\artifacts\<HoYoEnhance 安装包>.exe
 ```
 
-- 可选安装目录（默认 `C:\Program Files\GenshinFpsUnlocker\`）
+- 可选安装目录
 - 安装时按 UAC 策略提权；装完后日常运行与开机自启不再弹 UAC
   （勾上「启动时自动以管理员权限运行」时，登录自启改由任务计划程序登记的最高权限任务拉起）
 - 可自动处理 .NET Desktop Runtime 9 / VCRedist（见配置 `runtimes`）
-- 安装目录生成 **`GenshinFpsUnlocker.uninst.exe`**、**`GenshinFpsUnlocker.update.exe`**
+- 安装目录生成 **卸载程序**、**更新程序**
 - 安装界面「我已阅读并同意 **用户协议**」可点击，弹窗显示协议全文
   （正文由 `kachina.config.json` 的 `agreementFile` 指向仓库根 `USER_AGREEMENT.txt`，
   打包时内联进 exe，支持 `text` / `markdown` / `html`）；配了协议就**必须勾选同意**
@@ -146,20 +146,20 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 
 - 程序内：设置页「高级设置 → 卸载 → 卸载本软件」，或关于页底部的「卸载本软件」
   （弹窗确认后拉起 `uninst.exe` 并退出主程序；便携版没有 `uninst.exe`，会提示直接删目录）
-- 安装目录下的 **`GenshinFpsUnlocker.uninst.exe`**
-- 开始菜单「GenshinFpsUnlocker」文件夹里的「Uninstall HoYoEnhance」（指向上面那个 exe；便携目录没有 uninst 时不再创建）
+- 安装目录下的 **卸载程序**
+- 开始菜单里的「Uninstall HoYoEnhance」快捷方式（指向上面那个程序；便携目录没有卸载程序时不再创建）
 - Windows「设置 → 应用 → 安装的应用」/ 控制面板「应用和功能」（Kachina 写的 ARP 卸载项）
 
 卸载时会一并处理：
 
-- **勾选「同时删除用户数据」** → 删 `%LocalAppData%\GenshinFpsUnlocker\`（配置、日志、
-  `EBWebView` 界面缓存）与 `%AppData%\`、`文档\` 下的同名目录，覆盖本机**所有登录过的
+- **勾选「同时删除用户数据」** → 删用户数据目录（配置、日志、
+  `EBWebView` 界面缓存）与 `%AppData%\`、`文档\` 下的对应目录，覆盖本机**所有登录过的
   用户**，外加 `%TEMP%` 里安装期的残留（按固定文件名白名单）。**不勾选则一个数据目录都不碰**，
   只删快捷方式与开始菜单里的产品文件夹；重装后可沿用原设置。
 - 主程序还在运行时（常驻托盘很常见）会先询问并结束进程，否则文件被占用删不掉。
-- 开机自启项与快捷方式（含 `HoYoEnhance.lnk` 与历史名 `原神帧率解锁.lnk`）按配置一并删除，**不需要先手动关自启动**：
+- 开机自启项与快捷方式（含当前快捷方式与历史快捷方式名）按配置一并删除，**不需要先手动关自启动**：
   普通权限自启是 `HKCU\...\Run` 下的值，管理员自启是任务计划程序里的
-  `GenshinFpsUnlocker.AutoStart`（配置项 `extraUninstallScheduledTasks`）。
+  管理员自启计划任务（配置项 `extraUninstallScheduledTasks`）。
 - 所有「按配置删除」的通道都有安全阀（共享注册表容器不整棵删、路径必须绝对且不在系统目录内、
   不碰盘符根与 `Program Files` 这类受保护目录），命中的只记日志并跳过，不会让卸载失败。
 
@@ -167,7 +167,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 逐条实现与断言见 [`installer/kachina/LOCAL_PATCHES.md`](installer/kachina/LOCAL_PATCHES.md)
 第 3、6 节与 [`installer/README.md`](installer/README.md)。
 
-在线更新：已安装副本可使用 `GenshinFpsUnlocker.update.exe`，从配置的 GitHub Release 源拉取（需已发布对应 `Install` 包）。
+在线更新：已安装副本可使用安装目录中的更新程序，从配置的 GitHub Release 源拉取（需已发布对应安装包）。
 
 ## 依赖说明
 
@@ -182,7 +182,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 
 ## 配置
 
-- 路径：`%LocalAppData%\GenshinFpsUnlocker\config.json`
+- 路径：用户数据目录下的 `config.json`
 - 原子写入（临时文件 + `File.Replace`）并保留 `config.json.bak`
 - 主文件损坏时自动从 `.bak` / 临时文件恢复
 - 若 LocalAppData 不可写，依次尝试 AppData、文档目录
@@ -210,7 +210,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 - **开机自启动**：两种登记方式**二选一，不会同时存在**（同时存在会在登录时拉起两个实例）。
   只开「开机自启动」→ 写 `HKCU\...\Run`，登录后以标准权限运行；
   同时开「启动时自动以管理员权限运行」→ 改登记任务计划程序里的
-  `GenshinFpsUnlocker.AutoStart`（`RunLevel=HighestAvailable`，触发器绑定当前用户 SID），
+  管理员自启任务（`RunLevel=HighestAvailable`，触发器绑定当前用户 SID），
   登录即以管理员权限启动且**不弹 UAC**。登记计划任务要求程序装在 `Program Files` 下、
   可执行文件通过信任校验、且当前进程是管理员；任一条件不满足就退回 `HKCU\...\Run`，
   并把原因显示在设置页（不静默失败）。关闭开关与卸载时两条通道都会回收。
@@ -218,15 +218,15 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 ## 布局
 
 ```text
-{安装目录}\GenshinFpsUnlocker\     # 默认 Program Files 下
-  GenshinFpsUnlocker.exe
+{安装目录}\                         # 默认 Program Files 下
+  <主程序>.exe
   FpsUnlockerStub.dll
   StarRailStub.dll
   ui\index.html                   # Web UI（WebView2 加载）
-  GenshinFpsUnlocker.uninst.exe    # Kachina 卸载
-  GenshinFpsUnlocker.update.exe    # Kachina 更新（可选）
+  <卸载程序>.exe                   # Kachina 卸载
+  <更新程序>.exe                   # Kachina 更新（可选）
 
-%LocalAppData%\GenshinFpsUnlocker\
+{用户数据目录}\
   config.json
   logs\
 ```
@@ -274,7 +274,7 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
   `go.microsoft.com/fwlink/p/`（WebView2 引导器）。
 - **主程序运行期不联网**：帧率解锁与画面注入全部在本地完成；检测到缺运行库时只弹
   提示，经确认后用系统浏览器打开微软官方下载页（`src/Host/RuntimePrerequisite.cs`）。
-- 本地日志与配置写在 `%LocalAppData%\GenshinFpsUnlocker\`，不上传。
+- 本地日志与配置写在用户数据目录，不上传。
 
 删除清单、保留项（`InfoFilter`、本地耗时统计 `networkInsights.ts`）与 lock 重新生成的
 细节见 [`installer/kachina/LOCAL_PATCHES.md`](installer/kachina/LOCAL_PATCHES.md) 第 7 节；

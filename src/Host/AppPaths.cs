@@ -2,8 +2,8 @@ namespace GenshinFpsUnlocker.Host;
 
 /// <summary>
 /// 标准目录布局约定：
-///   安装目录：C:\Program Files\GenshinFpsUnlocker\   （应用二进制，专用子目录）
-///   数据目录：%LocalAppData%\GenshinFpsUnlocker\     （config.json、logs）
+///   安装目录：打包配置指定的目录（兼容旧版升级时沿用原目录）
+///   数据目录：用户数据目录                         （config.json、logs）
 ///   安装/卸载：只有 Kachina 一种（Install.exe + 安装目录 *.uninst.exe / *.update.exe）
 ///              宿主自身不提供任何安装/卸载入口，也不写 ARP 卸载注册表
 ///   运行库：安装器可装 .NET Desktop；运行时仍可检测；无 Node/Python 等语言依赖
@@ -109,10 +109,10 @@ internal static class AppPaths
         }
     }
 
-    /// <summary>主配置文件路径：%LocalAppData%\GenshinFpsUnlocker\config.json。</summary>
+    /// <summary>主配置文件路径：用户数据目录下的 config.json。</summary>
     public static string ConfigPath => Path.Combine(DataDirectory, "config.json");
 
-    /// <summary>日志目录：%LocalAppData%\GenshinFpsUnlocker\logs。</summary>
+    /// <summary>日志目录：用户数据目录下的 logs。</summary>
     public static string LogDirectory
     {
         get

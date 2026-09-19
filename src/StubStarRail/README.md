@@ -60,7 +60,7 @@
 | --- | --- |
 | 文件名 | `StarRailStub.dll`（与 `FpsUnlockerStub.dll` 并列放在 exe 旁） |
 | 位数 / 运行库 | x64，静态 CRT（`/MT`），MinHook 直接编入（与 `src/Stub` 一致） |
-| IPC | 复用 `src/Common/IpcData.h`（映射名 `Global\GenshinFpsUnlocker.Shared.v3`） |
+| IPC | 复用 `src/Common/IpcData.h`（保留历史兼容映射名，实际值见源码） |
 | Host 写入 | `AntiBlurPerspective`、`HideUid`（外加协议里已有的其它字段） |
 | Stub 写入 | `Status`（Waiting / Ready / Error / Exiting）、`AntiBlurState`（bit0 就绪）、`HideUidState`（bit0 就绪 / bit1 生效中）、`LastError` |
 | 状态机 | 首轮定位全部成功才置 `Ready`；任何一步失败置 `Error` + 错误码，**绝不半开**（避免游戏侧出现「一半功能生效」） |

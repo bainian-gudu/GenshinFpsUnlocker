@@ -4,7 +4,7 @@
 #   - 无 Node / Python 等语言运行时依赖
 #   - .NET Desktop Runtime / VCRedist → Kachina 安装器按 runtimes 配置处理
 # 安装器：只有一种 —— Kachina（installer/kachina 源码快照 → kachina-builder）
-#         产物 GenshinFpsUnlocker.Install.{ver}.exe，安装目录含 uninst.exe / update.exe
+#         产物 <HoYoEnhance 安装包>.exe，安装目录含 uninst.exe / update.exe
 #         宿主自身不再有 --install / --uninstall 等任何自带安装卸载路径
 # 默认：主程序 FDD（包体小）。离线全量：.\build.ps1 -SelfContained
 #
@@ -75,7 +75,7 @@ if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 & cmake --build $StubBuild --config $Configuration
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
-Write-Host "==> Building GenshinFpsUnlocker host ($hostLabel, win-x64)" -ForegroundColor Cyan
+Write-Host "==> Building HoYoEnhance host ($hostLabel, win-x64)" -ForegroundColor Cyan
 $HostProj = Join-Path $Root "src/Host/GenshinFpsUnlocker.Host.csproj"
 $dist = Join-Path $Root "dist"
 if (Test-Path $dist) {
@@ -190,7 +190,7 @@ if (-not $SkipSetup) {
 Write-Host "==> Done (host=$hostLabel). Output: $dist\" -ForegroundColor Green
 Get-ChildItem $dist | Format-Table Name, Length
 Write-Host ""
-Write-Host "Install: artifacts\GenshinFpsUnlocker.Install.{ver}.exe (Kachina，含 uninst/update)" -ForegroundColor Cyan
+Write-Host "Install: artifacts\<HoYoEnhance 安装包>.exe (Kachina，含 uninst/update)" -ForegroundColor Cyan
 Write-Host "Note: 默认 FDD；安装器可按配置安装 .NET Desktop Runtime 9 + VCRedist。" -ForegroundColor DarkGray
 
 if ($Install) {
