@@ -176,7 +176,7 @@ namespace
         {
             return false;
         }
-        const auto compiled = PatternMatch::Compile(parsed);
+        const auto compiled = Scanner::PatternMatch::Compile(parsed);
 
         MEMORY_BASIC_INFORMATION mbi{};
         if (!VirtualQuery(address, &mbi, sizeof(mbi)))
@@ -190,7 +190,7 @@ namespace
         {
             return false;
         }
-        return PatternMatch::MatchAt(static_cast<const uint8_t*>(address), compiled);
+        return Scanner::PatternMatch::MatchAt(static_cast<const uint8_t*>(address), compiled);
     }
 
     /// <summary>RVA 命中且函数头匹配时才返回地址。</summary>
