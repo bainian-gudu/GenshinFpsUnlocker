@@ -46,6 +46,7 @@ pub struct SelectDirRes {
 pub async fn select_dir(
     path: String,
     exe_name: String,
+    legacy_exe_names: Vec<String>,
     silent: bool,
     window: WebviewWindow,
 ) -> Option<SelectDirRes> {
@@ -76,8 +77,11 @@ pub async fn select_dir(
         if !probe_directory_writable(path).await {
             state = DirState::Unwritable;
         }
-        let exe_path = path.join(exe_name);
-        if exe_path.exists() {
+        let has_exe = path.join(&exe_name).exists()
+            || legacy_exe_names
+                .iter()
+                .any(|legacy| path.join(legacy).exists());
+        if has_exe {
             upgrade = true;
             empty = false;
         } else {

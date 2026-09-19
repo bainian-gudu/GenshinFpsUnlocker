@@ -148,6 +148,7 @@ internal static class Program
             $"args=[{string.Join(' ', args)}] admin={Elevation.IsAdministrator()} " +
             $"autostart={isAutostart} user={Environment.UserName} " +
             $"integrity={(Elevation.IsAdministrator() ? "high" : "medium")}");
+        LegacyInstallCleanup.TryCleanup();
 
         // 开机自启（静默）：任何提前退出都必须留下可检索的日志
         if (isAutostart)
@@ -288,7 +289,7 @@ internal static class Program
             var trustedExe = AppPaths.IsInstalledUnderProgramFiles()
                 && ModuleTrust.IsTrustworthy(
                     AppPaths.ExePath,
-                    "GenshinFpsUnlocker.exe",
+                    AppPaths.ExecutableFileName,
                     "自动提权程序",
                     out trustError,
                     elevatedHint: "请重新安装到 Program Files 下后再启用自动提权。");
@@ -325,8 +326,9 @@ internal static class Program
         }
         catch (Exception ex) { AppLog.Warn("Autostart: " + ex.Message); }
 
-        // 只对 Kachina 安装副本维护快捷方式：桌面新快捷方式由安装器一次性创建，
-        // 宿主只清理历史旧名（校验目标指向本程序），不创建或改动其他桌面图标。
+        // 只对 Kachina 安装副本维护快捷方式：桌面图标由安装器按勾选一次性创建，
+        // 宿主仅在它已经存在时把旧 exe 目标 / 历史命名修成当前品牌（不新建图标）；
+        // 开始菜单项每次启动重建，保证指向当前 exe。
         var isInstalledCopy =
             PathUtil.ExistsFile(AppPaths.UninstExePath)
             || AppPaths.IsInstalledUnderProgramFiles()
@@ -336,7 +338,7 @@ internal static class Program
         {
             try
             {
-                ShortcutHelper.CleanupLegacyDesktopShortcuts();
+                ShortcutHelper.RefreshDesktopShortcuts();
                 ShortcutHelper.CleanupDuplicateShortcuts();
                 ShortcutHelper.CreateStartMenuShortcuts(AppPaths.ExePath, AppPaths.ExeDirectory);
             }

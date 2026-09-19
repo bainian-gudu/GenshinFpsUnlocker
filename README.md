@@ -60,9 +60,9 @@
 默认构建主程序和安装器。安装器由项目内 Kachina 源码构建出的 `kachina-builder.exe`
 生成，打包代码集中在 [`installer/`](installer/)。
 
-> 说明：为兼容老用户升级与卸载，安装目录、可执行文件名、注册表键与开机自启任务名保留
-> 内部兼容标识；快捷方式显示名、界面、窗口标题与文档品牌统一为 **HoYoEnhance**，
-> 历史快捷方式在启动或卸载时自动清理。
+> 说明：当前主程序、安装包、便携包、快捷方式、界面与窗口标题统一为 **HoYoEnhance**。
+> 为兼容老用户升级与卸载，数据目录、卸载注册表键、IPC / 自启动任务等内部标识仍保留
+> 历史值；安装器会识别旧安装目录与旧文件名，并在升级时清理旧组件、重定向快捷方式。
 
 ### 常用命令
 
@@ -92,14 +92,14 @@
 产物：
 
 ```text
-dist\<主程序>.exe
+dist\HoYoEnhance.exe
 dist\FpsUnlockerStub.dll
 dist\StarRailStub.dll
 dist\ui\index.html
 
-artifacts\<HoYoEnhance 安装包>.exe                    # Kachina 离线安装器
-artifacts\<HoYoEnhance 便携包>.zip                    # 便携包（含更新程序）
-artifacts\<HoYoEnhance 便携包>.7z                     # 便携 7z（本机有 7-Zip 时）
+artifacts\HoYoEnhance.Install.<版本>.exe              # Kachina 离线安装器
+artifacts\HoYoEnhance-portable-win-x64.zip            # 便携包（含更新程序）
+artifacts\HoYoEnhance_v<版本>.7z                      # 便携 7z（本机有 7-Zip 时）
 ```
 
 Kachina 配置见 [`installer/kachina.config.json`](installer/kachina.config.json)
@@ -128,7 +128,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 （入口：设置页「高级设置 → 卸载」、关于页底部）。
 
 ```powershell
-.\artifacts\<HoYoEnhance 安装包>.exe
+.\artifacts\HoYoEnhance.Install.<版本>.exe
 ```
 
 - 可选安装目录
@@ -218,7 +218,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 
 ```text
 {安装目录}\                         # 默认 Program Files 下
-  <主程序>.exe
+  HoYoEnhance.exe
   FpsUnlockerStub.dll
   StarRailStub.dll
   ui\index.html                   # Web UI（WebView2 加载）
@@ -342,6 +342,9 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 > Windows 图标文件必须保持 **ICO**（`src/Host/Assets/app.ico`、
 > `installer/kachina/src-tauri/icons/icon.ico`，exe / 托盘 / 快捷方式图标由系统 API 读取），
 > 手写 logo 保持 **SVG**（矢量，缩放不失真）。转换脚本：`tools/to-webp.mjs`。
+> 构建脚本会递归清理 `dist` / 安装包暂存目录里的旧位图格式，避免增量构建残留
+> `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff`；转换时如需一并删除
+> 旧格式源文件，可在 `to-webp.mjs` 末尾加 `--delete-input`。
 
 > 注 1：除 `favicon.svg`（本项目手写）与 gpt-6-astra-max 生成的横幅外，仓库内所有图片都与
 > 上游 kachina 快照或 BetterGI 仓库中的某个文件**逐字节相同**（核对方式：`md5sum`，

@@ -5,17 +5,22 @@
  * 把图片画进 canvas，再用 canvas.toDataURL('image/webp') 导出，属于浏览器原生编码器，
  * 不引入任何新依赖，也不联网。
  *
- *   node tools/to-webp.mjs <输入> <输出> [质量]
+ *   node tools/to-webp.mjs <输入> <输出> [质量] [--delete-input]
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, extname, resolve } from 'node:path';
 
 const input = resolve(process.argv[2] ?? '');
 const output = resolve(process.argv[3] ?? '');
-const quality = Number(process.argv[4] ?? 0.95);
+const deleteInput = process.argv.includes('--delete-input');
+const quality = Number(
+  process.argv[4] && !process.argv[4].startsWith('--') ? process.argv[4] : 0.95,
+);
 if (!process.argv[2] || !process.argv[3]) {
-  console.error('用法: node tools/to-webp.mjs <输入> <输出> [质量]');
+  console.error(
+    '用法: node tools/to-webp.mjs <输入> <输出> [质量] [--delete-input]',
+  );
   process.exit(2);
 }
 
@@ -102,6 +107,14 @@ try {
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, Buffer.from(data, 'base64'));
   console.log(`${input} → ${output} (${payload.width}x${payload.height}, ${Buffer.from(data, 'base64').length} 字节)`);
+  if (
+    deleteInput &&
+    input !== output &&
+    ['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(extname(input).toLowerCase())
+  ) {
+    unlinkSync(input);
+    console.log(`已清理旧格式源文件: ${input}`);
+  }
 } finally {
   try { socket?.close(); } catch { /* ignore */ }
   chrome.kill('SIGTERM');

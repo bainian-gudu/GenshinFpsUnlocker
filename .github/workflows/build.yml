@@ -208,7 +208,7 @@ jobs:
           }
           Write-Host "build.ps1 params: $($buildParams | ConvertTo-Json -Compress)"
           & .\build.ps1 @buildParams
-          if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "Host exe missing" }
+          if (-not (Test-Path "dist\HoYoEnhance.exe")) { throw "Host exe missing" }
           if (-not (Test-Path "dist\FpsUnlockerStub.dll")) { throw "Stub dll missing" }
           if (-not (Test-Path "dist\StarRailStub.dll")) { throw "StarRail stub dll missing" }
           if (-not (Test-Path "dist\ui\index.html")) { throw "Web UI missing under dist\ui\" }
@@ -228,15 +228,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $xml = Join-Path $env:RUNNER_TEMP "GenshinFpsUnlocker.AutoStart.xml"
+          $xml = Join-Path $env:RUNNER_TEMP "HoYoEnhance.AutoStart.xml"
           if (Test-Path -LiteralPath $xml) { Remove-Item -LiteralPath $xml -Force }
-          $proc = Start-Process -FilePath ".\dist\GenshinFpsUnlocker.exe" `
+          $proc = Start-Process -FilePath ".\dist\HoYoEnhance.exe" `
             -ArgumentList "--dump-elevated-task-xml", "`"$xml`"" -Wait -PassThru
           if ($proc.ExitCode -ne 0) { throw "导出登录计划任务 XML 失败（退出码 $($proc.ExitCode)）" }
           if (-not (Test-Path -LiteralPath $xml)) { throw "未生成登录计划任务 XML" }
           Write-Host "任务 XML：$((Get-Item -LiteralPath $xml).Length) bytes"
 
-          $task = "GenshinFpsUnlocker.CiXmlValidate"
+          $task = "HoYoEnhance.CiXmlValidate"
           schtasks /Create /TN $task /XML $xml /F
           if ($LASTEXITCODE -ne 0) { throw "schtasks 拒绝了登录计划任务 XML（退出码 $LASTEXITCODE）" }
           schtasks /Query /TN $task /XML | Out-Null
@@ -293,14 +293,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if (-not (Test-Path "installer\tools\kachina-builder.exe")) { throw "kachina-builder.exe missing" }
-          if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "dist payload missing" }
+          if (-not (Test-Path "dist\HoYoEnhance.exe")) { throw "dist payload missing" }
           & .\installer\pack.ps1 -SkipKachinaBuild -Version "${{ steps.ver.outputs.version }}"
           Get-ChildItem artifacts | Format-Table Name, Length
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: GenshinFpsUnlocker-win-x64
+          name: HoYoEnhance-win-x64
           path: |
             artifacts/*.zip
             artifacts/*.7z

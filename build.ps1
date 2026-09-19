@@ -37,6 +37,14 @@ $hostSelfContained = [bool]$SelfContained
 $hostLabel = if ($hostSelfContained) { "self-contained" } else { "framework-dependent" }
 Write-Host "==> Host publish mode: $hostLabel" -ForegroundColor Cyan
 
+$legacyImageExtensions = @(".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
+function Remove-LegacyImageFiles([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    Get-ChildItem -LiteralPath $path -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $legacyImageExtensions -contains $_.Extension.ToLowerInvariant() } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host "==> Building Web UI (Vite)" -ForegroundColor Cyan
 $uiDir = Join-Path $Root "src/Ui"
 $uiDist = Join-Path $uiDir "dist/index.html"
@@ -50,6 +58,7 @@ if ($npm) {
         }
         & npm run build
         if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+        Remove-LegacyImageFiles (Join-Path $uiDir "dist")
     } finally { Pop-Location }
     if (-not (Test-Path $uiDist)) { throw "UI dist missing: $uiDist" }
     Write-Host "    UI: $uiDist" -ForegroundColor Green
@@ -143,6 +152,7 @@ if (Test-Path (Join-Path $uiDistDir "index.html")) {
     if (Test-Path $uiOut) { Remove-Item $uiOut -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $uiOut | Out-Null
     Copy-Item (Join-Path $uiDistDir "*") $uiOut -Recurse -Force
+    Remove-LegacyImageFiles $dist
     Write-Host "    UI copied -> $uiOut" -ForegroundColor Green
 } else {
     Write-Warning "src/Ui/dist missing after build — host may fail to load UI"
@@ -180,7 +190,7 @@ if (-not $SkipSetup) {
     if ($LASTEXITCODE -ne 0) { throw "installer/pack.ps1 failed" }
 
     $installExePath = Get-ChildItem (Join-Path $Root "artifacts") `
-        -Filter "GenshinFpsUnlocker.Install.*.exe" -File -ErrorAction SilentlyContinue |
+        -Filter "HoYoEnhance.Install.*.exe" -File -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
     if ($installExePath) {
         Write-Host "    Installer: $installExePath" -ForegroundColor Green
@@ -196,7 +206,7 @@ Write-Host "Note: 默认 FDD；安装器可按配置安装 .NET Desktop Runtime 
 if ($Install) {
     $gui = $installExePath
     if (-not $gui) {
-        $gui = Get-ChildItem (Join-Path $Root "artifacts") -Filter "GenshinFpsUnlocker.Install.*.exe" -File -ErrorAction SilentlyContinue |
+        $gui = Get-ChildItem (Join-Path $Root "artifacts") -Filter "HoYoEnhance.Install.*.exe" -File -ErrorAction SilentlyContinue |
             Select-Object -First 1 -ExpandProperty FullName
     }
     if (-not $gui -or -not (Test-Path $gui)) {

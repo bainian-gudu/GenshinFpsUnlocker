@@ -48,7 +48,8 @@ $ErrorActionPreference = "Stop"
 
 $InstallerDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot     = Split-Path -Parent $InstallerDir
-$AppName      = "GenshinFpsUnlocker"
+$AppName      = "HoYoEnhance"
+$LegacyAppName = "GenshinFpsUnlocker"
 $Config       = Join-Path $InstallerDir "kachina.config.json"
 $ToolsDir     = Join-Path $InstallerDir "tools"
 $Builder      = Join-Path $ToolsDir "kachina-builder.exe"
@@ -63,6 +64,47 @@ function Run([string]$exe, [string[]]$arguments, [string]$what) {
     Write-Host "    $exe $($arguments -join ' ')" -ForegroundColor DarkGray
     & $exe @arguments
     if ($LASTEXITCODE -ne 0) { throw "$what 失败（exit $LASTEXITCODE）" }
+}
+
+$legacyImageExtensions = @(".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
+function Remove-LegacyImageFiles([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    Get-ChildItem -LiteralPath $path -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $legacyImageExtensions -contains $_.Extension.ToLowerInvariant() } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# metadata 由 builder 生成；这里补上历史文件名，升级时清掉旧 exe / 卸载器 / 更新器。
+function Add-LegacyDeletes([string]$metadataPath) {
+    $raw = Get-Content -LiteralPath $metadataPath -Raw
+    $metadata = $raw | ConvertFrom-Json
+    $legacy = @(
+        "$LegacyAppName.exe",
+        "$LegacyAppName.uninst.exe",
+        "$LegacyAppName.update.exe",
+        "app.png",
+        "ui/favicon.png",
+        "ui/images/brand-fox.png",
+        "ui/images/game-icon.png",
+        "ui/images/installer-hero.jpg",
+        "ui/images/sidebar-yae.jpg",
+        "ui/images/teyvat-landscape.jpg",
+        "ui/images/yae-card.jpg",
+        "ui/images/yae-portrait-wide.jpg"
+    )
+    $existing = @()
+    if ($metadata.PSObject.Properties.Name -contains "deletes" -and $null -ne $metadata.deletes) {
+        $existing = @($metadata.deletes)
+    }
+    $merged = @($existing + $legacy | Select-Object -Unique)
+    if ($metadata.PSObject.Properties.Name -contains "deletes") {
+        $metadata.deletes = $merged
+    } else {
+        $metadata | Add-Member -NotePropertyName deletes -NotePropertyValue $merged
+    }
+    $metadata |
+        ConvertTo-Json -Depth 100 -Compress |
+        Set-Content -LiteralPath $metadataPath -Encoding utf8NoBOM
 }
 
 # ------------------------------------------------------------------ 前置校验
@@ -110,6 +152,7 @@ New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 
 Step "暂存应用目录 $AppDir"
 Copy-Item (Join-Path $DistDir "*") $AppDir -Recurse -Force
+Remove-LegacyImageFiles $AppDir
 # 这些不该进安装包
 foreach ($junk in @("Setup", "$AppName.Install.*.exe", "$AppName.update.exe", "*.7z")) {
     Get-ChildItem $AppDir -Filter $junk -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
@@ -123,6 +166,19 @@ foreach ($extra in @("USER_AGREEMENT.txt", "LICENSE", "config.example.json")) {
 Ok("已暂存 $((Get-ChildItem $AppDir -Recurse -File).Count) 个文件")
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+# 去掉上一版脚本可能留下的旧品牌产物，避免新旧名字同时出现在 artifacts\。
+foreach ($pattern in @(
+    "$LegacyAppName.Install.*.exe",
+    "$LegacyAppName-portable-win-x64.zip",
+    "$LegacyAppName_v*.7z"
+)) {
+    Get-ChildItem $OutDir -Filter $pattern -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+$legacyPortableDir = Join-Path $OutDir "$LegacyAppName-portable-win-x64"
+if (Test-Path $legacyPortableDir) {
+    Remove-Item $legacyPortableDir -Recurse -Force
+}
 
 # ------------------------------------------------------------------ 1) 更新器
 $UpdaterName = "$AppName.update.exe"
@@ -140,6 +196,7 @@ try {
         "-r", $RepoId, "-t", $Version,
         "-u", ".\$AppName\$UpdaterName"
     ) "gen"
+    Add-LegacyDeletes (Join-Path $Work "metadata.json")
 
     # -------------------------------------------------------------- 3) 离线安装器
     $InstallName = "$AppName.Install.$Version.exe"
@@ -158,6 +215,7 @@ $PortableDir  = Join-Path $OutDir $PortableName
 if (Test-Path $PortableDir) { Remove-Item $PortableDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $PortableDir | Out-Null
 Copy-Item (Join-Path $AppDir "*") $PortableDir -Recurse -Force
+Remove-LegacyImageFiles $PortableDir
 
 $zip = Join-Path $OutDir "$PortableName.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }

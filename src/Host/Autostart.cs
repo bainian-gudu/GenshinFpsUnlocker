@@ -274,7 +274,7 @@ internal static class Autostart
             }
 
             var trustError = string.Empty;
-            if (!ModuleTrust.IsTrustworthy(exe, "GenshinFpsUnlocker.exe", "自启动程序", out trustError))
+            if (!ModuleTrust.IsTrustworthy(exe, AppPaths.ExecutableFileName, "自启动程序", out trustError))
             {
                 notice = "管理员自启动被拒绝：" + trustError;
                 AppLog.Warn("管理员自启动任务被拒绝：" + trustError);

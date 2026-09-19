@@ -65,9 +65,9 @@ pnpm install --frozen-lockfile
 
 | 文件 | 说明 |
 | --- | --- |
-| `<HoYoEnhance 安装包>.exe` | 离线安装器。装完的安装目录里含卸载程序与更新程序 |
-| `<HoYoEnhance 便携包>.zip` | 便携包（内含更新程序，可直接升级） |
-| `<HoYoEnhance 便携包>.7z` | 便携 7z（本机检测到 7-Zip 时才生成） |
+| `HoYoEnhance.Install.<版本>.exe` | 离线安装器。装完的安装目录里含卸载程序与更新程序 |
+| `HoYoEnhance-portable-win-x64.zip` | 便携包（内含更新程序，可直接升级） |
+| `HoYoEnhance_v<版本>.7z` | 便携 7z（本机检测到 7-Zip 时才生成） |
 
 ## 打包步骤（`pack.ps1` 内部做的事）
 
@@ -78,7 +78,7 @@ pnpm install --frozen-lockfile
 kachina-builder.exe pack -c installer\kachina.config.json -o <app>\<更新程序>.exe
 
 # 2) 生成 metadata + 分块 hashed 目录
-kachina-builder.exe gen -j 6 -i <兼容产品标识> -m metadata.json -o hashed `
+kachina-builder.exe gen -j 6 -i HoYoEnhance -m metadata.json -o hashed `
     -r bainian-gudu/HoYoEnhance -t <ver> -u .\<app>\<更新程序>.exe
 
 # 3) 离线安装器
@@ -114,6 +114,24 @@ Kachina 是本项目唯一的安装、卸载和在线更新实现。宿主程序
 
 下面几项上游都没有（`userDataPath` 上游有字段但行为有坑），改动都在 `kachina/` 里，
 逐处说明见 [`kachina/LOCAL_PATCHES.md`](kachina/LOCAL_PATCHES.md)。
+
+### `legacyExeNames` / `legacyProgramFilesPaths` — 品牌改名后的升级识别
+
+当前安装包与主程序名为 `HoYoEnhance`，但历史安装目录和主程序仍是
+`GenshinFpsUnlocker`。安装器除检查当前 `exeName` 外，还会检查：
+
+- `legacyExeNames`：旧主程序名（当前为 `GenshinFpsUnlocker.exe`），用于把旧目录
+  识别为可原地升级，并结束仍在运行的旧主程序；
+- `legacyProgramFilesPaths`：旧默认安装目录（当前为 `GenshinFpsUnlocker`），
+  用于注册表缺失时兜底识别；
+- `legacyUninstallNames`：旧卸载器名，仅用于兼容识别；
+- `pack.ps1` 会把旧 exe / 卸载器 / 更新器及旧位图名写入 metadata 的 `deletes`，
+  更新时清理旧文件；宿主启动时还会对同一批固定文件名做一次兜底清理。
+
+更新时会重建开始菜单项（旧 exe 名已不存在）；桌面图标只在用户原本就有的时候
+由宿主改指当前 exe、历史命名顺带改回英文品牌名，**不会**给当初没勾「创建桌面
+快捷方式」的用户补建。卸载时旧目录、旧文件名与旧开始菜单文件夹由
+`extraUninstallPath` / `extraUninstallLnkNames` 尽力清理。
 
 ### `extraUninstallRegistry` — 卸载时清理安装期写入的注册表
 

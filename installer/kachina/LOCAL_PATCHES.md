@@ -42,6 +42,7 @@
 | 8 | 卸载收尾、路径比较、提权状态与静默卸载入口 | `src-tauri/src/installer/uninstall.rs`、`src-tauri/src/ipc/manager.rs`、`src-tauri/src/installer/registry.rs`、`src/App.vue` |
 | 9 | 下载文件验签、临时文件、提权管道及后续复查修复 | `src-tauri/src/utils/secure_temp.rs`、`src-tauri/src/utils/acl.rs` 及相关调用点，详见第 9 节 |
 | 10 | DFS 会话模块拆分与注释中文化 | `src/dfs.ts`、`src/dfs/session.ts`；注释调整覆盖本目录项目源码和仓库内副本的功能注释 |
+| 12 | 品牌改名后的旧主程序 / 安装目录识别、旧组件清理与快捷方式修复 | `src-tauri/src/installer/config.rs`、`src-tauri/src/installer/mod.rs`、`src/App.vue` |
 
 ---
 
@@ -104,9 +105,10 @@ extra_uninstall_registry: PROJECT_CONFIG.extraUninstallRegistry ?? [],
 
 上游卸载器只删自己建的两个快捷方式：`<桌面>\{appName}.lnk` 与整个
 `<开始菜单>\{appName}\` 文件夹，且「桌面 / 开始菜单」按 `needElevate` 二选一
-（公共桌面 or 用户桌面）。本项目宿主会把桌面快捷方式**改名成中文显示名**
-或英文品牌显示名（`src/Host/ShortcutHelper.cs`，还会清掉内部名那份），
-于是卸载后桌面会留下一个指向已删除 exe 的死图标。
+（公共桌面 or 用户桌面）。本项目宿主还会把桌面上的历史命名
+（`原神帧率解锁.lnk`、`GenshinFpsUnlocker.lnk` …）改名成英文品牌名
+`HoYoEnhance.lnk`（`src/Host/ShortcutHelper.cs`），于是卸载后桌面会留下一个
+指向已删除 exe 的死图标。
 
 ### `src-tauri/src/installer/uninstall.rs`
 
@@ -774,6 +776,29 @@ Other(Vec<String>),
 
 ---
 
+## 12. 品牌改名后的升级兼容
+
+主程序从历史名 `GenshinFpsUnlocker.exe` 改为 `HoYoEnhance.exe` 后，同名哈希覆盖
+不再能处理旧 exe、旧卸载器和旧更新器。安装器配置新增以下兼容字段：
+
+- `legacyExeNames`：`config.rs` 在 `CURRENT_DIR` / `PARENT_DIR` / 注册表
+  `InstallLocation` / 默认 `ProgramFiles` 路径下同时探测旧主程序名；
+  `installer/mod.rs` 的 `select_dir` 也据此把旧目录标为可升级；
+- `legacyProgramFilesPaths`：注册表项缺失时，在旧默认安装目录兜底查找；
+- `legacyUninstallNames`：让新安装器仍能识别旧卸载器入口；
+
+`src/App.vue` 的 `installPrepare` 会同时枚举新旧 exe 进程并结束仍在运行的旧实例；
+`finishInstall` 在更新场景重建开始菜单项（旧 exe 名已不存在）；桌面图标不新建，
+宿主 `ShortcutHelper.RefreshDesktopShortcuts()` 只把**已存在**的桌面图标
+（规范名或历史命名）改指当前 exe，避免给当初没勾选桌面快捷方式的用户补一个。
+
+`installer/pack.ps1` 在生成 metadata 后追加旧 exe / 卸载器 / 更新器及旧位图到
+`deletes`，更新时由安装器统一清理；宿主启动时对同一批固定文件名再做一次兜底。
+旧安装目录和旧开始菜单文件夹另外通过 `extraUninstallPath` 与 `extraUninstallLnkNames`
+兜底。
+
+---
+
 
 ## 升级上游时的套用顺序
 
@@ -808,6 +833,9 @@ Other(Vec<String>),
 3e. **重做第 11 节的告警收敛**：两个 `libs/*-sys` 的 `src/lib.rs` 各加一行
    `#![allow(suspicious_runtime_symbol_definitions)]`，`cli/arg.rs` 的
    `Other(Vec<String>)` 上加 `#[allow(dead_code)]`；
+3f. **重做第 12 节的改名兼容**：`installer/config.rs` 增加旧 exe / 旧安装目录探测，
+   `installer/mod.rs` 的 `select_dir` 增加 `legacy_exe_names`，`App.vue` 同步结束旧进程
+   并在更新时重建快捷方式；
 4. `npx tsc --noEmit -p tsconfig.json`（上游本身有 3 个 `noUnusedLocals` 报错，
    只要没有新增报错即可）+ 用 `@vue/compiler-sfc` 编译 `src/App.vue` 自检；
 5. Windows 上 `pnpm build` 出 `kachina-builder.exe`，跑一次

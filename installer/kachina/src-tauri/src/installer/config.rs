@@ -151,6 +151,9 @@ pub async fn get_installer_config(
     let mut exe_name = "main.exe";
     let mut program_files_path = "KachinaInstaller";
     let mut reg_name = "KachinaInstaller";
+    let mut legacy_exe_names: Vec<String> = Vec::new();
+    let mut legacy_uninstall_names: Vec<String> = Vec::new();
+    let mut legacy_program_files_paths: Vec<String> = Vec::new();
     if let Some(config) = config.embedded_config.as_ref() {
         uninstall_name = config["uninstallName"].as_str().unwrap_or("uninst.exe");
         exe_name = config["exeName"].as_str().unwrap_or("main.exe");
@@ -158,22 +161,57 @@ pub async fn get_installer_config(
             .as_str()
             .unwrap_or("KachinaInstaller");
         reg_name = config["regName"].as_str().unwrap_or("KachinaInstaller");
+        legacy_exe_names = config["legacyExeNames"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        legacy_uninstall_names = config["legacyUninstallNames"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        legacy_program_files_paths = config["legacyProgramFilesPaths"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
     }
-    let is_uninstall = exe_path.file_name().unwrap().to_string_lossy() == uninstall_name;
+    let installer_file_name = exe_path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let is_uninstall = installer_file_name.as_str() == uninstall_name
+        || legacy_uninstall_names
+            .iter()
+            .any(|name| installer_file_name.as_str() == name.as_str());
     config.is_uninstall = is_uninstall;
     let exe_dir = exe_path.parent();
     if exe_dir.is_none() {
         return return_ta_result("Failed to get exe dir".to_string(), "GET_EXE_PATH_ERR");
     }
     let exe_dir = exe_dir.unwrap();
-    let exe_path = exe_dir.join(exe_name);
-    if exe_path.exists() {
+    let has_install = |dir: &Path| {
+        dir.join(exe_name).exists() || legacy_exe_names.iter().any(|name| dir.join(name).exists())
+    };
+    if has_install(exe_dir) {
         return Ok(config.fill(exe_dir, true, "CURRENT_DIR"));
     }
     let exe_parent_dir = exe_dir.parent();
     if let Some(exe_parent_dir) = exe_parent_dir {
-        let exe_path = exe_parent_dir.join(exe_name);
-        if exe_path.exists() {
+        if has_install(exe_parent_dir) {
             return Ok(config.fill(exe_parent_dir, true, "PARENT_DIR"));
         }
     }
@@ -194,14 +232,12 @@ pub async fn get_installer_config(
         match key.get_string("InstallLocation") {
             Ok(path) => {
                 let path = Path::new(&path);
-                let exe_path = path.join(exe_name);
-                if exe_path.exists() {
+                if has_install(path) {
                     return Ok(config.fill(path, true, "REG"));
                 }
 
-                let sub_exe_path = path.join(reg_name).join(exe_name);
-                if sub_exe_path.exists() {
-                    let sub_exe_dir = path.join(reg_name);
+                let sub_exe_dir = path.join(reg_name);
+                if has_install(&sub_exe_dir) {
                     return Ok(config.fill(&sub_exe_dir, true, "REG_FOLDED"));
                 }
             }
@@ -213,10 +249,16 @@ pub async fn get_installer_config(
 
     let program_files = std::env::var("ProgramFiles").context("GET_KNOWNFOLDER_ERR")?;
     let program_files_real_path = Path::new(&program_files).join(program_files_path);
-    let program_files_exe_path = program_files_real_path.join(exe_name);
-    Ok(config.fill(
-        &program_files_real_path,
-        program_files_exe_path.exists(),
-        "DEFAULT",
-    ))
+    if has_install(&program_files_real_path) {
+        return Ok(config.fill(&program_files_real_path, true, "DEFAULT"));
+    }
+
+    for legacy_path in legacy_program_files_paths {
+        let legacy_real_path = Path::new(&program_files).join(legacy_path);
+        if has_install(&legacy_real_path) {
+            return Ok(config.fill(&legacy_real_path, true, "DEFAULT_LEGACY"));
+        }
+    }
+
+    Ok(config.fill(&program_files_real_path, false, "DEFAULT"))
 }

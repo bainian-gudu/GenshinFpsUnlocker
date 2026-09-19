@@ -1004,14 +1004,26 @@ async function installPrepare(version: string): Promise<boolean> {
   // 上游在这里打点上报（sendInsight + buildEventString），本项目已移除遥测：
   // 版本信息只写本地日志，方便排查装的是哪个版本。
   log('installPrepare version', version);
-  const target_exe_path = `${source.value}${sep()}${PROJECT_CONFIG.exeName}`;
-  const runningExes =
-    (await ipcFindProcessByName(PROJECT_CONFIG.exeName).catch(log)) || [];
+  const exeNames = [
+    PROJECT_CONFIG.exeName,
+    ...(PROJECT_CONFIG.legacyExeNames ?? []),
+  ];
+  const targetExePaths = exeNames.map(
+    (name) => `${source.value}${sep()}${name}`,
+  );
+  const runningExes = (
+    await Promise.all(
+      exeNames.map((name) => ipcFindProcessByName(name).catch(log)),
+    )
+  )
+    .filter((items): items is [number, string][] => Array.isArray(items))
+    .flat();
   if (
     runningExes.find(
       (e) =>
-        e[1].toLowerCase().replace(/\\/g, '/') ===
-        target_exe_path.toLowerCase().replace(/\\/g, '/'),
+        targetExePaths
+          .map((path) => path.toLowerCase().replace(/\\/g, '/'))
+          .includes(e[1].toLowerCase().replace(/\\/g, '/')),
     )
   ) {
     // 安装 / 更新都不再询问：检测到正在运行就静默结束，失败也只记日志
@@ -1765,12 +1777,13 @@ async function finishInstall(
 ): Promise<void> {
   const { program, desktop, uninstall } = await getLnkPath();
   const exePath = `${source.value}${sep()}${PROJECT_CONFIG.exeName}`;
+  // 桌面图标只在全新安装时按勾选创建：更新时用户看不到这个勾选框，
+  // 不能给当初没勾的人补一个。已有桌面图标由宿主按「旧目标」修好（见 ShortcutHelper）。
   if (createLnk.value && !isUpdate.value) {
     await ipcCreateLnk(exePath, desktop, needElevate.value).catch(warn);
   }
-  if (!isUpdate.value) {
-    await ipcCreateLnk(exePath, program, needElevate.value).catch(warn);
-  }
+  // 开始菜单项每次安装/更新都重建：更新后旧 exe 名不再存在，必须指向新 exe
+  await ipcCreateLnk(exePath, program, needElevate.value).catch(warn);
   if (
     !isUpdate.value ||
     INSTALLER_CONFIG.install_path_source.startsWith('REG')
@@ -1985,6 +1998,7 @@ onMounted(async () => {
       INSTALLER_CONFIG.args.target || INSTALLER_CONFIG.install_path;
     const seldir = await invoke<InvokeSelectDirRes>('select_dir', {
       exeName: PROJECT_CONFIG.exeName,
+      legacyExeNames: PROJECT_CONFIG.legacyExeNames ?? [],
       silent: true,
       path: source.value,
     });
@@ -2110,6 +2124,7 @@ async function changeSource() {
     const seldir = await invoke<InvokeSelectDirRes>('select_dir', {
       path: source.value,
       exeName: PROJECT_CONFIG.exeName,
+      legacyExeNames: PROJECT_CONFIG.legacyExeNames ?? [],
       silent: false,
     });
     if (seldir === null) return;

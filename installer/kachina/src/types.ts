@@ -44,9 +44,15 @@ export type ProjectConfig = {
   publisher: string;
   regName: string;
   exeName: string;
+  /** 旧版主程序文件名，仅用于升级识别与结束旧进程。 */
+  legacyExeNames?: string[];
   uninstallName: string;
+  /** 旧版卸载程序文件名，仅用于兼容识别。 */
+  legacyUninstallNames?: string[];
   updaterName: string;
   programFilesPath: string;
+  /** 旧版默认安装目录名，仅用于升级识别。 */
+  legacyProgramFilesPaths?: string[];
   userDataPath: string[];
   ignoreFolderPath?: string[];
   extraUninstallPath: string[];

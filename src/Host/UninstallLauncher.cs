@@ -19,15 +19,16 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal static class UninstallLauncher
 {
-    private const string UninstFileName = AppPaths.ProductName + ".uninst.exe";
-
     /// <summary>Kachina 卸载程序路径；不存在（便携版）时返回 null。</summary>
     public static string? FindUninstaller()
     {
         try
         {
-            var path = AppPaths.UninstExePath;
-            return PathUtil.ExistsFile(path) ? path : null;
+            foreach (var path in new[] { AppPaths.UninstExePath, AppPaths.LegacyUninstExePath })
+            {
+                if (PathUtil.ExistsFile(path)) return path;
+            }
+            return null;
         }
         catch
         {
@@ -84,11 +85,21 @@ internal static class UninstallLauncher
     /// 任何一条不满足就拒绝启动 —— 宁可让用户去「设置 → 应用」卸载，
     /// 也不要把管理员令牌交给一个来路不明的 exe。
     /// </summary>
-    private static bool IsTrustworthyUninstaller(string path, out string error) =>
-        ModuleTrust.IsTrustworthy(
+    private static bool IsTrustworthyUninstaller(string path, out string error)
+    {
+        var expectedName = Path.GetFileName(path);
+        if (!string.Equals(expectedName, AppPaths.UninstallerFileName, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(expectedName, AppPaths.LegacyUninstallerFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "卸载程序文件名不符合预期: " + expectedName;
+            return false;
+        }
+
+        return ModuleTrust.IsTrustworthy(
             path,
-            UninstFileName,
+            expectedName,
             "卸载程序",
             out error,
             elevatedHint: "请退出管理员实例后按普通权限重试，或在 Windows「设置 → 应用 → 安装的应用」中卸载。");
+    }
 }

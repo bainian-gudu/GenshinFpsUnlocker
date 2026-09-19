@@ -773,6 +773,29 @@ fn uninstall_consent_wiring_case() {
     )
     .expect("parse config");
     let reg_name = cfg["regName"].as_str().unwrap_or("");
+    check(
+        "当前产品名与安装包名统一为 HoYoEnhance",
+        cfg["appName"].as_str() == Some("HoYoEnhance")
+            && cfg["exeName"].as_str() == Some("HoYoEnhance.exe")
+            && cfg["programFilesPath"].as_str() == Some("HoYoEnhance"),
+        format!(
+            "appName={:?} exeName={:?} programFilesPath={:?}",
+            cfg["appName"], cfg["exeName"], cfg["programFilesPath"]
+        ),
+    );
+    check(
+        "旧主程序名仍登记在 legacyExeNames",
+        cfg["legacyExeNames"]
+            .as_array()
+            .map(|items| items.iter().any(|v| v.as_str() == Some("GenshinFpsUnlocker.exe")))
+            .unwrap_or(false),
+        format!("{:?}", cfg["legacyExeNames"]),
+    );
+    check(
+        "内部注册表键继续使用历史 regName",
+        reg_name == "GenshinFpsUnlocker",
+        reg_name.to_string(),
+    );
     let entries = cfg["userDataPath"].as_array().cloned().unwrap_or_default();
     check("userDataPath 非空", !entries.is_empty(), "");
     let bad = entries

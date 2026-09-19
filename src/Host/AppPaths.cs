@@ -11,11 +11,29 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal static class AppPaths
 {
-    /// <summary>产品内部名（目录名、注册表键、互斥体等）。</summary>
+    /// <summary>历史内部标识（数据目录、注册表键、互斥体等，升级兼容用）。</summary>
     public const string ProductName = "GenshinFpsUnlocker";
 
     /// <summary>面向用户的显示名（品牌名，托盘提示、快捷方式、通知都用它）。</summary>
     public const string ProductDisplayName = "HoYoEnhance";
+
+    /// <summary>开始菜单产品目录名。</summary>
+    public const string StartMenuFolderName = ProductDisplayName;
+
+    /// <summary>当前主程序文件名。</summary>
+    public const string ExecutableFileName = ProductDisplayName + ".exe";
+
+    /// <summary>历史主程序文件名，仅用于升级识别。</summary>
+    public const string LegacyExecutableFileName = ProductName + ".exe";
+
+    /// <summary>当前卸载程序文件名。</summary>
+    public const string UninstallerFileName = ProductDisplayName + ".uninst.exe";
+
+    /// <summary>历史卸载程序文件名，仅用于升级识别。</summary>
+    public const string LegacyUninstallerFileName = ProductName + ".uninst.exe";
+
+    /// <summary>历史更新程序文件名，仅用于升级清理。</summary>
+    public const string LegacyUpdaterFileName = ProductName + ".update.exe";
 
     /// <summary>窗口标题。</summary>
     public const string ProductTitle = ProductDisplayName;
@@ -39,7 +57,7 @@ internal static class AppPaths
 
     /// <summary>当前进程 exe 完整路径。</summary>
     public static string ExePath =>
-        PathUtil.Normalize(Environment.ProcessPath ?? Path.Combine(ExeDirectory, "GenshinFpsUnlocker.exe"));
+        PathUtil.Normalize(Environment.ProcessPath ?? Path.Combine(ExeDirectory, ExecutableFileName));
 
     /// <summary>与 Host 同目录的注入 Stub DLL（注入前按这个文件名做可信度校验）。</summary>
     public const string StubDllFileName = "FpsUnlockerStub.dll";
@@ -50,7 +68,10 @@ internal static class AppPaths
     public static string StubPathFor(GameDescriptor game) => Path.Combine(ExeDirectory, game.StubFileName);
 
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
-    public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");
+    public static string UninstExePath => Path.Combine(ExeDirectory, UninstallerFileName);
+
+    /// <summary>历史卸载程序路径，旧版升级后仍可能残留。</summary>
+    public static string LegacyUninstExePath => Path.Combine(ExeDirectory, LegacyUninstallerFileName);
 
 
 

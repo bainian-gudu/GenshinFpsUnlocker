@@ -3,17 +3,26 @@
     {
       "id": "github",
       "name": "GitHub",
-      "uri": "https://github.com/bainian-gudu/HoYoEnhance/releases/download/v${version}/GenshinFpsUnlocker.Install.${version}.exe"
+      "uri": "https://github.com/bainian-gudu/HoYoEnhance/releases/download/v${version}/HoYoEnhance.Install.${version}.exe"
     }
   ],
-  "appName": "GenshinFpsUnlocker",
+  "appName": "HoYoEnhance",
   "shortcutName": "HoYoEnhance",
   "publisher": "HoYoEnhance",
   "regName": "GenshinFpsUnlocker",
-  "exeName": "GenshinFpsUnlocker.exe",
-  "uninstallName": "GenshinFpsUnlocker.uninst.exe",
-  "updaterName": "GenshinFpsUnlocker.update.exe",
-  "programFilesPath": "GenshinFpsUnlocker",
+  "exeName": "HoYoEnhance.exe",
+  "legacyExeNames": [
+    "GenshinFpsUnlocker.exe"
+  ],
+  "uninstallName": "HoYoEnhance.uninst.exe",
+  "legacyUninstallNames": [
+    "GenshinFpsUnlocker.uninst.exe"
+  ],
+  "updaterName": "HoYoEnhance.update.exe",
+  "programFilesPath": "HoYoEnhance",
+  "legacyProgramFilesPaths": [
+    "GenshinFpsUnlocker"
+  ],
   "title": "HoYoEnhance",
   "description": "原神 / 崩坏：星穹铁道 · 自定义 FPS · 后台注入 · 托盘设置",
   "windowTitle": "HoYoEnhance 安装程序",
@@ -23,7 +32,13 @@
     "%APPDATA%/GenshinFpsUnlocker",
     "%USERPROFILE%/Documents/GenshinFpsUnlocker"
   ],
-  "extraUninstallPath": [],
+  "extraUninstallPath": [
+    "${INSTALL_PATH}/GenshinFpsUnlocker.exe",
+    "${INSTALL_PATH}/GenshinFpsUnlocker.uninst.exe",
+    "${INSTALL_PATH}/GenshinFpsUnlocker.update.exe",
+    "%APPDATA%/Microsoft/Windows/Start Menu/Programs/GenshinFpsUnlocker",
+    "%ProgramData%/Microsoft/Windows/Start Menu/Programs/GenshinFpsUnlocker"
+  ],
   "extraUninstallRegistry": [
     {
       "hive": "HKCU",
