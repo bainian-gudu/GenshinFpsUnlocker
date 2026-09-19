@@ -26,18 +26,14 @@ internal sealed partial class MainForm
     private bool _trayTipShownThisSession;
     /// <summary>帧率子菜单当前是按哪款游戏构建的（切换游戏时要重建）。</summary>
     private GameId? _trayFpsBuiltFor;
-    /// <summary>托盘因游戏启动而自动跟到的那款游戏（null = 当前没有跟随）。</summary>
-    private GameId? _trayFollowedGame;
-    /// <summary>上一轮看到的运行中游戏：只在「没有 → 有 / 有 → 没有」的跳变时刻跟随。</summary>
-    private GameId? _trayLastRunningGame;
-    /// <summary>自动跟随之前用户选中的游戏：游戏退出后回到这里（默认原神）。</summary>
-    private GameId _trayRestoreGame = GameId.Genshin;
+    /// <summary>托盘自动跟随的纯状态机（启动跟随一次、退出回退，手动查看不打断回退）。</summary>
+    private readonly TrayGameFollowState _trayFollow = new();
     /// <summary>主窗是否已藏入托盘（气泡/提示文案用）。</summary>
     private bool _inTray;
 
     /// <summary>当前正在配置的游戏描述与档案。</summary>
-    private GameDescriptor ActiveGameDescriptor => GameCatalog.Get(_config.ActiveGame);
-    private GameProfile ActiveGameProfile => _config.Profile(_config.ActiveGame);
+    private GameDescriptor ActiveGameDescriptor => GameCatalog.Get(_service.DisplayGame);
+    private GameProfile ActiveGameProfile => _config.Profile(_service.DisplayGame);
 
     private void OnServiceStateForTray()
     {
@@ -60,43 +56,24 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
-    /// 托盘热切换：游戏启动的那一下自动切到它（菜单、提示、界面一起换），游戏退出后
-    /// 回到启动前选中的那款（默认原神）。跟随只在「启动 / 退出」的跳变时刻发生，
-    /// 用户在托盘或界面手动换过游戏就以手动选择为准，绝不把界面拽回正在注入的那款。
-    /// 跟随只是本次运行的临时选择，不覆盖用户存下来的「当前游戏」。
+    /// 托盘热切换：游戏进程启动的那一下自动切到它（菜单、提示、界面一起换），
+    /// 游戏退出后回到启动前展示的那款（默认原神）。跟随只认运行会话号，
+    /// 运行状态的短暂抖动不会重复触发，也不会把界面反复拽回正在注入的那款；
+    /// 用户中途手动查看哪款都不改变「退出后回到跟随前游戏」这个目标。
+    /// 跟随只改展示游戏（<see cref="UnlockService.DisplayGame"/>），不覆盖用户选择。
     /// </summary>
     private void SyncTrayGameFollow()
     {
         if (IsDisposed) return;
-        var running = _service.RunningGame ?? _service.AttachedGame;
 
-        // 手动切换（托盘菜单或 Web 界面改 activeGame）优先：一旦发现当前选择
-        // 已经不是在跟随的那款，就把跟随作废，退出时也不再回退。
-        if (_trayFollowedGame is GameId followed && _config.ActiveGame != followed)
-            _trayFollowedGame = null;
+        var decision = _trayFollow.Update(
+            _service.RunningSession, _service.RunningGame, _service.DisplayGame);
+        if (!decision.Switch) return;
 
-        if (running == _trayLastRunningGame) return;
-        var previous = _trayLastRunningGame;
-        _trayLastRunningGame = running;
-
-        // 游戏刚启动：用户当前选的不是它，才跟随一次
-        if (running is GameId game && previous is null && _config.ActiveGame != game)
-        {
-            _trayFollowedGame = game;
-            _trayRestoreGame = _config.ActiveGame;
-            _service.SetActiveGame(game, persist: false);
-            AppLog.Info($"托盘跟随运行中的游戏 → {GameCatalog.Get(game).Key}");
-            PushUiAndRefreshTray();
-            return;
-        }
-
-        // 游戏退出：只有还停留在自动跟随的那款上，才回退到启动前的选择
-        if (running is not null || previous is not GameId exited) return;
-        if (_trayFollowedGame != exited) return;
-        _trayFollowedGame = null;
-        if (_config.ActiveGame != exited || _trayRestoreGame == exited) return;
-        _service.SetActiveGame(_trayRestoreGame, persist: false);
-        AppLog.Info($"游戏已退出 — 托盘恢复到 {GameCatalog.Get(_trayRestoreGame).Key}");
+        _service.SetDisplayGame(decision.Game);
+        AppLog.Info(decision.IsFollow
+            ? $"托盘跟随运行中的游戏 → {GameCatalog.Get(decision.Game).Key}"
+            : $"游戏已退出 — 托盘恢复到 {GameCatalog.Get(decision.Game).Key}");
         PushUiAndRefreshTray();
     }
 
@@ -279,9 +256,9 @@ internal sealed partial class MainForm
                 if (_trayGameRoot is not null)
                     _trayGameRoot.Text = $"当前游戏  ·  {descriptor.ShortName}";
                 if (_trayGameGenshinItem is not null)
-                    _trayGameGenshinItem.Checked = _config.ActiveGame == GameId.Genshin;
+                    _trayGameGenshinItem.Checked = _service.DisplayGame == GameId.Genshin;
                 if (_trayGameStarRailItem is not null)
-                    _trayGameStarRailItem.Checked = _config.ActiveGame == GameId.StarRail;
+                    _trayGameStarRailItem.Checked = _service.DisplayGame == GameId.StarRail;
                 if (_trayLaunchItem is not null)
                     _trayLaunchItem.Text = $"启动{descriptor.DisplayName}";
 
@@ -325,7 +302,7 @@ internal sealed partial class MainForm
                     _trayFpsRoot.ToolTipText = descriptor.FpsViaRegistry
                         ? $"注册表：{_service.StarRailRegistryStatus}"
                         : "选择预设或自定义目标帧率";
-                    if (_trayFpsBuiltFor != _config.ActiveGame)
+                    if (_trayFpsBuiltFor != _service.DisplayGame)
                     {
                         BuildTrayFpsItems();
                     }

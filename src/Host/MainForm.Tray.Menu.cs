@@ -46,14 +46,12 @@ internal sealed partial class MainForm
         };
         _trayGameGenshinItem = MakeCheckItem(
             GameCatalog.Genshin.DisplayName,
-            _config.ActiveGame == GameId.Genshin,
+            _service.DisplayGame == GameId.Genshin,
             "切换到原神：菜单里的开关与帧率作用于原神");
         _trayGameGenshinItem.CheckOnClick = false;
         _trayGameGenshinItem.Click += (_, _) =>
         {
             if (_syncingUi) return;
-            // 手动切换优先：取消自动跟随，游戏退出时也不再回退
-            _trayFollowedGame = null;
             _service.SetActiveGame(GameId.Genshin);
             AfterTrayConfigChange("当前游戏 → 原神");
         };
@@ -61,13 +59,12 @@ internal sealed partial class MainForm
 
         _trayGameStarRailItem = MakeCheckItem(
             GameCatalog.StarRail.DisplayName,
-            _config.ActiveGame == GameId.StarRail,
+            _service.DisplayGame == GameId.StarRail,
             "切换到崩坏：星穹铁道：帧率走注册表，只支持 120 FPS");
         _trayGameStarRailItem.CheckOnClick = false;
         _trayGameStarRailItem.Click += (_, _) =>
         {
             if (_syncingUi) return;
-            _trayFollowedGame = null;
             _service.SetActiveGame(GameId.StarRail);
             AfterTrayConfigChange("当前游戏 → 崩坏：星穹铁道");
         };
@@ -80,7 +77,7 @@ internal sealed partial class MainForm
         _trayLaunchItem = MakeActionItem($"启动{ActiveGameDescriptor.DisplayName}", (_, _) =>
         {
             // 成败都只发一条信息类通知：文案本身已说明结果，不必再用警告图标
-            _ = _service.TryLaunchGame(_config.ActiveGame, out var msg);
+            _ = _service.TryLaunchGame(_service.DisplayGame, out var msg);
             ShowTrayBalloon("启动游戏", msg);
             PushUiAndRefreshTray();
         });
@@ -95,7 +92,7 @@ internal sealed partial class MainForm
         _trayEnabledItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetEnabled(_config.ActiveGame, _trayEnabledItem.Checked);
+            _service.SetEnabled(_service.DisplayGame, _trayEnabledItem.Checked);
             AfterTrayConfigChange("帧率解锁");
         };
         menu.Items.Add(_trayEnabledItem);
@@ -131,7 +128,7 @@ internal sealed partial class MainForm
         _trayHideUidItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetHideUid(_config.ActiveGame, _trayHideUidItem.Checked);
+            _service.SetHideUid(_service.DisplayGame, _trayHideUidItem.Checked);
             AfterTrayConfigChange("隐藏 UID");
         };
         menu.Items.Add(_trayHideUidItem);
@@ -143,7 +140,7 @@ internal sealed partial class MainForm
         _trayAntiBlurPerspectiveItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetAntiBlurPerspective(_config.ActiveGame, _trayAntiBlurPerspectiveItem.Checked);
+            _service.SetAntiBlurPerspective(_service.DisplayGame, _trayAntiBlurPerspectiveItem.Checked);
             AfterTrayConfigChange("反角色虚化");
         };
         menu.Items.Add(_trayAntiBlurPerspectiveItem);
@@ -157,7 +154,7 @@ internal sealed partial class MainForm
         _trayAntiBlurDiveMosaicItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetAntiBlurDiveMosaic(_config.ActiveGame, _trayAntiBlurDiveMosaicItem.Checked);
+            _service.SetAntiBlurDiveMosaic(_service.DisplayGame, _trayAntiBlurDiveMosaicItem.Checked);
             AfterTrayConfigChange("移除水下马赛克");
         };
         menu.Items.Add(_trayAntiBlurDiveMosaicItem);
@@ -354,7 +351,7 @@ internal sealed partial class MainForm
         dlg.CancelButton = cancel;
         if (dlg.ShowDialog(Visible ? this : null) == DialogResult.OK)
         {
-            _service.ApplyFps(_config.ActiveGame, (int)num.Value);
+            _service.ApplyFps(_service.DisplayGame, (int)num.Value);
             PushUiAndRefreshTray();
             ShowTrayBalloon("帧率", $"{ActiveGameDescriptor.ShortName} 目标 FPS = {ActiveGameProfile.TargetFps}");
         }
@@ -365,7 +362,7 @@ internal sealed partial class MainForm
         if (_trayFpsRoot is null) return;
         var descriptor = ActiveGameDescriptor;
         var profile = ActiveGameProfile;
-        _trayFpsBuiltFor = _config.ActiveGame;
+        _trayFpsBuiltFor = _service.DisplayGame;
         _trayFpsRoot.Text = descriptor.FpsViaRegistry
             ? $"帧率  ·  固定 {profile.TargetFps} FPS"
             : $"修改帧率  ·  {profile.TargetFps} FPS";
@@ -405,7 +402,7 @@ internal sealed partial class MainForm
                 item.Text = "120 FPS  · 推荐";
             item.Click += (_, _) =>
             {
-                _service.ApplyFps(_config.ActiveGame, p);
+                _service.ApplyFps(_service.DisplayGame, p);
                 PushUiAndRefreshTray();
                 ShowTrayBalloon("帧率", $"{ActiveGameDescriptor.ShortName} 目标 FPS = {p}");
             };

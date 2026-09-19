@@ -5,7 +5,7 @@ import type { ToastItem } from '../components/ui';
 import type { GameId, GameProfile, LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
 import {
   APP_NAME, CONFIG_LABELS, GAME_CONFIG_LABELS, GAME_IDS, GAME_META, STORAGE_KEY,
-  createDefaultConfig, downloadFile, getPage, loadConfig, makeLog, parseConfig,
+  createDefaultConfig, downloadFile, getPage, isGameId, loadConfig, makeLog, parseConfig,
 } from '../lib/config';
 import { clearKeyboardFocus, clearTabFocus, markKeyboardFocus } from '../lib/focus';
 import type { AutostartState, NativeState } from '../lib/native';
@@ -54,6 +54,11 @@ export function useAppState() {
   // 界面只让对应游戏显示运行/注入状态，另一款必须显示等待启动。
   const [runningGame, setRunningGame] = useState<GameId | null>(null);
   const [attachedGame, setAttachedGame] = useState<GameId | null>(null);
+  // 界面当前展示的游戏：自动跟随、或手动切到正在运行的游戏时，它与 config.activeGame
+  // （用户保存的选择）可能不同。切到未运行的游戏才两者一起改；游戏退出只回退展示。
+  const [displayGame, setDisplayGame] = useState<GameId>(initial.config.activeGame);
+  const displayGameRef = useRef(displayGame);
+  displayGameRef.current = displayGame;
   const [attachedPid, setAttachedPid] = useState(0);
   const [currentFps, setCurrentFps] = useState(0);
   // Stub 反馈：生命周期状态、错误码与两项注入功能的就绪位掩码（概览页运行状态卡用）
@@ -92,7 +97,14 @@ export function useAppState() {
   }, []);
 
   const applyNativeState = useCallback((state: NativeState) => {
-    setConfig(state.config);
+    // 本地还有没下发的 activeGame 时，不让宿主状态把刚做的选择覆盖掉；
+    // 其余字段仍以宿主为准。
+    const pendingGame = pendingPatch.current.activeGame;
+    const keepLocalGame = typeof pendingGame === 'string' && isGameId(pendingGame);
+    setConfig(keepLocalGame
+      ? (previous) => ({ ...state.config, activeGame: previous.activeGame })
+      : state.config);
+    setDisplayGame(keepLocalGame ? pendingGame as GameId : state.displayGame);
     setSaveState(state.saveState);
     setStatusText(state.statusText || '就绪');
     setRunningGame(state.runningGame ?? null);
@@ -247,9 +259,9 @@ export function useAppState() {
 
   useEffect(() => {
     // 每个游戏一份的页面把游戏名带进标题，方便在任务栏与窗口列表里区分。
-    const scope = isGamePage(page) ? ` · ${GAME_META[config.activeGame].short}` : '';
+    const scope = isGamePage(page) ? ` · ${GAME_META[displayGame].short}` : '';
     document.title = `${PAGE_NAMES[page]}${scope} | ${APP_NAME}`;
-  }, [page, config.activeGame]);
+  }, [page, displayGame]);
 
   // 仅网页预览（非宿主）模式：将配置持久化到 localStorage
   useEffect(() => {
@@ -325,9 +337,13 @@ export function useAppState() {
     patchTimer.current = window.setTimeout(() => { void flushNativePatch(); }, delay);
   }, [flushNativePatch]);
 
-  /** 当前正在配置的游戏档案（概览 / 设置 / 使用指南都读它）。 */
-  const activeGame = config.activeGame;
-  const gameConfig: GameProfile = config.games[config.activeGame];
+  /**
+   * 当前正在配置的游戏档案（概览 / 设置 / 使用指南都读它）。
+   * 用 displayGame 而不是 config.activeGame：自动跟随运行中的游戏时界面跟着换，
+   * 但用户保存的选择保持不变，手动切换时才由 setGame 同时改两者。
+   */
+  const activeGame = displayGame;
+  const gameConfig: GameProfile = config.games[activeGame];
 
   function updateConfig<K extends keyof UnlockerConfig>(key: K, value: UnlockerConfig[K]) {
     if (configRef.current[key] === value) return;
@@ -360,7 +376,7 @@ export function useAppState() {
 
   /** 只改当前游戏档案里的字段（设置页与概览页的控件走这里）。 */
   function updateGameConfig<K extends keyof GameProfile>(key: K, value: GameProfile[K]) {
-    patchGameConfig(configRef.current.activeGame, key, value);
+    patchGameConfig(displayGameRef.current, key, value);
   }
 
   /** 打开某个游戏的路径对话框：游戏库里可以给非当前游戏单独设路径。 */
@@ -371,8 +387,19 @@ export function useAppState() {
 
   /** 切换当前游戏：写入配置并同步一次日志与标题。 */
   function setGame(game: GameId) {
-    if (configRef.current.activeGame === game) return;
-    updateConfig('activeGame', game);
+    if (displayGameRef.current === game && configRef.current.activeGame === game) return;
+    // 切到正在运行的游戏属于临时查看：只换展示，不覆盖用户保存的当前游戏。
+    // 宿主侧会再判一次，这里同步处理是为了避免界面先闪成错误的持久选择。
+    const temporaryView = runningGame === game;
+    setDisplayGame(game);
+    if (!temporaryView) setConfig((previous) => ({ ...previous, activeGame: game }));
+    addLog('Info', `已切换到「${GAME_META[game].name}」。`, game);
+    // 手动切换始终下发一次：宿主需要据此换展示；切到运行中的游戏时由宿主决定
+    // 不写用户选择，切到未运行的游戏时才记为新的用户选择。
+    if (native) {
+      queuePatch({ activeGame: game });
+      schedulePatch(80);
+    }
     // 没有正在进行的启动会话时，让状态行跟着当前游戏走。
     if (launchStateRef.current === 'idle') setSessionGame(game);
   }
@@ -446,7 +473,7 @@ export function useAppState() {
   }
 
   /** 启动指定游戏：路径缺失时先让用户补路径，其余流程与原来一致。 */
-  function handleLaunch(game: GameId = configRef.current.activeGame) {
+  function handleLaunch(game: GameId = displayGameRef.current) {
     if (launchState === 'launching') return;
     if (launchState === 'running' && !native && game === sessionGame) {
       setLaunchState('idle');

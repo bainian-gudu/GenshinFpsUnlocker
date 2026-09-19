@@ -215,6 +215,9 @@ internal sealed partial class UiBridge : IDisposable
         return new
         {
             config = BuildConfigDto(),
+            // 界面 / 托盘当前展示的游戏：自动跟随运行中的游戏时与 config.activeGame
+            // （用户选择）不同；前端按这个字段切页，避免跟随状态被写回用户选择。
+            displayGame = GameCatalog.Get(_service.DisplayGame).Key,
             statusText = _service.StatusText,
             gamePathStatus = _service.GamePathStatus,
             attachedPid = _service.AttachedPid,

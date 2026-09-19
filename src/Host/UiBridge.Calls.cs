@@ -108,6 +108,7 @@ internal sealed partial class UiBridge
                 var fresh = new AppConfig();
                 CopyConfig(fresh, _config);
                 _config.Sanitize();
+                _service.SetDisplayGame(_config.ActiveGame);
                 // 恢复默认会清掉游戏路径：按新配置重新核对一次上一版本的残留组件。
                 _service.QueueLegacyCleanup();
                 // 恢复默认同样要把两条自启通道一起收敛（默认是「不开自启」）。
@@ -255,7 +256,7 @@ internal sealed partial class UiBridge
     private GameId ReadGameParam(JsonObject p)
     {
         var key = TryGetString(p["game"]);
-        return GameCatalog.TryParseKey(key, out var game) ? game : _config.ActiveGame;
+        return GameCatalog.TryParseKey(key, out var game) ? game : _service.DisplayGame;
     }
 
 }

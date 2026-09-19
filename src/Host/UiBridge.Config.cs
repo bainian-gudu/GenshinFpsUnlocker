@@ -153,6 +153,7 @@ internal sealed partial class UiBridge
             && GameCatalog.TryParseKey(activeEl.GetString(), out var activeGame))
         {
             _config.ActiveGame = activeGame;
+            _service.SetDisplayGame(activeGame);
         }
 
         SetBool(root, "masterEnabled", v => _config.MasterEnabled = v);

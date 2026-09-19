@@ -45,13 +45,29 @@ internal sealed partial class UnlockService : IDisposable
         GameCatalog.All.ToDictionary(game => game.Id, _ => new GameSession());
 
     private Task? _loop;
-    /// <summary>当前认为已成功附着的游戏与 PID（IPC 只有一个槽位，同时只附着一款）。</summary>
-    private GameId? _attachedGame;
+    /// <summary>
+    /// 当前认为已成功附着的游戏与 PID（IPC 只有一个槽位，同时只附着一款）。
+    /// 后台监视线程写、UI 线程读，用 int 值 + Volatile 保证可见性；0 = 未附着。
+    /// </summary>
+    private int _attachedGameValue;
     /// <summary>
     /// 当前检测到正在运行的游戏（星铁只走注册表、无需注入时也算）。
     /// 两款游戏共用一份运行状态，界面靠它把状态归属到对应游戏，避免互相串台。
+    /// 0 = 没有游戏进程，(int)GameId + 1 = 具体游戏。
     /// </summary>
-    private GameId? _runningGame;
+    private int _runningGameValue;
+    /// <summary>
+    /// 界面 / 托盘当前展示的游戏。自动跟随、或手动切到正在运行的游戏时只改这里，
+    /// 不动配置里的用户选择；切到未运行的游戏才通过 <see cref="SetActiveGame"/> 同时改两者。
+    /// </summary>
+    private int _displayGameValue;
+    /// <summary>
+    /// 运行会话号：每次出现一个新的游戏进程 PID 时 +1。托盘的自动跟随只在
+    /// 会话号变化时发生一次，运行状态的短暂抖动不会重复触发跟随。
+    /// </summary>
+    private int _runningSession;
+    /// <summary>最后一次见到的游戏进程 PID，用来判断是否是新启动的进程。</summary>
+    private int _lastSeenGamePid;
     /// <summary>
     /// 共享内存当前属于哪款游戏的 Stub（注入时确定）。映射只有一个槽位，
     /// 属于 A 游戏时不能再拿 B 游戏的档案去写它，否则会把 A 的目标帧率 / 开关冲掉。
@@ -80,12 +96,19 @@ internal sealed partial class UnlockService : IDisposable
     // UI 可能长时间读到旧值，所以显式走 Volatile（也把这层意图写在代码里）。
     public string StatusText => Volatile.Read(ref _statusText);
     /// <summary>当前配置中那款游戏的路径状态（切游戏时界面跟着换）。</summary>
-    public string GamePathStatus => _sessions[_config.ActiveGame].PathStatus;
+    public string GamePathStatus => _sessions[DisplayGame].PathStatus;
     public int AttachedPid => Volatile.Read(ref _attachedPid);
     /// <summary>当前附着的是哪款游戏（未附着时为 null）。</summary>
-    public GameId? AttachedGame => _attachedGame;
+    public GameId? AttachedGame => DecodeGame(Volatile.Read(ref _attachedGameValue));
     /// <summary>当前检测到正在运行的游戏（没有游戏进程时为 null）。</summary>
-    public GameId? RunningGame => _runningGame;
+    public GameId? RunningGame => DecodeGame(Volatile.Read(ref _runningGameValue));
+    /// <summary>
+    /// 界面 / 托盘当前展示的游戏：自动跟随运行中的游戏时只改这里；
+    /// 用户手动切换才同时改 <see cref="Config"/> 里的 ActiveGame。
+    /// </summary>
+    public GameId DisplayGame => (GameId)Volatile.Read(ref _displayGameValue);
+    /// <summary>运行会话号：新游戏进程启动时 +1，用于托盘只跟随一次。</summary>
+    public int RunningSession => Volatile.Read(ref _runningSession);
     public IpcStatus StubStatus => _ipc.Read().Status;
     public int CurrentFpsFeedback => _ipc.Read().CurrentFps;
 
@@ -102,6 +125,12 @@ internal sealed partial class UnlockService : IDisposable
     public string StarRailRegistryStatus => _sessions[GameId.StarRail].RegistryStatus;
 
     public AppConfig Config => _config;
+
+    /// <summary>0 = null，其余为 (int)GameId + 1。</summary>
+    private static GameId? DecodeGame(int value) =>
+        value == 0 ? null : (GameId)(value - 1);
+
+    private static int EncodeGame(GameId game) => (int)game + 1;
 
     /// <summary>指定游戏是否处于「启用」状态且总开关打开。</summary>
     public bool IsGameEnabled(GameId game) =>
@@ -127,6 +156,7 @@ internal sealed partial class UnlockService : IDisposable
     public UnlockService(AppConfig config)
     {
         _config = config;
+        Volatile.Write(ref _displayGameValue, (int)_config.ActiveGame);
         try
         {
             _ipc = new IpcSharedMemory();
@@ -163,16 +193,40 @@ internal sealed partial class UnlockService : IDisposable
     }
 
     /// <summary>
-    /// 切换当前正在配置的游戏（界面三个游戏页跟着换）。
-    /// <paramref name="persist"/> 为 false 时只改本次运行的选择：托盘跟随运行中的
-    /// 游戏属于临时切换，不该把用户存下来的选择覆盖掉。
+    /// 用户手动切换当前正在配置的游戏（界面三个游戏页与托盘一起换）。
+    /// 切到「正在运行」的那款属于临时查看：只改展示，不写用户保存的选择，
+    /// 游戏退出后托盘会回到自动跟随前的游戏；切到未运行的游戏才记为新的用户选择。
+    /// 游戏启动时的自动跟随请用 <see cref="SetDisplayGame"/>。
     /// </summary>
-    public void SetActiveGame(GameId game, bool persist = true)
+    public void SetActiveGame(GameId game)
     {
-        if (_config.ActiveGame == game) return;
+        // 运行中的游戏是「当前实际在玩的那款」：用户切过去多半只是看状态，
+        // 不应该覆盖保存的主选择，也不影响游戏退出后的回退。
+        if (RunningGame == game)
+        {
+            SetDisplayGame(game);
+            return;
+        }
+
+        var configChanged = _config.ActiveGame != game;
+        var displayChanged = DisplayGame != game;
         _config.ActiveGame = game;
+        Volatile.Write(ref _displayGameValue, (int)game);
+        if (!configChanged && !displayChanged) return;
+
         AppLog.Info($"active game → {GameCatalog.Get(game).Key}");
-        if (persist) _config.TrySave(out _);
+        _config.TrySave(out _);
+        Raise(forceUi: true);
+    }
+
+    /// <summary>
+    /// 自动跟随运行中的游戏：只切换界面 / 托盘的展示游戏，不写配置、不改变
+    /// 用户选择，因此游戏退出后可以安全回退到启动前的展示游戏。
+    /// </summary>
+    public void SetDisplayGame(GameId game)
+    {
+        if (DisplayGame == game) return;
+        Volatile.Write(ref _displayGameValue, (int)game);
         Raise(forceUi: true);
     }
 
@@ -206,7 +260,9 @@ internal sealed partial class UnlockService : IDisposable
     public void PushConfigToIpc(bool force = false)
     {
         _config.Sanitize();
-        var game = _attachedGame ?? _config.ActiveGame;
+        // 自动跟随只影响界面展示，不影响注入目标：IPC 配置始终跟着实际运行 /
+        // 附着的游戏走，其次是用户选择的那款。
+        var game = AttachedGame ?? RunningGame ?? _config.ActiveGame;
         // 映射已经被另一款游戏的 Stub 占用（它可能仍在运行）：不要动它的任何字段。
         if (_ipcOwner is GameId owner && owner != game) return;
         var descriptor = GameCatalog.Get(game);

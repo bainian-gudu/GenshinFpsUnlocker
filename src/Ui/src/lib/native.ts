@@ -3,6 +3,11 @@ import { asPage, isGameId, parseConfig } from './config';
 
 export type NativeState = {
   config: UnlockerConfig;
+  /**
+   * 界面 / 托盘当前展示的游戏。自动跟随运行中的游戏时它与 config.activeGame
+   * （用户保存的选择）不同；前端按这个字段切页，不把跟随状态写回用户选择。
+   */
+  displayGame: GameId;
   statusText: string;
   gamePathStatus: string;
   /** 当前检测到正在运行的游戏；没有游戏进程时为 null */
@@ -139,6 +144,7 @@ function normalizeState(raw: any): NativeState {
   const isElevated = Boolean(raw.isElevated);
   return {
     config,
+    displayGame: isGameId(raw.displayGame) ? raw.displayGame : config.activeGame,
     statusText: String(raw.statusText ?? ''),
     gamePathStatus: String(raw.gamePathStatus ?? ''),
     runningGame: isGameId(raw.runningGame) ? raw.runningGame : null,

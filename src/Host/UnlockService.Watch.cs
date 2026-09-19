@@ -58,7 +58,7 @@ internal sealed partial class UnlockService
                 using var process = FindRunningGame(out var runningGame);
                 if (process is null || runningGame is null)
                 {
-                    _runningGame = null;
+                    ClearRunning();
                     // 没有游戏进程：清掉待核对标记，避免退出后才补写注册表。
                     _sessions[GameId.StarRail].RegistryCheckPending = false;
                     _sessions[GameId.StarRail].RegistryCheckedPid = 0;
@@ -82,7 +82,7 @@ internal sealed partial class UnlockService
 
                 var game = runningGame.Value;
                 // 运行状态按游戏归属：界面只让这一款显示「运行中」，另一款保持等待启动。
-                _runningGame = game;
+                SetRunning(game, process.Id);
                 var descriptor = GameCatalog.Get(game);
                 var profile = _config.Profile(game);
                 var session = _sessions[game];
@@ -96,7 +96,7 @@ internal sealed partial class UnlockService
                         session.RegistryCheckPending = false;
                         session.RegistryCheckedPid = 0;
                         session.InjectAttemptedPid = 0;
-                        _runningGame = null;
+                        ClearRunning();
                         SetAttached(null, 0);
                         await Task.Delay(activePoll, token);
                         continue;
@@ -107,7 +107,7 @@ internal sealed partial class UnlockService
                     session.RegistryCheckPending = false;
                     session.RegistryCheckedPid = 0;
                     session.InjectAttemptedPid = 0;
-                    _runningGame = null;
+                    ClearRunning();
                     SetAttached(null, 0);
                     await Task.Delay(activePoll, token);
                     continue;
@@ -115,7 +115,7 @@ internal sealed partial class UnlockService
 
                 // 之前附着的是另一款游戏：它的进程已经退出（否则上面会优先返回它），
                 // 先收尾旧会话，IPC 槽位再交给现在这款游戏。
-                if (_attachedGame is GameId previous && previous != game)
+                if (AttachedGame is GameId previous && previous != game)
                 {
                     var old = _sessions[previous];
                     old.InjectAttemptedPid = 0;
@@ -264,7 +264,7 @@ internal sealed partial class UnlockService
                     {
                         session.RegistryCheckPending = false;
                         session.RegistryCheckedPid = 0;
-                        _runningGame = null;
+                        ClearRunning();
                         continue;
                     }
                 }
@@ -272,7 +272,7 @@ internal sealed partial class UnlockService
                 {
                     session.RegistryCheckPending = false;
                     session.RegistryCheckedPid = 0;
-                    _runningGame = null;
+                    ClearRunning();
                     continue;
                 }
 
@@ -367,7 +367,7 @@ internal sealed partial class UnlockService
                 session.RegistryCheckedPid = 0;
                 if (processExited)
                 {
-                    _runningGame = null;
+                    ClearRunning();
                     if (descriptor.FpsViaRegistry)
                         session.RegistryStatus = "游戏未运行 — 启动后会自动核对注册表";
                 }
@@ -398,7 +398,7 @@ internal sealed partial class UnlockService
     private Process? FindRunningGame(out GameId? game)
     {
         var order = new List<GameDescriptor>();
-        if (_attachedGame is GameId attached) order.Add(GameCatalog.Get(attached));
+        if (AttachedGame is GameId attached) order.Add(GameCatalog.Get(attached));
         order.Add(GameCatalog.Get(_config.ActiveGame));
         foreach (var descriptor in GameCatalog.All)
         {
@@ -494,12 +494,33 @@ internal sealed partial class UnlockService
     }
 
     /// <summary>
+    /// 记录当前运行的游戏进程。只有出现新的 PID 才推进运行会话号，
+    /// 同一进程在检测抖动中短暂消失再出现时不会重复触发托盘的自动跟随。
+    /// </summary>
+    private void SetRunning(GameId game, int pid)
+    {
+        if (pid != 0 && pid != Volatile.Read(ref _lastSeenGamePid))
+        {
+            Volatile.Write(ref _lastSeenGamePid, pid);
+            Interlocked.Increment(ref _runningSession);
+        }
+        Volatile.Write(ref _runningGameValue, EncodeGame(game));
+    }
+
+    /// <summary>清除运行状态；保留运行会话号与最后见到的 PID，供托盘判定抖动。</summary>
+    private void ClearRunning()
+    {
+        Volatile.Write(ref _runningGameValue, 0);
+    }
+
+    /// <summary>
     /// 统一维护附着状态：同时把「系统保持唤醒」的请求绑定到游戏是否真的在跑。
     /// 旧实现在启动时就一直请求，程序常驻托盘 → 系统永不自动睡眠。
     /// </summary>
     private void SetAttached(GameId? game, int pid)
     {
-        _attachedGame = pid != 0 ? game : null;
+        var value = pid != 0 && game is GameId attached ? EncodeGame(attached) : 0;
+        Volatile.Write(ref _attachedGameValue, value);
         Volatile.Write(ref _attachedPid, pid);
         BackgroundResilience.SetGameActive(pid != 0);
     }
