@@ -21,7 +21,8 @@ internal static class GameLocatorTests
                 File.WriteAllText(Path.Combine(gameDir, "GenshinImpact.exe"), string.Empty);
                 File.WriteAllText(Path.Combine(streaming, "data.bin"), "x");
 
-                var result = GameLocator.ScanRoots([root], maxDepth: 5, System.Diagnostics.Stopwatch.StartNew());
+                var result = GameLocator.ScanRoots(
+                    GameCatalog.Genshin, [root], maxDepth: 5, System.Diagnostics.Stopwatch.StartNew());
 
                 Harness.True(result.Ok, "自定义安装路径必须能被快扫命中");
                 Harness.Equal(GameLocateSource.QuickScan, result.Source, "来源");
@@ -48,7 +49,8 @@ internal static class GameLocatorTests
                 WriteFile(Path.Combine(good, "YuanShen.exe"), string.Empty);
                 WriteFile(Path.Combine(good, "YuanShen_Data", "app.info"), "x");
 
-                var result = GameLocator.ScanRoots([root], maxDepth: 5, System.Diagnostics.Stopwatch.StartNew());
+                var result = GameLocator.ScanRoots(
+                    GameCatalog.Genshin, [root], maxDepth: 5, System.Diagnostics.Stopwatch.StartNew());
 
                 Harness.True(result.Ok, "应命中普通目录里的游戏");
                 Harness.True(
@@ -69,7 +71,8 @@ internal static class GameLocatorTests
                 WriteFile(Path.Combine(inner, "YuanShen.exe"), string.Empty);
                 WriteFile(Path.Combine(outer, "YuanShen_Data", "app.info"), "x");
 
-                var result = GameLocator.ScanRoots([root], maxDepth: 4, System.Diagnostics.Stopwatch.StartNew());
+                var result = GameLocator.ScanRoots(
+                    GameCatalog.Genshin, [root], maxDepth: 4, System.Diagnostics.Stopwatch.StartNew());
 
                 Harness.True(result.Ok, "资源在上一层的布局也要能命中");
                 Harness.True(result.Path!.EndsWith("YuanShen.exe", StringComparison.OrdinalIgnoreCase), "应指向 exe");
@@ -86,7 +89,8 @@ internal static class GameLocatorTests
                 Directory.CreateDirectory(fake);
                 File.WriteAllText(Path.Combine(fake, "GenshinImpact.exe"), string.Empty);
 
-                var result = GameLocator.ScanRoots([root], maxDepth: 3, System.Diagnostics.Stopwatch.StartNew());
+                var result = GameLocator.ScanRoots(
+                    GameCatalog.Genshin, [root], maxDepth: 3, System.Diagnostics.Stopwatch.StartNew());
 
                 Harness.False(result.Ok, "没有 _Data 特征的假 exe 不该被当成游戏");
             }
@@ -95,10 +99,10 @@ internal static class GameLocatorTests
 
         h.Case("主程序文件名判定", () =>
         {
-            Harness.True(GameLocator.IsCandidateExeName("YuanShen.exe"), "国服主程序");
-            Harness.True(GameLocator.IsCandidateExeName("genshinimpact.EXE"), "国际服主程序（大小写不敏感）");
-            Harness.False(GameLocator.IsCandidateExeName("GenshinImpact_launcher.exe"), "启动器不是主程序");
-            Harness.False(GameLocator.IsCandidateExeName("YuanShen.exe.bak"), "备份文件不是主程序");
+            Harness.True(GameLocator.IsCandidateExeName(GameCatalog.Genshin, "YuanShen.exe"), "国服主程序");
+            Harness.True(GameLocator.IsCandidateExeName(GameCatalog.Genshin, "genshinimpact.EXE"), "国际服主程序（大小写不敏感）");
+            Harness.False(GameLocator.IsCandidateExeName(GameCatalog.Genshin, "GenshinImpact_launcher.exe"), "启动器不是主程序");
+            Harness.False(GameLocator.IsCandidateExeName(GameCatalog.Genshin, "YuanShen.exe.bak"), "备份文件不是主程序");
         });
 
         h.Case("目录剪枝规则", () =>
@@ -145,7 +149,7 @@ internal static class GameLocatorTests
                 WriteFile(Path.Combine(gameDir, "YuanShen.exe"), string.Empty);
                 WriteFile(Path.Combine(gameDir, "YuanShen_Data", "app.info"), "x");
 
-                var resolved = GameLocator.ResolveFromShortcutTarget(gameDir).FirstOrDefault();
+                var resolved = GameLocator.ResolveFromShortcutTarget(GameCatalog.Genshin, gameDir).FirstOrDefault();
 
                 Harness.True(resolved is not null, "目录目标应反推出主程序");
                 Harness.True(
