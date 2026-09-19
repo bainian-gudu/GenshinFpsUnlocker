@@ -42,7 +42,7 @@
 ## 一、现状：缺这个模块会发生什么
 
 - 宿主 `GameCatalog.StarRail.StubFileName = "StarRailStub.dll"`，只有在星铁档案里
-  开启了画面效果（解除角色虚化 / 隐藏 UID 水印）时才会去注入，并且注入前做可信度校验
+  开启了画面效果（反角色虚化 / 隐藏 UID 水印）时才会去注入，并且注入前做可信度校验
   （`ModuleTrust`）。
 - DLL 不在 exe 旁时：状态栏显示「缺少 StarRailStub.dll（应位于 …）」，**不注入任何东西**，
   游戏进程保持干净。
@@ -112,7 +112,7 @@
   关闭开关时原样恢复。
 - 不要用「关掉 `s_UICamera`」那种做法（Pipsi 的 `hide_ui.cpp`）：会把整个 HUD 一起藏掉。
 
-## 六、功能 2：解除角色虚化
+## 六、功能 2：反角色虚化
 
 **偏移与方法地址已确认**（dump.cs，4.5.0）：
 
@@ -130,8 +130,12 @@ public class VCameraDOFEffectOverride : UnityEngine.MonoBehaviour {
 }
 ```
 
-- 首选：hook `OnActiveVCamera` / `Update`，在 `this + 0x18` 写 `false` ——
-  每次激活都压住，切换场景与相机重建都不用额外处理。
+- 首选：hook `OnActiveVCamera` / `Update`，同时压两个字段：
+  - `VCameraDOFEffectOverride + 0x18`（`EnableDOF`，激活源）
+  - `*(VCameraDOFEffectOverride + 0x40) + 0x18`（已激活的 `RPGDepthOfField.active`）
+  反汇编确认：`OnActiveVCamera` 只把 `0x58` 置 1 后转 `KCMOIBLMDAI`，
+  后者把 `EnableDOF` 复制到 `RPGDepthOfField.active`，之后 `Update` 不再回读；
+  只写 `EnableDOF` 关不掉已经激活的虚化，必须连实例字段一起压回 `false`。
 - 退路：`FindObjectsOfType` 找实例改字段，或 hook `RPGDepthOfField`。
 - AnimeSDK 标注的 `0x18` 与本次 dump 完全一致，不再是「仅作起点」。
 
@@ -139,7 +143,7 @@ public class VCameraDOFEffectOverride : UnityEngine.MonoBehaviour {
 
 1. 不放 DLL：宿主状态栏显示「缺少 StarRailStub.dll」，游戏内无任何变化。
 2. 放好 DLL + 只开「隐藏 UID 水印」：水印消失，关闭开关能恢复；游戏退出后 DLL 不在进程里。
-3. 只开「解除角色虚化」：镜头拉近角色不再透明化；切场景后仍有效。
+3. 只开「反角色虚化」：镜头拉近角色不再透明化；切场景后仍有效。
 4. 版本更新后再跑：定位失败要变成 `Error` 而不是崩游戏（宿主会显示错误码并按退避重试）。
 5. 全程不修改游戏目录里的任何文件（只读 + 内存操作）。
 
@@ -147,7 +151,7 @@ public class VCameraDOFEffectOverride : UnityEngine.MonoBehaviour {
 
 - 星铁有 `mhypbase.dll` 反作弊；联机 / 千星奇域等玩法保持关闭。
 - 默认关闭，只在用户显式开启时注入；失败即卸载，不做兜底 patch。
-- 本模块只做「解除虚化 / 隐藏 UID」两项，不碰帧率（帧率归注册表），也不碰存档与网络。
+- 本模块只做「反角色虚化 / 隐藏 UID」两项，不碰帧率（帧率归注册表），也不碰存档与网络。
 
 ## 九、继续推进需要什么（一步采集）
 
@@ -210,6 +214,6 @@ dotnet run -c Release --no-build <game-view-dir>
 | `info.txt` | 各文件版本 / 大小 / SHA256，用于判断适配的目标版本 |
 
 实现顺序（已完成）：按第四节把 RVA / 特征码定位打通 → 隐藏 UID 水印 →
-解除角色虚化 → 按第七节清单在 Windows 上验收。
+反角色虚化 → 按第七节清单在 Windows 上验收。
 
 在那之前，「模块缺失即不注入」就是最稳的状态：帧率解锁照常可用，画面效果保持未就绪提示。

@@ -1,13 +1,16 @@
 // =============================================================================
-// 星穹铁道解除角色虚化实现。
+// 星穹铁道反角色虚化实现。
 //
 // 4.5.0 dump.cs：
 //   VCameraDOFEffectOverride.EnableDOF // Offset: 0x18
+//   VCameraDOFEffectOverride.LIJIAFPPIDJ（RPGDepthOfField）// Offset: 0x40
 //   OnActiveVCamera  RVA 0x1C7FD870
 //   Update           RVA 0x1C7FCFC0
 //
+// 游戏只在激活时把 EnableDOF 复制到 RPGDepthOfField.active(0x18)，之后 Update
+// 不再回读，所以两个字段都要压：只写 EnableDOF 关不掉已经激活的虚化。
 // 采用「原函数先执行、再写 false」的顺序，避免游戏在 OnActiveVCamera / Update
-// 内重新把 EnableDOF 置回 true。关闭开关时不写字段，完全交还游戏控制。
+// 内重新把字段置回 true。关闭开关时不写字段，完全交还游戏控制。
 // =============================================================================
 
 #include "AntiBlur.h"
@@ -21,6 +24,8 @@ namespace
 {
     // VCameraDOFEffectOverride.EnableDOF // Offset: 0x18
     constexpr size_t kEnableDofOffset = 0x18;
+    // VCameraDOFEffectOverride.LIJIAFPPIDJ（RPGDepthOfField 实例）// Offset: 0x40
+    constexpr size_t kActiveDofOffset = 0x40;
 
     using DofEntryFn = void (*)(void* self);
 
@@ -45,14 +50,25 @@ namespace
 #if defined(_MSC_VER)
         __try
         {
-            *reinterpret_cast<bool*>(reinterpret_cast<uint8_t*>(self) + kEnableDofOffset) = false;
+            auto* bytes = reinterpret_cast<uint8_t*>(self);
+            *reinterpret_cast<bool*>(bytes + kEnableDofOffset) = false;
+
+            // 已激活的 RPGDepthOfField：KCMOIBLMDAI 复制后不再回读 EnableDOF，
+            // 必须把实例自己的 active(0x18) 一起压回 false。
+            void* activeDof = *reinterpret_cast<void**>(bytes + kActiveDofOffset);
+            if (activeDof)
+                *reinterpret_cast<bool*>(reinterpret_cast<uint8_t*>(activeDof) + kEnableDofOffset) = false;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             // 版本更新导致字段偏移变化时只放弃本次写入，不向上传播异常。
         }
 #else
-        *reinterpret_cast<bool*>(reinterpret_cast<uint8_t*>(self) + kEnableDofOffset) = false;
+        auto* bytes = reinterpret_cast<uint8_t*>(self);
+        *reinterpret_cast<bool*>(bytes + kEnableDofOffset) = false;
+        void* activeDof = *reinterpret_cast<void**>(bytes + kActiveDofOffset);
+        if (activeDof)
+            *reinterpret_cast<bool*>(reinterpret_cast<uint8_t*>(activeDof) + kEnableDofOffset) = false;
 #endif
     }
 

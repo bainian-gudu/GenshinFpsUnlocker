@@ -29,6 +29,8 @@ internal sealed partial class UnlockService : IDisposable
         public bool AutoLocateAttempted;
         /// <summary>星穹铁道：是否需要重新核对注册表。</summary>
         public bool RegistryCheckPending = true;
+        /// <summary>星穹铁道：已核对过注册表的 PID（同一进程只核对一次，避免反复写）。</summary>
+        public int RegistryCheckedPid;
         /// <summary>星穹铁道：最近一次注册表核对的结果文案。</summary>
         public string RegistryStatus = "尚未检查注册表";
         /// <summary>该游戏注入模块的完整路径。</summary>

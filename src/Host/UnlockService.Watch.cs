@@ -58,6 +58,10 @@ internal sealed partial class UnlockService
                 using var process = FindRunningGame(out var runningGame);
                 if (process is null || runningGame is null)
                 {
+                    // 没有游戏进程：清掉待核对标记，避免退出后才补写注册表。
+                    _sessions[GameId.StarRail].RegistryCheckPending = false;
+                    _sessions[GameId.StarRail].RegistryCheckedPid = 0;
+
                     if (_attachedPid != 0 || AnyInjectAttempted())
                     {
                         ResetInjectState();
@@ -80,6 +84,30 @@ internal sealed partial class UnlockService
                 var profile = _config.Profile(game);
                 var session = _sessions[game];
 
+                // Process 对象可能对应一个刚退出的残留进程：先确认存活，
+                // 否则会去读它的模块（部分读取失败），并在退出后触发注册表核对。
+                try
+                {
+                    if (process.HasExited)
+                    {
+                        session.RegistryCheckPending = false;
+                        session.RegistryCheckedPid = 0;
+                        session.InjectAttemptedPid = 0;
+                        SetAttached(null, 0);
+                        await Task.Delay(activePoll, token);
+                        continue;
+                    }
+                }
+                catch
+                {
+                    session.RegistryCheckPending = false;
+                    session.RegistryCheckedPid = 0;
+                    session.InjectAttemptedPid = 0;
+                    SetAttached(null, 0);
+                    await Task.Delay(activePoll, token);
+                    continue;
+                }
+
                 // 之前附着的是另一款游戏：它的进程已经退出（否则上面会优先返回它），
                 // 先收尾旧会话，IPC 槽位再交给现在这款游戏。
                 if (_attachedGame is GameId previous && previous != game)
@@ -92,7 +120,8 @@ internal sealed partial class UnlockService
                 }
 
                 // 首次发现该游戏进程：注册表解锁的游戏重新核对一次（新启动要读新值）。
-                if (session.InjectAttemptedPid == 0 && descriptor.FpsViaRegistry && profile.Enabled)
+                // 用 PID 去重，避免同一进程在注入重试期间反复写注册表。
+                if (descriptor.FpsViaRegistry && profile.Enabled && session.RegistryCheckedPid != process.Id)
                     session.RegistryCheckPending = true;
 
                 TryCapturePathFromProcess(descriptor, process);
@@ -148,6 +177,13 @@ internal sealed partial class UnlockService
 
                 if (!NeedsInjection(game))
                 {
+                    // 星铁：进程已确认在运行，此时才消费「新启动需核对注册表」标记。
+                    if (descriptor.FpsViaRegistry && session.RegistryCheckPending)
+                    {
+                        session.RegistryCheckedPid = process.Id;
+                        SyncStarRailRegistry();
+                    }
+
                     // 星穹铁道默认就落在这里：帧率走注册表，不需要注入。
                     SetStatus(descriptor.FpsViaRegistry && profile.Enabled
                         ? $"{descriptor.ShortName}运行中 PID {process.Id} — 帧率由注册表解锁（{StarRailRegistrySummary()}），无需注入"
@@ -206,7 +242,29 @@ internal sealed partial class UnlockService
                 await WaitForMainWindowAsync(process, token, TimeSpan.FromSeconds(45));
 
                 if (token.IsCancellationRequested) break;
-                try { if (process.HasExited) continue; } catch { continue; }
+                try
+                {
+                    if (process.HasExited)
+                    {
+                        session.RegistryCheckPending = false;
+                        session.RegistryCheckedPid = 0;
+                        continue;
+                    }
+                }
+                catch
+                {
+                    session.RegistryCheckPending = false;
+                    session.RegistryCheckedPid = 0;
+                    continue;
+                }
+
+                // 星铁：主窗口出现说明游戏已完成初始化、画面设置已写入注册表，
+                // 此时核对并确保 120 FPS；不要留到进程退出后再补做。
+                if (descriptor.FpsViaRegistry && session.RegistryCheckPending)
+                {
+                    session.RegistryCheckedPid = process.Id;
+                    SyncStarRailRegistry();
+                }
 
                 SetStatus($"{descriptor.ShortName}：正在注入 {descriptor.StubFileName} → PID {process.Id}…");
                 AppLog.Info($"inject begin game={descriptor.Key} pid={process.Id} stub={session.StubPath}");
@@ -261,13 +319,14 @@ internal sealed partial class UnlockService
                 }
 
                 // 游戏运行期间保活（PushConfigToIpc 内部已节流）
+                var processExited = false;
                 while (!token.IsCancellationRequested && _config.MasterEnabled && _config.AutoWatch)
                 {
                     try
                     {
-                        if (process.HasExited) break;
+                        if (process.HasExited) { processExited = true; break; }
                     }
-                    catch { break; }
+                    catch { processExited = true; break; }
 
                     PushConfigToIpc();
                     var st = _ipc.Read();
@@ -284,6 +343,12 @@ internal sealed partial class UnlockService
                 }
 
                 SetAttached(null, 0);
+                // 附着结束（进程退出 / 暂停 / Stub 出错）后不再补做注册表核对，
+                // 否则会在游戏退出后才去写注册表并弹出「请先启动一次游戏」。
+                session.RegistryCheckPending = false;
+                session.RegistryCheckedPid = 0;
+                if (processExited && descriptor.FpsViaRegistry)
+                    session.RegistryStatus = "游戏未运行 — 启动后会自动核对注册表";
                 // 暂停时保留已经加载的 DLL 连接；重新开启不应重置其 Ready 状态。
                 if (_config.MasterEnabled && _config.AutoWatch)
                     session.InjectAttemptedPid = 0;

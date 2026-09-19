@@ -2,7 +2,7 @@
 // StarRailStub.dll — 注入到崩坏：星穹铁道进程内的画面效果模块。
 //
 // 职责边界（与原神 FpsUnlockerStub.dll 完全独立）：
-//   1) 解除角色虚化：Hook VCameraDOFEffectOverride.OnActiveVCamera / Update，
+//   1) 反角色虚化：Hook VCameraDOFEffectOverride.OnActiveVCamera / Update，
 //      在开启时把 EnableDOF（Offset 0x18）压回 false；
 //   2) 隐藏 UID 水印：Hook RPGApplication.OnUpdate 作为主线程入口，
 //      按两条层级路径把 UnityEngine.UI.Graphic.m_Color.a 写 0。
