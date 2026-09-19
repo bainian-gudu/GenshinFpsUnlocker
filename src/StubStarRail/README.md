@@ -11,7 +11,7 @@
 | --- | --- |
 | `dllmain.cpp` | 模块生命周期、共享内存连接、定位重试、状态机与错误码 |
 | `Il2CppBridge.h/.cpp` | RVA / 特征码定位、函数头校验、自建 il2cpp string、Find / GetComponent、`m_Color` 读写、`SetVerticesDirty` 通知 |
-| `AntiBlur.h/.cpp` | Hook `OnActiveVCamera` / `Update`，开启时把 `EnableDOF` 压回 false |
+| `AntiBlur.h/.cpp` | Hook `BaseShaderPropertyTransition` 的相机 Dither 入口，开启时把 Camera 来源 alpha 压回 1.0 |
 | `HideUid.h/.cpp` | Hook `RPGApplication.OnUpdate`，主线程 tick 隐藏两条 UID 路径并支持恢复 |
 | `CMakeLists.txt` / `StarRailStub.def` | 独立构建 `StarRailStub.dll`，导出 `WndProc` |
 
@@ -31,7 +31,7 @@
 | `0xE102` | `GameObject.Find` 定位失败 |
 | `0xE103` | `GameObject.GetComponent` 定位失败 |
 | `0xE104` | `RPGApplication.OnUpdate` 定位失败 |
-| `0xE105` | `VCameraDOFEffectOverride` 两个入口都定位失败 |
+| `0xE105` | 相机 Dither 汇合入口与距离 / 高度兜底入口全部定位失败 |
 | `0xE106` | 反虚化 Hook 创建失败 |
 | `0xE107` | UID 主线程 Hook 创建失败 |
 | `0xE108` | `MH_EnableHook` 失败 |
@@ -114,30 +114,40 @@
 
 ## 六、功能 2：反角色虚化
 
-**偏移与方法地址已确认**（dump.cs，4.5.0）：
+早期实现曾 Hook `VCameraDOFEffectOverride`，但那是**场景景深 DOF**，不是
+「角色靠近镜头变半透明」的机制；所以 UI 显示已开启，实际镜头拉近仍会透明。
+Windows 侧实测也确认：同一 DLL 的隐藏 UID Hook 正常，排除注入与反作弊拦截。
+
+真正的链路是 `RPG.Client.BaseShaderPropertyTransition` 的相机 Dither。
+反汇编确认（dump.cs，4.5.0）：
 
 ```
-public class VCameraDOFEffectOverride : UnityEngine.MonoBehaviour {
-    public bool EnableDOF            // Offset: 0x18   <- 目标字段
-    public CoCMethod CoCMethod       // Offset: 0x1C
-    public DOFMethod DOFMethod       // Offset: 0x20
-    // ...焦点/光圈等参数
-    private void OnEnable()          // RVA: 0x1C7FCE70
-    private void OnDisable()         // RVA: 0x1C7FCF70
-    private void Update()            // RVA: 0x1C7FCFC0
-    public void OnActiveVCamera()    // RVA: 0x1C7FD870
-    public void OnDisactiveVCamera() // RVA: 0x1C7FD8C0
+public enum DitherSourcePriority {
+    Default = 0,
+    Camera  = 1,  // 相机碰撞 / 靠近角色虚化
+    Logic   = 2,  // 剧情 / 任务淡入淡出
+}
+
+public class BaseShaderPropertyTransition : UnityEngine.MonoBehaviour {
+    public float TargetDitherAlpha        // Offset: 0x20
+    public DitherSourcePriority CurrentControlSource // Offset: 0x28
+    public float ElevationDitherAlpha     // Offset: 0x2C
+    public float DistanceDitherAlpha      // Offset: 0x30
+
+    // 私有汇合入口：value / priority / force
+    private bool HBPKIAAKMPE(float, DitherSourcePriority, bool) // RVA: 0x19F1BE00
+    public void SetDistanceDitherAlphaValue(float, bool)        // RVA: 0x19F1C0E0
+    public void SetElevationDitherAlphaValue(float)             // RVA: 0x19F1BD70
+    public void ClearCameraDitherAlpha()                        // RVA: 0x19F1C810
 }
 ```
 
-- 首选：hook `OnActiveVCamera` / `Update`，同时压两个字段：
-  - `VCameraDOFEffectOverride + 0x18`（`EnableDOF`，激活源）
-  - `*(VCameraDOFEffectOverride + 0x40) + 0x18`（已激活的 `RPGDepthOfField.active`）
-  反汇编确认：`OnActiveVCamera` 只把 `0x58` 置 1 后转 `KCMOIBLMDAI`，
-  后者把 `EnableDOF` 复制到 `RPGDepthOfField.active`，之后 `Update` 不再回读；
-  只写 `EnableDOF` 关不掉已经激活的虚化，必须连实例字段一起压回 `false`。
-- 退路：`FindObjectsOfType` 找实例改字段，或 hook `RPGDepthOfField`。
-- AnimeSDK 标注的 `0x18` 与本次 dump 完全一致，不再是「仅作起点」。
+- 首选：Hook `HBPKIAAKMPE`。所有距离 / 高度相机 Dither 都会汇入这里；
+  仅当 `priority == Camera(1)` 且用户开关开启时，把 `value` 改成 `1.0`，
+  再调用原函数。`Logic(2)` 与默认来源不受影响。
+- 兜底：私有入口定位失败时，Hook `SetDistanceDitherAlphaValue` 与
+  `SetElevationDitherAlphaValue`，同样只在开关开启时把入参改成 `1.0`。
+- 关闭开关时不改写任何参数，完整保留游戏原始表现。
 
 ## 七、验证清单（需要 Windows + 星铁）
 

@@ -2,8 +2,8 @@
 // StarRailStub.dll — 注入到崩坏：星穹铁道进程内的画面效果模块。
 //
 // 职责边界（与原神 FpsUnlockerStub.dll 完全独立）：
-//   1) 反角色虚化：Hook VCameraDOFEffectOverride.OnActiveVCamera / Update，
-//      在开启时把 EnableDOF（Offset 0x18）压回 false；
+//   1) 反角色虚化：Hook BaseShaderPropertyTransition 的相机 Dither 入口，
+//      在开启时把 Camera 来源的透明值压回 1.0；
 //   2) 隐藏 UID 水印：Hook RPGApplication.OnUpdate 作为主线程入口，
 //      按两条层级路径把 UnityEngine.UI.Graphic.m_Color.a 写 0。
 //
@@ -69,7 +69,7 @@ namespace
             return kErrGetComponentMissing;
         case Il2CppBridge::ResolveStatus::MainThreadEntryMissing:
             return kErrMainThreadEntryMissing;
-        case Il2CppBridge::ResolveStatus::AntiBlurEntryMissing:
+        case Il2CppBridge::ResolveStatus::DitherEntryMissing:
             return kErrAntiBlurEntryMissing;
         default:
             return kErrGameAssemblyMissing;
@@ -190,7 +190,9 @@ namespace
 
         // 两个功能各自创建 Hook；任一失败即整模块 Error，避免「界面显示已开启
         // 但实际只生效一半」。
-        if (!AntiBlur::Initialize(g_ipc, functions.vCameraDofOnActive, functions.vCameraDofUpdate))
+        if (!AntiBlur::Initialize(g_ipc, functions.ditherSetAlphaValue,
+                                  functions.ditherSetDistanceAlpha,
+                                  functions.ditherSetElevationAlpha))
         {
             g_ipc->Status = IpcStatus::Error;
             g_ipc->LastError = kErrAntiBlurHook;

@@ -23,8 +23,9 @@ namespace Il2CppBridge
         void* gameObjectFind = nullptr;           // GameObject.Find(string)
         void* componentGetComponent = nullptr;    // GameObject.GetComponent(string)
         void* rpgApplicationOnUpdate = nullptr;   // RPG.Client.RPGApplication.OnUpdate
-        void* vCameraDofOnActive = nullptr;       // VCameraDOFEffectOverride.OnActiveVCamera
-        void* vCameraDofUpdate = nullptr;         // VCameraDOFEffectOverride.Update
+        void* ditherSetAlphaValue = nullptr;      // BaseShaderPropertyTransition 私有相机 Dither 汇合入口
+        void* ditherSetDistanceAlpha = nullptr;   // BaseShaderPropertyTransition.SetDistanceDitherAlphaValue
+        void* ditherSetElevationAlpha = nullptr;  // BaseShaderPropertyTransition.SetElevationDitherAlphaValue
         void* graphicSetVerticesDirty = nullptr;  // Graphic.SetVerticesDirty（可选，触发 UI 重建）
     };
 
@@ -36,7 +37,7 @@ namespace Il2CppBridge
         FindMissing,
         GetComponentMissing,
         MainThreadEntryMissing,
-        AntiBlurEntryMissing,
+        DitherEntryMissing,
     };
 
     /// <summary>

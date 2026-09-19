@@ -2,15 +2,16 @@
 // 星穹铁道反角色虚化实现。
 //
 // 4.5.0 dump.cs：
-//   VCameraDOFEffectOverride.EnableDOF // Offset: 0x18
-//   VCameraDOFEffectOverride.LIJIAFPPIDJ（RPGDepthOfField）// Offset: 0x40
-//   OnActiveVCamera  RVA 0x1C7FD870
-//   Update           RVA 0x1C7FCFC0
+//   BaseShaderPropertyTransition.HBPKIAAKMPE             RVA 0x19F1BE00
+//   BaseShaderPropertyTransition.SetDistanceDitherAlphaValue RVA 0x19F1C0E0
+//   BaseShaderPropertyTransition.SetElevationDitherAlphaValue RVA 0x19F1BD70
 //
-// 游戏只在激活时把 EnableDOF 复制到 RPGDepthOfField.active(0x18)，之后 Update
-// 不再回读，所以两个字段都要压：只写 EnableDOF 关不掉已经激活的虚化。
-// 采用「原函数先执行、再写 false」的顺序，避免游戏在 OnActiveVCamera / Update
-// 内重新把字段置回 true。关闭开关时不写字段，完全交还游戏控制。
+// 反汇编确认：距离与高度入口最终都会调用 HBPKIAAKMPE(value, priority, force)。
+// 相机碰撞 / 靠近角色的虚化使用 DitherSourcePriority.Camera(1)，剧情与逻辑
+// 淡入淡出使用其它优先级。因此只改写 Camera 来源，不会吞掉剧情显隐。
+//
+// 优先挂 HBPKIAAKMPE，覆盖所有相机 Dither 路径；若版本更新导致私有入口
+// 定位失败，则退回同时挂距离与高度两个公开入口。
 // =============================================================================
 
 #include "AntiBlur.h"
@@ -22,78 +23,75 @@
 
 namespace
 {
-    // VCameraDOFEffectOverride.EnableDOF // Offset: 0x18
-    constexpr size_t kEnableDofOffset = 0x18;
-    // VCameraDOFEffectOverride.LIJIAFPPIDJ（RPGDepthOfField 实例）// Offset: 0x40
-    constexpr size_t kActiveDofOffset = 0x40;
+    // RPG.Client.DitherSourcePriority.Camera
+    constexpr int32_t kDitherSourceCamera = 1;
+    constexpr float kVisibleDitherAlpha = 1.0f;
 
-    using DofEntryFn = void (*)(void* self);
+    using DitherSetAlphaFn = bool (*)(void* self, float alpha, int32_t priority, bool force);
+    using DitherSetDistanceFn = void (*)(void* self, float alpha, bool force);
+    using DitherSetElevationFn = void (*)(void* self, float alpha);
 
     void* g_boundIpc = nullptr;
-    void* g_originalOnActive = nullptr;
-    void* g_originalUpdate = nullptr;
-    bool g_onActiveReady = false;
-    bool g_updateReady = false;
+    void* g_originalSetAlpha = nullptr;
+    void* g_originalSetDistanceAlpha = nullptr;
+    void* g_originalSetElevationAlpha = nullptr;
+    bool g_setAlphaReady = false;
+    bool g_setDistanceReady = false;
+    bool g_setElevationReady = false;
 
-    /// <summary>
-    /// 把 EnableDOF 压为 false。只对已确认的类实例使用；SEH 兜底，避免版本
-    /// 变化导致偏移失效时把游戏打崩。
-    /// </summary>
-    void ApplyOverride(void* self)
+    bool IsOverrideEnabled()
     {
         IpcData* ipc = static_cast<IpcData*>(g_boundIpc);
-        if (!self || !ipc || ipc->AntiBlurPerspective == 0)
+        return ipc && ipc->AntiBlurPerspective != 0;
+    }
+
+    bool HookSetDitherAlpha(void* self, float alpha, int32_t priority, bool force)
+    {
+        if (!g_originalSetAlpha)
+        {
+            return false;
+        }
+
+        if (IsOverrideEnabled() && priority == kDitherSourceCamera)
+        {
+            alpha = kVisibleDitherAlpha;
+        }
+        return reinterpret_cast<DitherSetAlphaFn>(g_originalSetAlpha)(self, alpha, priority, force);
+    }
+
+    void HookSetDistanceDitherAlpha(void* self, float alpha, bool force)
+    {
+        if (!g_originalSetDistanceAlpha)
         {
             return;
         }
 
-#if defined(_MSC_VER)
-        __try
+        if (IsOverrideEnabled())
         {
-            auto* bytes = reinterpret_cast<uint8_t*>(self);
-            *reinterpret_cast<bool*>(bytes + kEnableDofOffset) = false;
-
-            // 已激活的 RPGDepthOfField：KCMOIBLMDAI 复制后不再回读 EnableDOF，
-            // 必须把实例自己的 active(0x18) 一起压回 false。
-            void* activeDof = *reinterpret_cast<void**>(bytes + kActiveDofOffset);
-            if (activeDof)
-                *reinterpret_cast<bool*>(reinterpret_cast<uint8_t*>(activeDof) + kEnableDofOffset) = false;
+            alpha = kVisibleDitherAlpha;
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            // 版本更新导致字段偏移变化时只放弃本次写入，不向上传播异常。
-        }
-#else
-        auto* bytes = reinterpret_cast<uint8_t*>(self);
-        *reinterpret_cast<bool*>(bytes + kEnableDofOffset) = false;
-        void* activeDof = *reinterpret_cast<void**>(bytes + kActiveDofOffset);
-        if (activeDof)
-            *reinterpret_cast<bool*>(reinterpret_cast<uint8_t*>(activeDof) + kEnableDofOffset) = false;
-#endif
+        reinterpret_cast<DitherSetDistanceFn>(g_originalSetDistanceAlpha)(self, alpha, force);
     }
 
-    void HookOnActiveVCamera(void* self)
+    void HookSetElevationDitherAlpha(void* self, float alpha)
     {
-        if (g_originalOnActive)
+        if (!g_originalSetElevationAlpha)
         {
-            reinterpret_cast<DofEntryFn>(g_originalOnActive)(self);
+            return;
         }
-        ApplyOverride(self);
-    }
 
-    void HookUpdate(void* self)
-    {
-        if (g_originalUpdate)
+        if (IsOverrideEnabled())
         {
-            reinterpret_cast<DofEntryFn>(g_originalUpdate)(self);
+            alpha = kVisibleDitherAlpha;
         }
-        ApplyOverride(self);
+        reinterpret_cast<DitherSetElevationFn>(g_originalSetElevationAlpha)(self, alpha);
     }
 }
 
 namespace AntiBlur
 {
-    bool Initialize(IpcData* ipc, void* onActiveVCamera, void* update)
+    bool Initialize(IpcData* ipc, void* ditherSetAlphaValue, void* ditherSetDistanceAlpha,
+                    void* ditherSetElevationAlpha)
     {
         if (!ipc)
         {
@@ -102,21 +100,33 @@ namespace AntiBlur
 
         g_boundIpc = ipc;
 
-        if (!g_onActiveReady && onActiveVCamera)
+        if (!g_setAlphaReady && ditherSetAlphaValue)
         {
-            g_onActiveReady =
-                MH_CreateHook(onActiveVCamera, reinterpret_cast<void*>(&HookOnActiveVCamera),
-                              &g_originalOnActive) == MH_OK;
+            g_setAlphaReady =
+                MH_CreateHook(ditherSetAlphaValue, reinterpret_cast<void*>(&HookSetDitherAlpha),
+                              &g_originalSetAlpha) == MH_OK;
         }
 
-        if (!g_updateReady && update)
+        // 私有汇合入口不可用时才挂公开入口，避免同一路径被重复 Hook。
+        if (!g_setAlphaReady)
         {
-            g_updateReady =
-                MH_CreateHook(update, reinterpret_cast<void*>(&HookUpdate),
-                              &g_originalUpdate) == MH_OK;
+            if (!g_setDistanceReady && ditherSetDistanceAlpha)
+            {
+                g_setDistanceReady =
+                    MH_CreateHook(ditherSetDistanceAlpha,
+                                  reinterpret_cast<void*>(&HookSetDistanceDitherAlpha),
+                                  &g_originalSetDistanceAlpha) == MH_OK;
+            }
+            if (!g_setElevationReady && ditherSetElevationAlpha)
+            {
+                g_setElevationReady =
+                    MH_CreateHook(ditherSetElevationAlpha,
+                                  reinterpret_cast<void*>(&HookSetElevationDitherAlpha),
+                                  &g_originalSetElevationAlpha) == MH_OK;
+            }
         }
 
-        const bool ready = g_onActiveReady || g_updateReady;
+        const bool ready = g_setAlphaReady || g_setDistanceReady || g_setElevationReady;
         ipc->AntiBlurState =
             ready ? static_cast<int32_t>(IpcAntiBlurState::PerspectiveReady) : 0;
         return ready;

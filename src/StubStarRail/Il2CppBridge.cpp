@@ -29,8 +29,9 @@ namespace
     constexpr uintptr_t kRvaGameObjectFind = 0x1DEDE300;
     constexpr uintptr_t kRvaComponentGetComponent = 0x1DEDDE30;
     constexpr uintptr_t kRvaRpgApplicationOnUpdate = 0x1802FBF0;
-    constexpr uintptr_t kRvaVCameraDofOnActive = 0x1C7FD870;
-    constexpr uintptr_t kRvaVCameraDofUpdate = 0x1C7FCFC0;
+    constexpr uintptr_t kRvaDitherSetAlphaValue = 0x19F1BE00;
+    constexpr uintptr_t kRvaDitherSetDistanceAlpha = 0x19F1C0E0;
+    constexpr uintptr_t kRvaDitherSetElevationAlpha = 0x19F1BD70;
     constexpr uintptr_t kRvaGraphicSetVerticesDirty = 0x1B78C0C0;
 
     // ---- 参考实现（30launchers）的特征码：4.5.0 上 Find 命中 9 处、
@@ -43,8 +44,13 @@ namespace
     // 无特征码目标的函数头校验（4.5.0 实测字节）。
     // 版本更新后即使 RVA 仍落在模块内，也不允许它指向一个形态不对的函数。
     constexpr const char* kRpgApplicationOnUpdateHead = "56 57 48 83 EC 48 0F 29 7C 24 30";
-    constexpr const char* kVCameraDofOnActiveHead = "56 48 83 EC 20 48 89 CE 80 3D";
-    constexpr const char* kVCameraDofUpdateHead = "56 48 83 EC 20 48 89 CE 80 3D";
+    constexpr const char* kDitherSetAlphaValueHead =
+        "41 56 56 57 55 53 48 83 EC 50 0F 29 7C 24 40 0F 29 74 24 30 44 89 CD 44 89 C7 "
+        "0F 28 F9 48 89 CE 80 3D";
+    constexpr const char* kDitherSetDistanceAlphaHead =
+        "56 53 48 83 EC 38 0F 29 74 24 20 44 89 C3 0F 28 F1 48 89 CE 80 3D";
+    constexpr const char* kDitherSetElevationAlphaHead =
+        "56 48 83 EC 30 0F 29 74 24 20 0F 28 F1 48 89 CE 80 3D";
     constexpr const char* kGraphicSetVerticesDirtyHead = "56 48 83 EC 20 48 89 CE FF 15";
 
     // UnityEngine.UI.Graphic.m_Color // Offset: 0x20（dump.cs 实测）
@@ -294,14 +300,16 @@ namespace Il2CppBridge
             return ResolveStatus::MainThreadEntryMissing;
         }
 
-        // 反虚化入口：OnActiveVCamera / Update 至少一个可用。
-        out.vCameraDofOnActive =
-            ResolveRvaWithPattern(gameAssembly, kRvaVCameraDofOnActive, kVCameraDofOnActiveHead);
-        out.vCameraDofUpdate =
-            ResolveRvaWithPattern(gameAssembly, kRvaVCameraDofUpdate, kVCameraDofUpdateHead);
-        if (!out.vCameraDofOnActive && !out.vCameraDofUpdate)
+        // 角色相机 Dither：优先挂私有汇合入口，公开的距离/高度入口作为版本兜底。
+        out.ditherSetAlphaValue =
+            ResolveRvaWithPattern(gameAssembly, kRvaDitherSetAlphaValue, kDitherSetAlphaValueHead);
+        out.ditherSetDistanceAlpha = ResolveRvaWithPattern(
+            gameAssembly, kRvaDitherSetDistanceAlpha, kDitherSetDistanceAlphaHead);
+        out.ditherSetElevationAlpha = ResolveRvaWithPattern(
+            gameAssembly, kRvaDitherSetElevationAlpha, kDitherSetElevationAlphaHead);
+        if (!out.ditherSetAlphaValue && !out.ditherSetDistanceAlpha && !out.ditherSetElevationAlpha)
         {
-            return ResolveStatus::AntiBlurEntryMissing;
+            return ResolveStatus::DitherEntryMissing;
         }
 
         // UI 重建通知：可选辅助路径，定位失败只降级为「直接写 m_Color」，
