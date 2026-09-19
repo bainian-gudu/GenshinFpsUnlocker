@@ -134,7 +134,7 @@ internal sealed partial class MainForm
         menu.Items.Add(_trayHideUidItem);
 
         _trayAntiBlurPerspectiveItem = MakeCheckItem(
-            ActiveGameDescriptor.SupportsDiveMosaic ? "反角色虚化" : "解除角色虚化",
+            "反角色虚化",
             ActiveGameProfile.AntiBlurPerspective,
             "镜头拉近时角色不再透明化（仅供单机体验）");
         _trayAntiBlurPerspectiveItem.CheckedChanged += (_, _) =>

@@ -169,7 +169,7 @@ internal sealed partial class MainForm
         // HideUidState bit0=就绪。功能名称按游戏自己的叫法显示。
         var items = new List<string>(3);
         if (profile.AntiBlurPerspective)
-            items.Add(FormatInjectionItem(descriptor.SupportsDiveMosaic ? "反虚化" : "解除虚化", attached, (antiBlurMask & 1) != 0));
+            items.Add(FormatInjectionItem("反虚化", attached, (antiBlurMask & 1) != 0));
         if (descriptor.SupportsDiveMosaic && profile.AntiBlurDiveMosaic)
             items.Add(FormatInjectionItem("马赛克", attached, (antiBlurMask & 2) != 0));
         if (profile.HideUid)
@@ -243,11 +243,11 @@ internal sealed partial class MainForm
                 if (_trayAutoWatchItem is not null)
                     _trayAutoWatchItem.Checked = _config.AutoWatch;
 
-                // 画面效果项：文案随游戏自己的模块命名，星穹铁道没有「水下马赛克」。
+                // 画面效果项：星穹铁道没有「水下马赛克」，反虚化显示名两款游戏统一。
                 if (_trayAntiBlurPerspectiveItem is not null)
                 {
                     _trayAntiBlurPerspectiveItem.Checked = profile.AntiBlurPerspective;
-                    _trayAntiBlurPerspectiveItem.Text = descriptor.SupportsDiveMosaic ? "反角色虚化" : "解除角色虚化";
+                    _trayAntiBlurPerspectiveItem.Text = "反角色虚化";
                     _trayAntiBlurPerspectiveItem.ToolTipText = descriptor.SupportsDiveMosaic
                         ? "镜头拉近时角色不再透明化（仅供单机体验）"
                         : "镜头拉近时角色不再透明化（由 StarRailStub.dll 提供）";

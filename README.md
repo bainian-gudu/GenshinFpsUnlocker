@@ -12,7 +12,7 @@
 >   详见下文「素材与版权」。
 
 同时支持《原神》与《崩坏：星穹铁道》，两款游戏各自独立配置：自定义目标 FPS、反角色虚化、
-移除水下马赛克、隐藏 UID（原神画面效果注入）；星铁走注册表解锁 120 帧，并提供解除角色虚化
+移除水下马赛克、隐藏 UID（原神画面效果注入）；星铁走注册表解锁 120 帧，并提供反角色虚化
 与隐藏 UID 水印。检测游戏启动后自动应用 · 托盘设置 · 开机自启（标准权限 / 最高权限计划任务，都不弹 UAC）
 
 界面为 **gpt-6-astra-max** 设计的设计稿一比一实现的 Web UI（WebView2 嵌入）：
@@ -50,7 +50,7 @@
 | --- | --- | --- |
 | 宿主主程序 | C# / .NET 9（`net9.0-windows10.0.17763.0`）/ WinForms | `src/Host/`：WebView2 承载 Web UI、系统托盘、自绘标题栏、注入调度、游戏定位、配置与日志 |
 | Web UI | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS 4 + framer-motion + lucide-react | `src/Ui/`：设计稿由 **gpt-6-astra-max** 设计、按稿 1:1 实现；`vite-plugin-singlefile` 打成单文件 `ui/index.html` |
-| 注入模块 | C++20（CMake）+ MinHook（BSD-2-Clause），CRT 静态链接（`/MT`） | `src/Stub/`：原神的帧率解锁与反虚化；`src/StubStarRail/`：星铁的解除角色虚化与隐藏 UID（`StarRailStub.dll`，帧率仍走注册表）；两者只共用 `src/Common/` 的扫描器与 IPC 协议，业务代码相互独立 |
+| 注入模块 | C++20（CMake）+ MinHook（BSD-2-Clause），CRT 静态链接（`/MT`） | `src/Stub/`：原神的帧率解锁与反虚化；`src/StubStarRail/`：星铁的反角色虚化与隐藏 UID（`StarRailStub.dll`，帧率仍走注册表）；两者只共用 `src/Common/` 的扫描器与 IPC 协议，业务代码相互独立 |
 | 安装 / 卸载 / 更新器 | Kachina：Rust + Tauri 2（nightly + `-Z build-std`）+ Vue 3.5 + Rsbuild | `installer/kachina/`：上游源码快照（tag `0.5.1`），本地修改清单见 `installer/kachina/LOCAL_PATCHES.md` |
 | exe 图标 / 版本资源写入 | vendored `rcedit-rs`（C++，MSVC 编译） | `installer/kachina/vendor/rcedit-rs/`，与上游差异见其 `LOCAL_PATCHES.md` |
 | 构建 / 打包 / 自检 | PowerShell 7 | `build.ps1`、`installer/pack.ps1`、`installer/build-kachina.ps1`、`tools/devcheck/` |

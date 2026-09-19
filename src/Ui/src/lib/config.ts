@@ -112,11 +112,11 @@ export const GAME_META: Record<GameId, GameMeta> = {
       guideKicker: 'QUICK START',
       guideHeadline: '下一站，更顺畅一点。',
     },
-    // 星穹铁道走自己独立的注入模块，效果名称与条目都不沿用原神那一套。
+    // 星穹铁道走自己独立的注入模块，效果条目与显示名保持统一。
     injection: {
       module: 'StarRailStub.dll',
       features: [
-        { key: 'antiBlurPerspective', title: '解除角色虚化', description: '开启后镜头拉近时，角色不再透明化' },
+        { key: 'antiBlurPerspective', title: '反角色虚化', description: '开启后镜头拉近时，角色不再透明化' },
         { key: 'hideUid', title: '隐藏 UID 水印', description: '隐藏星穹铁道界面上的 UID 水印文本' },
       ],
     },

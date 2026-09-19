@@ -12,7 +12,7 @@ internal sealed class GameProfile
     /// <summary>该游戏的帧率解锁开关。</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>反角色虚化（原神）/ 解除角色虚化（星穹铁道）。</summary>
+    /// <summary>反角色虚化（两款游戏显示名统一）。</summary>
     public bool AntiBlurPerspective { get; set; } = false;
 
     /// <summary>移除水下马赛克（仅原神的注入模块提供）。</summary>
