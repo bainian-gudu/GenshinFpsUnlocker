@@ -1,17 +1,21 @@
 import { Check, Info, LoaderCircle, PanelBottomClose, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
+import { GameMark } from './GameIcon';
+import { GAME_META } from '../lib/config';
 import { nativeInvoke } from '../lib/native';
 
-/** 底部状态栏：附加状态、目标帧率、权限、保存状态与驻留托盘。 */
+/** 底部状态栏：当前游戏、附加状态、目标帧率、权限、保存状态与驻留托盘。 */
 export function StatusBar({ app }: { app: AppState }) {
-  const { native, config, saveState, attachedPid, isElevated } = app;
+  const { native, config, gameConfig, activeGame, saveState, attachedPid, isElevated } = app;
 
   return (
     <footer className="status-bar">
       <div className={`status-bar-left ${!config.autoWatch || !config.masterEnabled ? 'monitor-paused' : ''}`}>
+        <span className="status-game" title={`当前配置：${GAME_META[activeGame].name}`}><GameMark game={activeGame} size={13} />{GAME_META[activeGame].short}</span>
+        <span className="status-bar-separator" />
         <span className={`status-dot ${attachedPid > 0 ? 'green pulse' : ''}`} />
         <span>{attachedPid > 0 ? '游戏进程已附加' : config.autoWatch && config.masterEnabled ? '自动监视中' : '后台监视已暂停'}</span>
-        <span className="status-bar-separator" /><span className="status-target">目标 {config.targetFps} FPS</span>
+        <span className="status-bar-separator" /><span className="status-target">目标 {gameConfig.targetFps} FPS</span>
         {native && (
           <>
             <span className="status-bar-separator" />

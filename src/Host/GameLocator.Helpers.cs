@@ -13,7 +13,7 @@ internal static partial class GameLocator
     /// 只查两层会漏掉。系统/数据目录在遍历前剪掉，并带耗时上限。
     /// </summary>
     private static IEnumerable<string> EnumerateCandidateExes(
-        string root, int maxDepth = 3, TimeSpan? budget = null)
+        GameDescriptor game, string root, int maxDepth = 3, TimeSpan? budget = null)
     {
         var deadline = DateTime.UtcNow + (budget ?? TimeSpan.FromSeconds(5));
         var queue = new Queue<(string Dir, int Depth)>();
@@ -31,7 +31,7 @@ internal static partial class GameLocator
 
             foreach (var f in files)
             {
-                if (IsCandidateExeName(Path.GetFileName(f))) yield return f;
+                if (IsCandidateExeName(game, Path.GetFileName(f))) yield return f;
             }
 
             if (depth >= maxDepth) continue;
@@ -102,11 +102,16 @@ internal static partial class GameLocator
         return null;
     }
 
-    /// <summary>候选主程序文件名是否匹配（不看是否存在）。</summary>
-    public static bool IsCandidateExeName(string? fileName)
-        => fileName is not null
-           && (fileName.Equals(YuanShenExe, StringComparison.OrdinalIgnoreCase)
-               || fileName.Equals(GenshinImpactExe, StringComparison.OrdinalIgnoreCase));
+    /// <summary>候选主程序文件名是否属于该游戏（不看是否存在）。</summary>
+    public static bool IsCandidateExeName(GameDescriptor game, string? fileName)
+    {
+        if (fileName is null) return false;
+        foreach (var exe in game.ExeNames)
+        {
+            if (fileName.Equals(exe, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// 目录名是否值得跳过。按完整目录名匹配（不是包含），避免把
@@ -153,11 +158,11 @@ internal static partial class GameLocator
     }
 
     /// <summary>
-    /// 目录下是否有原神的 Unity 资源特征文件。只认文件名，不看内容。
+    /// 目录下是否有该游戏的 Unity 资源特征文件。只认文件名，不看内容。
     /// </summary>
-    public static bool LooksLikeGameArtifacts(string dir)
+    public static bool LooksLikeGameArtifacts(GameDescriptor game, string dir)
     {
-        foreach (var sub in new[] { "GenshinImpact_Data", "YuanShen_Data" })
+        foreach (var sub in game.ArtifactDataFolders)
         {
             var dataDir = Path.Combine(dir, sub);
             if (!PathUtil.ExistsDir(dataDir)) continue;
@@ -171,12 +176,12 @@ internal static partial class GameLocator
     /// exe 所在目录（或其上一层）是不是游戏根目录。
     /// 有的安装把主程序放在 <c>Genshin Impact Game</c> 子目录里，资源在其上一层。
     /// </summary>
-    public static bool IsPlausibleGameRoot(string exePath)
+    public static bool IsPlausibleGameRoot(GameDescriptor game, string exePath)
     {
         var dir = PathUtil.GetDirectoryNameSafe(exePath);
         for (var i = 0; i < 2 && !string.IsNullOrEmpty(dir); i++)
         {
-            if (LooksLikeGameArtifacts(dir!)) return true;
+            if (LooksLikeGameArtifacts(game, dir!)) return true;
             dir = PathUtil.GetDirectoryNameSafe(dir);
         }
         return false;

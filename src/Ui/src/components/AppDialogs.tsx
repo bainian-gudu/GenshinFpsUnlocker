@@ -1,20 +1,20 @@
 import { AnimatePresence } from 'framer-motion';
 import type { AppState } from '../hooks/useAppState';
 import { ConfirmDialog, LaunchDialog, PathDialog, SafetyDialog } from '../components/Dialogs';
-import { DEFAULT_CONFIG } from '../lib/config';
+import { GAME_META, createDefaultConfig } from '../lib/config';
 import type { NativeState } from '../lib/native';
 import { nativeInvoke } from '../lib/native';
 
 /** 全局弹窗集合：路径 / 用户协议 / 启动确认 / 重置 / 卸载 / 清空日志。 */
 export function AppDialogs({ app }: { app: AppState }) {
   const {
-    native, config, setConfig, modal, setModal, logs, setLogs, notify, applyNativeState, beginLaunch,
+    native, config, modalGame, setConfig, modal, setModal, logs, setLogs, notify, applyNativeState, beginLaunch,
     startUninstall, savePath, browsePath, autoLocatePath,
   } = app;
 
   return (
     <AnimatePresence>
-      {modal === 'path' && <PathDialog key="path" path={config.gamePath} isNative={native} onClose={() => setModal(null)} onSave={savePath} onBrowse={native ? browsePath : undefined} onAutoLocate={native ? autoLocatePath : undefined} />}
+      {modal === 'path' && <PathDialog key={`path-${modalGame}`} game={modalGame} path={config.games[modalGame].gamePath} isNative={native} onClose={() => setModal(null)} onSave={savePath} onBrowse={native ? browsePath : undefined} onAutoLocate={native ? autoLocatePath : undefined} />}
       {modal === 'safety' && <SafetyDialog key="safety" isNative={native} onClose={() => setModal(null)} onAcknowledge={async (showOnStartup) => {
         if (native) {
           const state = await nativeInvoke<any>('acknowledgeSafety', { showOnStartup });
@@ -24,7 +24,7 @@ export function AppDialogs({ app }: { app: AppState }) {
         }
         setModal(null);
       }} />}
-      {modal === 'launch' && <LaunchDialog key="launch" config={config} isNative={native} onClose={() => setModal(null)} onStart={async (dontAskAgain) => {
+      {modal === 'launch' && <LaunchDialog key={`launch-${modalGame}`} game={modalGame} config={config} isNative={native} onClose={() => setModal(null)} onStart={async (dontAskAgain) => {
         if (native) {
           // 与 SafetyDialog 分支对称：回写宿主返回的最新配置，
           // 否则同一会话再次启动会重复弹出本确认框。
@@ -33,13 +33,13 @@ export function AppDialogs({ app }: { app: AppState }) {
         } else {
           setConfig((previous) => ({ ...previous, safetyNoticeAcknowledged: true, showSafetyNoticeOnStartup: !dontAskAgain }));
         }
-        await beginLaunch();
+        await beginLaunch(modalGame);
       }} />}
-      {modal === 'reset' && <ConfirmDialog key="reset" title="恢复默认设置？" description="这将覆盖当前解锁器配置为默认值。外观主题与日志不会受影响。建议先导出一份配置备份。" action="恢复默认" onClose={() => setModal(null)} onConfirm={async () => {
+      {modal === 'reset' && <ConfirmDialog key="reset" title="恢复默认设置？" description={`这将把${GAME_META.genshin.name}与${GAME_META.starRail.name}的配置一起恢复为默认值。外观主题与日志不会受影响。建议先导出一份配置备份。`} action="恢复默认" onClose={() => setModal(null)} onConfirm={async () => {
         if (native) {
           const state = await nativeInvoke<any>('resetConfig');
           applyNativeState(state as NativeState);
-        } else setConfig({ ...DEFAULT_CONFIG });
+        } else setConfig(createDefaultConfig());
         setModal(null);
         notify('已恢复默认设置');
       }} />}

@@ -73,6 +73,9 @@ if (-not (Test-Path (Join-Path $DistDir "$AppName.exe"))) {
 if (-not (Test-Path (Join-Path $DistDir "FpsUnlockerStub.dll"))) {
     Write-Warning "$DistDir 内没有 FpsUnlockerStub.dll，安装后无法注入"
 }
+if (-not (Test-Path (Join-Path $DistDir "StarRailStub.dll"))) {
+    Write-Warning "$DistDir 内没有 StarRailStub.dll，星穹铁道的画面效果无法注入（帧率注册表解锁不受影响）"
+}
 if (-not (Test-Path (Join-Path $DistDir "ui\index.html"))) {
     Write-Warning "$DistDir\ui\index.html 缺失，安装后主界面会走原生兜底页"
 }

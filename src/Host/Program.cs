@@ -80,7 +80,7 @@ internal static class Program
                     "启动失败：\n" + (ex?.Message ?? e.ExceptionObject?.ToString() ?? "unknown") +
                     "\n\n若以标准用户运行，请确认已安装 .NET Desktop Runtime 9 与 WebView2。\n" +
                     "日志：%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
-                    "原神帧率解锁",
+                    AppPaths.ProductTitle,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -109,7 +109,7 @@ internal static class Program
                     "无法启动：\n" + ex.Message +
                     "\n\n" + ex.GetType().FullName +
                     "\n\n日志目录：\n%LocalAppData%\\GenshinFpsUnlocker\\logs\\",
-                    "原神帧率解锁",
+                    AppPaths.ProductTitle,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -174,7 +174,7 @@ internal static class Program
                 MessageBox.Show(
                     "本程序已不再自带安装 / 卸载功能。\n\n" +
                     "• 卸载：运行安装目录下的 GenshinFpsUnlocker.uninst.exe，\n" +
-                    "  或在「设置 → 应用 → 安装的应用」里卸载「原神帧率解锁」。\n" +
+                    "  或在「设置 → 应用 → 安装的应用」里卸载「" + AppPaths.ProductDisplayName + "」。\n" +
                     "• 安装 / 更新：使用 GenshinFpsUnlocker.Install.{版本}.exe，\n" +
                     "  或安装目录下的 GenshinFpsUnlocker.update.exe。",
                     AppPaths.ProductDisplayName,
@@ -246,7 +246,8 @@ internal static class Program
         for (var i = 0; i < args.Length; i++)
         {
             if ((args[i] is "--fps" or "-f") && i + 1 < args.Length && int.TryParse(args[i + 1], out var fps))
-                config.TargetFps = fps;
+                // 命令行帧率作用于界面上当前选中的游戏（默认原神）。
+                config.ActiveProfile.TargetFps = fps;
             if (args[i] is "--no-watch")
                 config.AutoWatch = false;
             // 仅 --minimized / -m 强制启动进托盘；--autostart 跟随配置（默认显示窗，可勾选最小化）
@@ -342,9 +343,13 @@ internal static class Program
         }
 
         if (!config.TrySave(out var cfgErr)) AppLog.Warn("startup config save: " + cfgErr);
+        var genshin = config.Profile(GameId.Genshin);
+        var starRail = config.Profile(GameId.StarRail);
         AppLog.Info(
-            $"config ok targetFps={config.TargetFps} master={config.MasterEnabled} " +
-            $"enabled={config.Enabled} startMin={config.StartMinimized} data={AppPaths.DataDirectory}");
+            $"config ok activeGame={GameCatalog.Get(config.ActiveGame).Key} master={config.MasterEnabled} " +
+            $"genshin[fps={genshin.TargetFps} enabled={genshin.Enabled}] " +
+            $"starRail[fps={starRail.TargetFps} enabled={starRail.Enabled}] " +
+            $"startMin={config.StartMinimized} data={AppPaths.DataDirectory}");
 
         if (!config.SafetyNoticeAcknowledged && !quiet && !isAutostart)
             AppLog.Info("首次运行：将由界面展示安全声明");

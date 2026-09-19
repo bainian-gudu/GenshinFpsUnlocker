@@ -1,12 +1,16 @@
 import { ArrowUpRight, ChevronRight, Menu, Moon, PanelsTopLeft, ShieldCheck, Sun } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
-import { PAGE_NAMES } from '../lib/nav';
+import { PAGE_NAMES, isGamePage } from '../lib/nav';
 import { GithubIcon } from '../components/Brand';
+import { GameSwitcher } from '../components/GameSwitcher';
 import { PROJECT_URL } from '../lib/config';
 
-/** 顶栏：面包屑、桌面版/预览标识、深浅色切换与 GitHub 链接。 */
+/**
+ * 顶栏：面包屑、游戏切换器（只在每个游戏一份的页面出现）、桌面版/预览标识、
+ * 深浅色切换与 GitHub 链接。
+ */
 export function AppTopbar({ app }: { app: AppState }) {
-  const { native, page, theme, setTheme, sidebarOpen, setSidebarOpen } = app;
+  const { native, page, theme, setTheme, sidebarOpen, setSidebarOpen, activeGame, setGame } = app;
 
   return (
     <header className="topbar">
@@ -15,6 +19,7 @@ export function AppTopbar({ app }: { app: AppState }) {
         <span className="breadcrumb-root"><PanelsTopLeft size={15} strokeWidth={1.5} /><span>工作台</span><ChevronRight size={12} /></span>
         <span>{PAGE_NAMES[page]}</span>
       </div>
+      {isGamePage(page) && <GameSwitcher game={activeGame} onChange={setGame} />}
       <div className="topbar-actions">
         {native ? <span className="preview-label is-native"><ShieldCheck size={13} />桌面版</span>
           : <span className="preview-label">浏览器预览</span>}

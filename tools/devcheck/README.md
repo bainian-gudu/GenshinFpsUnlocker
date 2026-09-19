@@ -209,7 +209,7 @@ Rust 类型/借用/生命周期错误（含 `std::os::windows`、`windows`、
   `cli/mod.rs`、`main.rs` …）
 - CI 用的 `x86_64-win7-windows-msvc` 自定义 target + `-Z build-std`（这里用标准
   `x86_64-pc-windows-msvc`，能覆盖绝大多数编译错误，但不是同一个 target）
-- `src/Stub` 的 C++（`native` 层只编 vendored `rcedit-sys` 的 C++）、
+- `src/Stub` / `src/StubStarRail` 的 C++（`native` 层只编 vendored `rcedit-sys` 的 C++）、
   任何**运行期**行为（注册表真的删没删、UAC、符号链接属性位）
 - `.vue` 里的**类型**错误（SFC 编译只查语法；完整类型检查要 `vue-tsc` + kachina 全部依赖）
 

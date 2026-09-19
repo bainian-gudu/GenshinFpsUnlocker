@@ -18,7 +18,7 @@ set(MINHOOK_SOURCES
 
 add_library(FpsUnlockerStub SHARED
     dllmain.cpp
-    Scanner.cpp
+    ../Common/Scanner.cpp
     Patch.cpp
     AntiBlur.cpp
     HideUid.cpp

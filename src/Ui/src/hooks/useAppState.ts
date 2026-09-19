@@ -1,9 +1,12 @@
 import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NAV_ITEMS, PAGE_NAMES } from '../lib/nav';
+import { GAME_NAV_ITEMS, PAGE_NAMES, isGamePage } from '../lib/nav';
 import type { ToastItem } from '../components/ui';
-import type { LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
-import { CONFIG_LABELS, DEFAULT_CONFIG, STORAGE_KEY, downloadFile, getPage, loadConfig, makeLog, parseConfig } from '../lib/config';
+import type { GameId, GameProfile, LogEntry, LogLevel, Page, Theme, UnlockerConfig } from '../lib/config';
+import {
+  APP_NAME, CONFIG_LABELS, GAME_CONFIG_LABELS, GAME_IDS, GAME_META, STORAGE_KEY,
+  createDefaultConfig, downloadFile, getPage, loadConfig, makeLog, parseConfig,
+} from '../lib/config';
 import { clearKeyboardFocus, clearTabFocus, markKeyboardFocus } from '../lib/focus';
 import type { AutostartState, NativeState } from '../lib/native';
 import { isNativeHost, nativeGetBootstrap, nativeInvoke, onNativeLog, onNativeNavigate, onNativeState } from '../lib/native';
@@ -18,7 +21,7 @@ export type LaunchState = 'idle' | 'launching' | 'running';
 export function useAppState() {
   const native = isNativeHost();
   const [booting, setBooting] = useState(native);
-  const [initial] = useState(() => (native ? { config: { ...DEFAULT_CONFIG }, recovered: false } : loadConfig()));
+  const [initial] = useState(() => (native ? { config: createDefaultConfig(), recovered: false } : loadConfig()));
   const [config, setConfig] = useState<UnlockerConfig>(initial.config);
   const configRef = useRef(config);
   configRef.current = config;
@@ -28,13 +31,18 @@ export function useAppState() {
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<ModalType>(null);
+  // 路径 / 启动对话框针对哪个游戏（游戏库里可以直接给另一个游戏设路径、启动它）。
+  const [modalGame, setModalGame] = useState<GameId>(initial.config.activeGame);
+  // 最近一次启动会话属于哪个游戏：状态行显示在游戏库里对应的那一行上。
+  const [sessionGame, setSessionGame] = useState<GameId>(initial.config.activeGame);
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error'>('saved');
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastId = useRef(0);
   const [logs, setLogs] = useState<LogEntry[]>(() => (
     native ? [] : [
-      makeLog('Info', 'Genshin FPS Unlocker 网页界面已就绪。'),
+      makeLog('Info', `${APP_NAME} 网页界面已就绪。`),
       makeLog(initial.recovered ? 'Warn' : 'Info', initial.recovered ? '本地配置无法读取，已恢复演示默认值。' : '已载入本地偏好。'),
+      makeLog('Info', `已载入「${GAME_META[initial.config.activeGame].name}」的独立配置。`, initial.config.activeGame),
     ]
   ));
   const [launchState, setLaunchState] = useState<LaunchState>('idle');
@@ -55,12 +63,17 @@ export function useAppState() {
   const [version, setVersion] = useState('1.0.0');
   const importRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
-  const previousFps = useRef(config.targetFps);
+  // 每个游戏各自记录上一次已播报的目标帧率，避免切换游戏时误报「帧率已调整」。
+  const previousFps = useRef<Record<GameId, number>>({
+    genshin: config.games.genshin.targetFps,
+    starRail: config.games.starRail.targetFps,
+  });
   const patchTimer = useRef<number | null>(null);
-  const pendingPatch = useRef<Partial<UnlockerConfig>>({});
+  // 待下发的 patch：共享字段直接放顶层，游戏字段收进 games[game]。
+  const pendingPatch = useRef<Record<string, unknown>>({});
 
-  const addLog = useCallback((level: LogLevel, message: string) => {
-    setLogs((previous) => [...previous, makeLog(level, message)].slice(-200));
+  const addLog = useCallback((level: LogLevel, message: string, game?: GameId) => {
+    setLogs((previous) => [...previous, makeLog(level, message, game)].slice(-200));
   }, []);
   const notify = useCallback((title: string, description?: string, type: ToastItem['type'] = 'success') => {
     setToasts((previous) => [...previous.slice(-2), { id: ++toastId.current, title, description, type }]);
@@ -226,8 +239,10 @@ export function useAppState() {
   }, [theme, native]);
 
   useEffect(() => {
-    document.title = `${PAGE_NAMES[page]} | Genshin FPS Unlocker`;
-  }, [page]);
+    // 每个游戏一份的页面把游戏名带进标题，方便在任务栏与窗口列表里区分。
+    const scope = isGamePage(page) ? ` · ${GAME_META[config.activeGame].short}` : '';
+    document.title = `${PAGE_NAMES[page]}${scope} | ${APP_NAME}`;
+  }, [page, config.activeGame]);
 
   // 仅网页预览（非宿主）模式：将配置持久化到 localStorage
   useEffect(() => {
@@ -245,26 +260,41 @@ export function useAppState() {
     return () => clearTimeout(timer);
   }, [config, native, notify]);
 
+  // 帧率变化按游戏分别播报：只有真正被改动的那个游戏写日志。
   useEffect(() => {
-    if (previousFps.current === config.targetFps) return;
+    const changed = GAME_IDS.find((id) => previousFps.current[id] !== config.games[id].targetFps);
+    if (!changed) return;
     const timer = window.setTimeout(() => {
-      addLog('Info', `目标帧率已调整为 ${config.targetFps} FPS。`);
-      previousFps.current = config.targetFps;
+      addLog('Info', `「${GAME_META[changed].name}」目标帧率已调整为 ${config.games[changed].targetFps} FPS。`, changed);
+      previousFps.current = { ...previousFps.current, [changed]: config.games[changed].targetFps };
     }, 600);
     return () => clearTimeout(timer);
-  }, [config.targetFps, addLog]);
+  }, [config.games, addLog]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (target.matches('input, textarea, select') || target.isContentEditable || modal) return;
       if ((event.ctrlKey || event.metaKey) && event.key === ',') { event.preventDefault(); navigate('settings'); }
-      if (event.altKey && ['1', '2', '3'].includes(event.key)) { event.preventDefault(); navigate(NAV_ITEMS[Number(event.key) - 1].page); }
+      if (event.altKey && ['1', '2', '3'].includes(event.key)) { event.preventDefault(); navigate(GAME_NAV_ITEMS[Number(event.key) - 1].page); }
       if (event.key === 'Escape') setSidebarOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [modal, navigate]);
+
+  /** 合并待下发的 patch：共享键直接覆盖，游戏键按 games[game] 深合并。 */
+  const queuePatch = useCallback((patch: Record<string, unknown>) => {
+    const merged: Record<string, unknown> = { ...pendingPatch.current, ...patch };
+    if (patch.games) {
+      const previous = (pendingPatch.current.games ?? {}) as Record<string, Record<string, unknown>>;
+      const incoming = patch.games as Record<string, Record<string, unknown>>;
+      const games: Record<string, Record<string, unknown>> = { ...previous };
+      for (const [id, values] of Object.entries(incoming)) games[id] = { ...(previous[id] ?? {}), ...values };
+      merged.games = games;
+    }
+    pendingPatch.current = merged;
+  }, []);
 
   const flushNativePatch = useCallback(async () => {
     if (!native) return;
@@ -282,31 +312,76 @@ export function useAppState() {
     }
   }, [native, applyNativeState, notify]);
 
+  /** 按字段类型节流下发：帧率输入连续拖动时少发几次 patch。 */
+  const schedulePatch = useCallback((delay: number) => {
+    if (patchTimer.current) window.clearTimeout(patchTimer.current);
+    patchTimer.current = window.setTimeout(() => { void flushNativePatch(); }, delay);
+  }, [flushNativePatch]);
+
+  /** 当前正在配置的游戏档案（概览 / 设置 / 使用指南都读它）。 */
+  const activeGame = config.activeGame;
+  const gameConfig: GameProfile = config.games[config.activeGame];
+
   function updateConfig<K extends keyof UnlockerConfig>(key: K, value: UnlockerConfig[K]) {
     if (configRef.current[key] === value) return;
     setConfig((previous) => ({ ...previous, [key]: value }));
-    if (key !== 'targetFps') {
-      addLog('Info', `已更新「${CONFIG_LABELS[key]}」：${typeof value === 'boolean' ? value ? '开启' : '关闭' : value ?? '未设置'}。`);
-    }
+    // 切换游戏时写一条更可读的日志，而不是把 genshin / starRail 这样的 id 打出来；
+    // 这条日志归属目标游戏，按来源筛选时能直接看到。
+    if (key === 'activeGame') addLog('Info', `已切换到「${GAME_META[value as GameId].name}」。`, value as GameId);
+    else addLog('Info', `已更新「${CONFIG_LABELS[key]}」：${typeof value === 'boolean' ? value ? '开启' : '关闭' : value ?? '未设置'}。`);
     if (native) {
-      pendingPatch.current = { ...pendingPatch.current, [key]: value };
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-      const delay = key === 'targetFps' ? 350 : 80;
-      patchTimer.current = window.setTimeout(() => { void flushNativePatch(); }, delay);
+      queuePatch({ [key]: value });
+      schedulePatch(80);
     }
   }
 
-  async function beginLaunch() {
+  /** 改指定游戏的档案字段；两个游戏的同名设置互不影响。 */
+  function patchGameConfig<K extends keyof GameProfile>(game: GameId, key: K, value: GameProfile[K]) {
+    if (configRef.current.games[game][key] === value) return;
+    setConfig((previous) => ({
+      ...previous,
+      games: { ...previous.games, [game]: { ...previous.games[game], [key]: value } },
+    }));
+    if (key !== 'targetFps') {
+      addLog('Info', `已更新「${GAME_META[game].name} · ${GAME_CONFIG_LABELS[key]}」：${typeof value === 'boolean' ? value ? '开启' : '关闭' : value ?? '未设置'}。`, game);
+    }
+    if (native) {
+      queuePatch({ games: { [game]: { [key]: value } } });
+      schedulePatch(key === 'targetFps' ? 350 : 80);
+    }
+  }
+
+  /** 只改当前游戏档案里的字段（设置页与概览页的控件走这里）。 */
+  function updateGameConfig<K extends keyof GameProfile>(key: K, value: GameProfile[K]) {
+    patchGameConfig(configRef.current.activeGame, key, value);
+  }
+
+  /** 打开某个游戏的路径对话框：游戏库里可以给非当前游戏单独设路径。 */
+  function openPathDialog(game: GameId) {
+    setModalGame(game);
+    setModal('path');
+  }
+
+  /** 切换当前游戏：写入配置并同步一次日志与标题。 */
+  function setGame(game: GameId) {
+    if (configRef.current.activeGame === game) return;
+    updateConfig('activeGame', game);
+    // 没有正在进行的启动会话时，让状态行跟着当前游戏走。
+    if (launchStateRef.current === 'idle') setSessionGame(game);
+  }
+
+  async function beginLaunch(game: GameId) {
     setModal(null);
+    setSessionGame(game);
     if (!native) {
       setLaunchState('running');
-      addLog('Info', '网页演示会话已开始（未连接桌面服务）。');
+      addLog('Info', `网页演示会话已开始：${GAME_META[game].name}（未连接桌面服务）。`, game);
       notify('演示已开始', '当前为浏览器预览。');
       return;
     }
     setLaunchState('launching');
     try {
-      const result = await nativeInvoke<{ ok: boolean; message: string; state?: NativeState }>('launchGame');
+      const result = await nativeInvoke<{ ok: boolean; message: string; state?: NativeState }>('launchGame', { game });
       if (result.state) applyNativeState(result.state as NativeState);
       if (result.ok) {
         setLaunchState('running');
@@ -363,16 +438,17 @@ export function useAppState() {
     }
   }
 
-    function handleLaunch() {
+  /** 启动指定游戏：路径缺失时先让用户补路径，其余流程与原来一致。 */
+  function handleLaunch(game: GameId = configRef.current.activeGame) {
     if (launchState === 'launching') return;
-    if (launchState === 'running' && !native) {
+    if (launchState === 'running' && !native && game === sessionGame) {
       setLaunchState('idle');
       notify('演示已结束');
       return;
     }
-    if (!config.gamePath) { setModal('path'); notify('先设置游戏路径', undefined, 'info'); return; }
-    if (config.safetyNoticeAcknowledged && !config.showSafetyNoticeOnStartup) void beginLaunch();
-    else setModal('launch');
+    if (!config.games[game].gamePath) { openPathDialog(game); notify('先设置游戏路径', `${GAME_META[game].name}还没有设置主程序路径。`, 'info'); return; }
+    if (config.safetyNoticeAcknowledged && !config.showSafetyNoticeOnStartup) void beginLaunch(game);
+    else { setModalGame(game); setModal('launch'); }
   }
 
   async function exportConfig() {
@@ -428,23 +504,24 @@ export function useAppState() {
   }
 
   async function savePath(path: string) {
+    const game = modalGame;
     if (native) {
-      const state = await nativeInvoke<any>('setGamePath', { path });
+      const state = await nativeInvoke<any>('setGamePath', { path, game });
       applyNativeState(state as NativeState);
     } else {
-      updateConfig('gamePath', path);
+      patchGameConfig(game, 'gamePath', path);
     }
     setModal(null);
-    notify('游戏路径已保存');
+    notify('游戏路径已保存', `${GAME_META[game].name} · ${path}`);
   }
 
   async function browsePath() {
     if (!native) return null;
-    const result = await nativeInvoke<{ ok: boolean; path?: string; detail?: string; state?: any }>('browseGamePath');
+    const result = await nativeInvoke<{ ok: boolean; path?: string; detail?: string; state?: any }>('browseGamePath', { game: modalGame });
     if (result.state) applyNativeState(result.state as NativeState);
     if (result.ok && result.path) {
       setModal(null);
-      notify('游戏路径已保存', result.path);
+      notify('游戏路径已保存', `${GAME_META[modalGame].name} · ${result.path}`);
       return result.path;
     }
     if (result.detail && result.detail !== '已取消手动选择') notify('选择路径', result.detail, 'info');
@@ -453,7 +530,7 @@ export function useAppState() {
 
   async function autoLocatePath() {
     if (!native) return null;
-    const result = await nativeInvoke<{ ok: boolean; path?: string; detail?: string; state?: any }>('autoLocateGamePath');
+    const result = await nativeInvoke<{ ok: boolean; path?: string; detail?: string; state?: any }>('autoLocateGamePath', { game: modalGame });
     if (result.state) applyNativeState(result.state as NativeState);
     if (result.ok) {
       setModal(null);
@@ -464,21 +541,21 @@ export function useAppState() {
     return null;
   }
 
-  const effectiveEnabled = config.masterEnabled && config.enabled;
+  const effectiveEnabled = config.masterEnabled && gameConfig.enabled;
   const readiness = launchState === 'launching' ? '正在启动…'
     : launchState === 'running' || attachedPid > 0
       ? (effectiveEnabled ? `运行中 · PID ${attachedPid || '—'}${currentFps > 0 ? ` · ${currentFps} FPS` : ''}` : '已附加 · 解锁暂停')
-    : !config.gamePath ? '请先设置游戏路径'
+    : !gameConfig.gamePath ? '请先设置游戏路径'
     : !config.masterEnabled ? '解锁服务已暂停'
-    : !config.enabled ? '帧率解锁已关闭'
+    : !gameConfig.enabled ? '帧率解锁已关闭'
     : statusText || '准备就绪';
 
   return {
-    native, booting, config, setConfig, page, theme, setTheme, sidebarOpen, setSidebarOpen,
-    modal, setModal, saveState, toasts, dismissToast, logs, setLogs, launchState, statusText,
+    native, booting, config, setConfig, gameConfig, activeGame, setGame, page, theme, setTheme, sidebarOpen, setSidebarOpen,
+    modal, setModal, modalGame, sessionGame, saveState, toasts, dismissToast, logs, setLogs, launchState, statusText,
     attachedPid, currentFps, isElevated, needsAdmin, elevating, autostart, version, effectiveEnabled, readiness,
     stubStatus, stubLastError, antiBlurState, hideUidState,
-    importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, beginLaunch,
+    importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, updateGameConfig, openPathDialog, beginLaunch,
     restartElevated, startUninstall, handleLaunch, exportConfig, importConfig, exportLogs,
     savePath, browsePath, autoLocatePath,
   };

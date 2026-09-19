@@ -281,3 +281,43 @@
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* 双游戏布局的收尾断点：桌面窗口默认 1180×760，最小 960×640，以下为更窄时的降级。 */
+@media (max-width: 1250px) {
+  .game-switcher-item { padding-right: 9px; font-size: 11px; }
+  .game-row { gap: 12px; }
+  .log-source-filter button { padding-left: 8px; padding-right: 8px; }
+  .panel-note { font-size: 9.5px; }
+}
+
+@media (max-width: 1050px) {
+  .game-switcher { padding: 2px; }
+  .game-switcher-item { height: 28px; gap: 6px; padding-left: 6px; padding-right: 8px; font-size: 10.5px; }
+  .log-source-filter button { font-size: 10px; }
+}
+
+@media (max-width: 720px) {
+  .topbar .game-switcher { margin-left: 6px; margin-right: 6px; }
+  .game-switcher-item { padding: 0 7px; gap: 0; }
+  .game-switcher-item > span { display: none; }
+  .game-row { flex-wrap: wrap; }
+  .game-row-actions { flex: 0 0 100%; width: 100%; justify-content: flex-end; padding-top: 13px; margin-top: 2px; border-top: 1px solid var(--border-soft); }
+  .game-row-actions .button { flex: 1; }
+  .log-source-filter { order: 2; }
+  .log-source-filter button { padding-left: 7px; padding-right: 7px; }
+  .log-table th:nth-child(3) { width: 96px; }
+}
+
+@media (max-width: 560px) {
+  .game-mark { border-radius: 4px; }
+  .nav-group-label.game-group-label { margin-left: 24px; margin-right: 24px; }
+  .game-switcher-item { height: 26px; }
+  .game-library { padding-left: 16px; padding-right: 16px; }
+  .game-row { padding: 13px 0; }
+  .game-info-title > h3 { font-size: 13.5px; }
+  .game-row-actions .button { font-size: 10.5px; padding-left: 10px; padding-right: 10px; }
+  .log-source { gap: 4px; font-size: 9px; }
+  .log-source-filter button > span { display: none; }
+  .log-table th:nth-child(3) { width: 74px; }
+  .launch-summary strong { font-size: 24px; }
+}

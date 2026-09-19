@@ -1,5 +1,5 @@
 import type { LogEntry, LogLevel, Page, UnlockerConfig } from './config';
-import { asPage, DEFAULT_CONFIG, parseConfig } from './config';
+import { asPage, isGameId, parseConfig } from './config';
 
 export type NativeState = {
   config: UnlockerConfig;
@@ -129,7 +129,9 @@ function ensureListeners() {
 }
 
 function normalizeState(raw: any): NativeState {
-  const config = parseConfig({ ...DEFAULT_CONFIG, ...(raw.config ?? {}) });
+  // 宿主当前下发的是 v1 扁平 config（原神），parseConfig 会把它迁移到 games.genshin，
+  // 星穹铁道保留默认值；等宿主改为下发 games 结构后无需再改这里。
+  const config = parseConfig(raw.config ?? {});
   const isElevated = Boolean(raw.isElevated);
   return {
     config,
@@ -161,6 +163,7 @@ function normalizeLog(raw: any): LogEntry {
     timestamp: String(raw.timestamp ?? new Date().toISOString()),
     level: (['Trace', 'Debug', 'Info', 'Warn', 'Error'].includes(raw.level) ? raw.level : 'Info') as LogLevel,
     message: String(raw.message ?? ''),
+    game: isGameId(raw.game) ? raw.game : undefined,
   };
 }
 

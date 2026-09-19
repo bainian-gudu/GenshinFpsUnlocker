@@ -49,7 +49,7 @@ internal sealed partial class MainForm : Form
         _bridge = new UiBridge(config, service, this);
         var startMinimized = startMinimizedOverride ?? _config.StartMinimized;
 
-        Text = "原神帧率解锁 · Genshin FPS Unlocker";
+        Text = AppPaths.ProductTitle;
         Width = 1180;
         Height = 760;
         MinimumSize = new Size(960, 640);

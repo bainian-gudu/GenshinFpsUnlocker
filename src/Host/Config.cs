@@ -13,32 +13,37 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal sealed partial class AppConfig
 {
-    /// <summary>目标帧率上限（1–540，默认 120）。</summary>
-    public int TargetFps { get; set; } = 120;
+    /// <summary>当前正在配置的游戏：概览 / 设置 / 使用指南跟着它切换。</summary>
+    public GameId ActiveGame { get; set; } = GameId.Genshin;
 
-    /// <summary>帧率解锁功能开关（与 MasterEnabled 同时为真时才真正解锁）。</summary>
-    public bool Enabled { get; set; } = true;
+    /// <summary>
+    /// 每个游戏一份的独立配置（帧率、开关、画面效果、游戏路径）。
+    /// 两款游戏互不共享，切换游戏不会互相覆盖。
+    /// </summary>
+    public GameProfiles Games
+    {
+        get => _games;
+        set
+        {
+            _games = value ?? new GameProfiles();
+            GamesLoadedFromFile = true;
+        }
+    }
+    private GameProfiles _games = new();
+
+    /// <summary>磁盘上的配置是否带 <c>games</c> 段（用于决定要不要跑扁平结构迁移）。</summary>
+    [JsonIgnore]
+    public bool GamesLoadedFromFile { get; private set; }
+
+    /// <summary>当前游戏档案（读配置的快捷方式）。</summary>
+    [JsonIgnore]
+    public GameProfile ActiveProfile => Games.Get(ActiveGame);
+
+    /// <summary>取指定游戏的档案。</summary>
+    public GameProfile Profile(GameId game) => Games.Get(game);
 
     /// <summary>是否监视游戏进程并在启动后自动注入。</summary>
     public bool AutoWatch { get; set; } = true;
-
-    /// <summary>
-    /// 反角色虚化注入功能（迁移自 Snap.Hutao.Remastered）：开启后镜头拉近时角色不再透明化。
-    /// 默认关闭；联机/UGC 玩法中请勿开启。
-    /// </summary>
-    public bool AntiBlurPerspective { get; set; } = false;
-
-    /// <summary>
-    /// 移除水下马赛克注入功能（迁移自 Snap.Hutao.Remastered）：开启后角色入水不再显示马赛克虚化。
-    /// 默认关闭；联机/UGC 玩法中请勿开启。
-    /// </summary>
-    public bool AntiBlurDiveMosaic { get; set; } = false;
-
-    /// <summary>
-    /// 隐藏 UID 注入功能（同源迁移自 Snap.Hutao.Remastered）：开启后隐藏水印与资料页上的
-    /// UID 文本。默认关闭；联机/UGC 玩法中请勿开启。
-    /// </summary>
-    public bool HideUid { get; set; } = false;
 
     /// <summary>
     /// 启动时是否最小化到系统托盘。
@@ -72,19 +77,44 @@ internal sealed partial class AppConfig
     /// <summary>监视循环基准轮询间隔（毫秒，200–10000）。</summary>
     public int PollIntervalMs { get; set; } = 1000;
 
-    /// <summary>原神主程序完整路径（YuanShen.exe / GenshinImpact.exe）。</summary>
-    public string? GamePath { get; set; }
+    // ---- 旧版扁平字段（v1 配置）----
+    // 这些属性只为读取旧 config.json 存在：迁移时合并进 games.genshin，随后置空，
+    // 下次保存就自然消失。新写的配置里不会再出现它们。
 
-    /// <summary>旧版配置字段别名，读入时合并到 <see cref="GamePath"/>。</summary>
-    public string? GamePathHint
-    {
-        get => GamePath;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(GamePath))
-                GamePath = value;
-        }
-    }
+    /// <summary>旧版字段：目标帧率（迁移到 games.genshin）。</summary>
+    [JsonPropertyName("targetFps")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LegacyTargetFps { get; set; }
+
+    /// <summary>旧版字段：帧率解锁开关。</summary>
+    [JsonPropertyName("enabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyEnabled { get; set; }
+
+    /// <summary>旧版字段：反角色虚化。</summary>
+    [JsonPropertyName("antiBlurPerspective")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyAntiBlurPerspective { get; set; }
+
+    /// <summary>旧版字段：移除水下马赛克。</summary>
+    [JsonPropertyName("antiBlurDiveMosaic")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyAntiBlurDiveMosaic { get; set; }
+
+    /// <summary>旧版字段：隐藏 UID。</summary>
+    [JsonPropertyName("hideUid")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyHideUid { get; set; }
+
+    /// <summary>旧版字段：游戏路径（迁移到 games.genshin.gamePath）。</summary>
+    [JsonPropertyName("gamePath")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyGamePath { get; set; }
+
+    /// <summary>更早的字段别名：游戏路径。</summary>
+    [JsonPropertyName("gamePathHint")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyGamePathHint { get; set; }
 
     /// <summary>用户是否已确认过安全声明。</summary>
     public bool SafetyNoticeAcknowledged { get; set; } = false;
@@ -139,6 +169,8 @@ internal sealed partial class AppConfig
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        // 枚举写成字符串（genshin / starRail），配置文件里可读、也不会因枚举顺序变化而错位。
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
         // 未知字段保留兼容，避免旧/新版本互相抹掉键
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
@@ -150,16 +182,10 @@ internal sealed partial class AppConfig
     /// <summary>钳制数值范围并规范化游戏路径；执行 schema 迁移。</summary>
     public void Sanitize()
     {
-        TargetFps = Math.Clamp(TargetFps, 1, 540);
+        Games.Sanitize();
         PollIntervalMs = Math.Clamp(PollIntervalMs, 200, 10000);
         LogRetainDays = Math.Clamp(LogRetainDays, 1, 90);
         if (string.IsNullOrWhiteSpace(LogLevel)) LogLevel = "Debug";
-        if (!string.IsNullOrWhiteSpace(GamePath))
-        {
-            try { GamePath = PathUtil.Normalize(GamePath); }
-            catch { /* 保留原串 */ }
-        }
-
     }
 
     /// <summary>
@@ -180,6 +206,34 @@ internal sealed partial class AppConfig
                 AppLog.Info("config migrate v1: StartMinimized false (show main window on launch)");
             }
             ConfigSchemaVersion = 1;
+        }
+
+        // v2：单游戏扁平字段 → 每个游戏一份的 games 段。
+        // 只在旧配置（没有 games 段）上执行：新配置里 games 是权威来源，
+        // 不能被残留的扁平键盖回去。迁移完成后把扁平键清空，下次保存即消失。
+        if (ConfigSchemaVersion < 2)
+        {
+            if (!GamesLoadedFromFile)
+            {
+                var genshin = Games.Genshin;
+                if (LegacyTargetFps is int fps) genshin.TargetFps = fps;
+                if (LegacyEnabled is bool enabled) genshin.Enabled = enabled;
+                if (LegacyAntiBlurPerspective is bool abp) genshin.AntiBlurPerspective = abp;
+                if (LegacyAntiBlurDiveMosaic is bool abm) genshin.AntiBlurDiveMosaic = abm;
+                if (LegacyHideUid is bool uid) genshin.HideUid = uid;
+                if (!string.IsNullOrWhiteSpace(LegacyGamePath)) genshin.GamePath = LegacyGamePath;
+                else if (!string.IsNullOrWhiteSpace(LegacyGamePathHint)) genshin.GamePath = LegacyGamePathHint;
+                AppLog.Info("config migrate v2: legacy flat fields → games.genshin");
+            }
+
+            LegacyTargetFps = null;
+            LegacyEnabled = null;
+            LegacyAntiBlurPerspective = null;
+            LegacyAntiBlurDiveMosaic = null;
+            LegacyHideUid = null;
+            LegacyGamePath = null;
+            LegacyGamePathHint = null;
+            ConfigSchemaVersion = 2;
         }
     }
 

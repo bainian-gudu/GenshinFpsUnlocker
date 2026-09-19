@@ -18,7 +18,7 @@ internal static class SafetyNotice
     /// <summary>完整用户协议与安全声明正文（安装确认 / 启动 / 首次对话框）。</summary>
     public const string FullText =
         """
-        【Genshin FPS Unlocker 用户协议与安全声明】
+        【HoYoEnhance 用户协议与安全声明】
         版本 1.0.0
 
         安装、启动或使用本软件，即视为您已阅读并同意下列全部条款。

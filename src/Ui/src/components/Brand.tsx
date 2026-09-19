@@ -1,4 +1,5 @@
 /** 品牌标识组件：星标 SVG、文字标与 GitHub 图标，供侧栏 / 关于页使用。 */
+import { BRAND_NAME, BRAND_SUB } from '../lib/config';
 
 /** 星标图形：双层四角星 + 右上角装饰小星；纯装饰，对无障碍树隐藏。 */
 export function BrandMark({ className = '' }: { className?: string }) {
@@ -17,8 +18,8 @@ export function Brand({ large = false }: { large?: boolean }) {
     <div className={`brand ${large ? 'brand-large' : ''}`}>
       <BrandMark className="brand-mark" />
       <div className="brand-wordmark">
-        <strong>Genshin</strong>
-        <span>FPS UNLOCKER</span>
+        <strong>{BRAND_NAME}</strong>
+        <span>{BRAND_SUB}</span>
       </div>
     </div>
   );

@@ -9,10 +9,6 @@ namespace GenshinFpsUnlocker.Host;
 /// </summary>
 internal static partial class GameLocator
 {
-    /// <summary>快捷方式文件名里出现这些词就优先解析（其它 .lnk 也会解析，只是排在后面）。</summary>
-    private static readonly string[] ShortcutNameHints =
-        ["原神", "Yuanshen", "Genshin", "HoYo", "米哈游", "miHoYo"];
-
     /// <summary>单个位置最多解析多少个快捷方式（解析失败时不重试）。</summary>
     private const int MaxShortcutsPerLocation = 40;
 
@@ -23,9 +19,9 @@ internal static partial class GameLocator
     /// 解析桌面 / 公共桌面 / 开始菜单里的快捷方式，反推游戏主程序路径。
     /// 目标是目录时在目录内枚举主程序；目标是启动器时在同目录内枚举。
     /// </summary>
-    public static GameLocateResult LocateFromShortcuts()
+    public static GameLocateResult LocateFromShortcuts(GameDescriptor game)
     {
-        var shortcutFiles = CollectShortcutFiles().ToList();
+        var shortcutFiles = CollectShortcutFiles(game).ToList();
         if (shortcutFiles.Count == 0) return GameLocateResult.Fail("没有找到可解析的快捷方式");
 
         foreach (var (lnk, location) in shortcutFiles)
@@ -36,33 +32,33 @@ internal static partial class GameLocator
             if (string.IsNullOrEmpty(normalized)) continue;
 
             // a) 目标本身就是游戏主程序
-            if (IsValidGameExe(normalized))
+            if (IsValidGameExe(game, normalized))
             {
                 return GameLocateResult.Success(
                     normalized, GameLocateSource.Shortcut, $"{location}：{Path.GetFileName(lnk)}");
             }
 
             // b) 目标是目录（或目录已被删）：在目录内浅层枚举主程序
-            foreach (var exe in ResolveFromShortcutTarget(normalized))
+            foreach (var exe in ResolveFromShortcutTarget(game, normalized))
             {
                 return GameLocateResult.Success(
                     exe, GameLocateSource.Shortcut, $"{location}：{Path.GetFileName(lnk)}");
             }
         }
 
-        return GameLocateResult.Fail("桌面 / 开始菜单的快捷方式里没有指向原神");
+        return GameLocateResult.Fail($"桌面 / 开始菜单的快捷方式里没有指向{game.DisplayName}");
     }
 
     /// <summary>
     /// 从一个已解析的快捷方式目标推出游戏主程序：
     /// 目标是主程序直接用；是目录或启动器时在目标（或其父目录）内浅层枚举。
     /// </summary>
-    public static IEnumerable<string> ResolveFromShortcutTarget(string target)
+    public static IEnumerable<string> ResolveFromShortcutTarget(GameDescriptor game, string target)
     {
         var normalized = PathUtil.Normalize(target);
         if (string.IsNullOrEmpty(normalized)) yield break;
 
-        if (IsValidGameExe(normalized))
+        if (IsValidGameExe(game, normalized))
         {
             yield return normalized;
             yield break;
@@ -73,17 +69,17 @@ internal static partial class GameLocator
             : PathUtil.GetDirectoryNameSafe(normalized);
         if (string.IsNullOrEmpty(searchRoot)) yield break;
 
-        foreach (var exe in EnumerateCandidateExes(searchRoot!, maxDepth: 3, budget: TimeSpan.FromSeconds(2)))
+        foreach (var exe in EnumerateCandidateExes(game, searchRoot!, maxDepth: 3, budget: TimeSpan.FromSeconds(2)))
         {
-            if (IsValidGameExe(exe)) yield return exe;
+            if (IsValidGameExe(game, exe)) yield return exe;
         }
     }
 
     /// <summary>
     /// 收集桌面、公共桌面、开始菜单与快速启动栏里的 .lnk。
-    /// 文件名带原神/HoYo 线索的排前面，其余排在后面（仍会解析）。
+    /// 文件名带该游戏 / HoYo 线索的排前面，其余排在后面（仍会解析）。
     /// </summary>
-    public static IEnumerable<(string Path, string Location)> CollectShortcutFiles()
+    public static IEnumerable<(string Path, string Location)> CollectShortcutFiles(GameDescriptor game)
     {
         var roots = new List<(string Dir, string Location)>();
         Add(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "桌面");
@@ -128,10 +124,10 @@ internal static partial class GameLocator
             .OrderBy(f => f.Rank)
             .Select(f => (f.Path, f.Location));
 
-        static bool HasGameHint(string lnk)
+        bool HasGameHint(string lnk)
         {
             var name = Path.GetFileNameWithoutExtension(lnk);
-            return ShortcutNameHints.Any(hint => name.Contains(hint, StringComparison.OrdinalIgnoreCase));
+            return game.ShortcutHints.Any(hint => name.Contains(hint, StringComparison.OrdinalIgnoreCase));
         }
 
         void Add(string dir, string location)

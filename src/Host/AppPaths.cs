@@ -14,8 +14,14 @@ internal static class AppPaths
     /// <summary>产品内部名（目录名、注册表键、互斥体等）。</summary>
     public const string ProductName = "GenshinFpsUnlocker";
 
-    /// <summary>面向用户的显示名。</summary>
-    public const string ProductDisplayName = "原神帧率解锁";
+    /// <summary>面向用户的显示名（品牌名，托盘提示、快捷方式、通知都用它）。</summary>
+    public const string ProductDisplayName = "HoYoEnhance";
+
+    /// <summary>中文副名（窗口标题用）。</summary>
+    public const string ProductDisplayNameCn = "米游增强器";
+
+    /// <summary>窗口标题：品牌名 + 中文副名。</summary>
+    public const string ProductTitle = ProductDisplayName + " · " + ProductDisplayNameCn;
 
     /// <summary>当前运行中可执行文件所在目录（规范化）。</summary>
     public static string ExeDirectory
@@ -42,6 +48,9 @@ internal static class AppPaths
     public const string StubDllFileName = "FpsUnlockerStub.dll";
 
     public static string StubDllPath => Path.Combine(ExeDirectory, StubDllFileName);
+
+    /// <summary>指定游戏的注入模块路径（两款游戏的模块相互独立，文件名也不同）。</summary>
+    public static string StubPathFor(GameDescriptor game) => Path.Combine(ExeDirectory, game.StubFileName);
 
     /// <summary>Kachina 写入的卸载程序（开始菜单「卸载」快捷方式指向它）。</summary>
     public static string UninstExePath => Path.Combine(ExeDirectory, ProductName + ".uninst.exe");

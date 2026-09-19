@@ -1,43 +1,94 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, EyeOff, Folder, FolderOpen, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, WandSparkles } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Folder, FolderOpen, LayoutGrid, LoaderCircle, PanelBottomClose, Play, Power, ScanLine, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
 import { FpsControl } from '../components/FpsControl';
 import { RuntimeStatus } from '../components/RuntimeStatus';
+import { FEATURE_ICONS, GameMark } from '../components/GameIcon';
 import { PageHeading, ToggleRow } from '../components/ui';
+import { APP_NAME, GAME_IDS, GAME_META } from '../lib/config';
+import type { GameId } from '../lib/config';
 
-/** 游戏概览页：主视觉、帧率与快捷设置、启动面板、权限提示。 */
+/** 国服 / 国际服：只有原神能从可执行文件名区分，星穹铁道两边同名。 */
+function regionOf(game: GameId, path: string | null): string | null {
+  if (game !== 'genshin' || !path) return null;
+  return path.toLowerCase().includes('genshinimpact.exe') ? '国际服' : '国服';
+}
+
+/**
+ * 游戏概览页：主视觉、帧率与快捷设置、游戏库、权限提示。
+ * 页面内容全部来自「当前游戏」的独立配置，切换游戏后整体换一套。
+ */
 export function OverviewPage({ app }: { app: AppState }) {
   const {
-    native, config, setModal, launchState, statusText, attachedPid, isElevated, needsAdmin, elevating,
-    effectiveEnabled, readiness, navigate, updateConfig, restartElevated, handleLaunch,
+    native, config, gameConfig, activeGame, sessionGame, setModal, launchState, statusText, attachedPid,
+    isElevated, needsAdmin, elevating, effectiveEnabled, readiness, navigate, updateConfig,
+    updateGameConfig, restartElevated, handleLaunch, openPathDialog,
   } = app;
+  const meta = GAME_META[activeGame];
 
   return (
     <>
-      <PageHeading title="游戏概览" description="准备好，以更流畅的方式探索提瓦特。"><div className={`readiness ${!effectiveEnabled || !config.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedPid > 0 && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
-      <section className="overview-hero" aria-label="Genshin FPS Unlocker">
-        <motion.img className="hero-image" src="/images/teyvat-landscape.jpg" alt="阳光下的璃月风格山峦、亭台与碧水" initial={{ scale: 1.045 }} animate={{ scale: 1 }} transition={{ duration: 1.8, ease: 'easeOut' }} />
+      <PageHeading title="游戏概览" description={`准备好，以更流畅的方式游玩${meta.name}。`}><div className={`readiness ${!effectiveEnabled || !gameConfig.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedPid > 0 && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
+      <section className={`overview-hero is-${activeGame}`} aria-label={`${APP_NAME} · ${meta.name}`}>
+        {/* 星穹铁道主视觉素材未定，先复用原神那张风景图占位；换素材时改这里的 src 即可。 */}
+        <motion.img className="hero-image" src="/images/teyvat-landscape.webp" alt={activeGame === 'genshin' ? '阳光下的璃月风格山峦、亭台与碧水' : '主视觉占位图（星穹铁道素材待替换）'} initial={{ scale: 1.045 }} animate={{ scale: 1 }} transition={{ duration: 1.8, ease: 'easeOut' }} />
         <div className="hero-shade" />
-        <motion.div className="hero-copy" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}><h2>Genshin FPS Unlocker</h2><h3>让每一帧，都不被设限。</h3><p>更高帧率，更自在的冒险。以你喜欢的节奏，探索提瓦特。</p><button className="hero-guide" onClick={() => navigate('guide')}>初次使用？从这里开始<ArrowRight size={14} /></button></motion.div>
+        <motion.div className="hero-copy" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}><span className="hero-eyebrow">{meta.name}</span><h2>{APP_NAME}</h2><h3>{meta.hero.tagline}</h3><p>{meta.hero.copy}</p><button className="hero-guide" onClick={() => navigate('guide')}>初次使用？从这里开始<ArrowRight size={14} /></button></motion.div>
       </section>
       <motion.div className="overview-controls" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
         <div className="overview-left-stack">
-          <FpsControl value={config.targetFps} enabled={config.enabled} masterEnabled={config.masterEnabled} onChange={(value) => updateConfig('targetFps', value)} onToggle={(value) => updateConfig('enabled', value)} />
+          <FpsControl value={gameConfig.targetFps} enabled={gameConfig.enabled} masterEnabled={config.masterEnabled} lock={meta.fpsLock} onChange={(value) => updateGameConfig('targetFps', value)} onToggle={(value) => updateGameConfig('enabled', value)} />
           <RuntimeStatus app={app} />
         </div>
         <div className="overview-right-stack">
-          <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows"><ToggleRow icon={EyeOff} title="隐藏 UID" description="隐藏游戏水印与资料页上的 UID 文本" checked={config.hideUid} onChange={(value) => updateConfig('hideUid', value)} /><ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后，自动应用帧率设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} /><ToggleRow icon={WandSparkles} title="反角色虚化" description="开启后镜头拉近时，角色不再透明化" checked={config.antiBlurPerspective} onChange={(value) => updateConfig('antiBlurPerspective', value)} /><ToggleRow icon={WandSparkles} title="移除水下马赛克" description="开启后角色入水时，不再显示马赛克虚化" checked={config.antiBlurDiveMosaic} onChange={(value) => updateConfig('antiBlurDiveMosaic', value)} /><ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} /><ToggleRow icon={Shield} title="启动时自动提权" description="登录自启改由最高权限计划任务启动（不弹 UAC）；手动启动请求一次 UAC" checked={config.autoStartAsAdministrator} onChange={(value) => updateConfig('autoStartAsAdministrator', value)} /><ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后直接进托盘，关闭主窗口也进入托盘后台" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} /></div></section>
+          <section className="control-panel quick-settings"><div className="panel-heading"><h2><SlidersHorizontal size={17} strokeWidth={1.7} />快捷设置</h2><button className="text-button muted all-settings" onClick={() => navigate('settings')}>全部设置<ChevronRight size={13} /></button></div><div className="quick-settings-rows">
+            {meta.injection.features.map(({ key, title, description }) => (
+              <ToggleRow key={key} icon={FEATURE_ICONS[key]} title={title} description={description} checked={gameConfig[key]} onChange={(value) => updateGameConfig(key, value)} />
+            ))}
+            <ToggleRow icon={ScanLine} title="自动解锁" description="检测到游戏启动后，自动应用帧率设置" checked={config.autoWatch} onChange={(value) => updateConfig('autoWatch', value)} />
+            <ToggleRow icon={Power} title="开机自启动" description="登录 Windows 后自动启动，在后台等待游戏运行" checked={config.autoStartWithWindows} onChange={(value) => updateConfig('autoStartWithWindows', value)} />
+            <ToggleRow icon={Shield} title="启动时自动提权" description="登录自启改由最高权限计划任务启动（不弹 UAC）；手动启动请求一次 UAC" checked={config.autoStartAsAdministrator} onChange={(value) => updateConfig('autoStartAsAdministrator', value)} />
+            <ToggleRow icon={PanelBottomClose} title="启动后最小化到托盘" description="开启后直接进托盘，关闭主窗口也进入托盘后台" checked={config.startMinimized} onChange={(value) => updateConfig('startMinimized', value)} />
+          </div></section>
         </div>
       </motion.div>
-      <motion.section className={`game-launch-panel ${launchState !== 'idle' || attachedPid > 0 ? 'session-active' : ''}`} aria-label="游戏与启动" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
-        <div className="game-art" aria-hidden="true"><img className="game-art-icon" src="/images/game-icon.webp" alt="" width={54} height={54} draggable={false} /></div>
-        <div className="game-info"><div className="game-info-title"><h2>原神</h2><span className="region-label">{config.gamePath?.toLowerCase().includes('genshinimpact.exe') ? '国际服' : '国服'}</span><span className={`game-state ${attachedPid > 0 ? 'game-state-active' : ''}`}>{attachedPid > 0 ? `已附加 · PID ${attachedPid}` : launchState === 'launching' ? '正在启动…' : statusText || '等待启动'}</span></div><div className="game-path"><Folder size={12} /><span title={config.gamePath ?? undefined}>{config.gamePath ?? '请先设置游戏主程序路径'}</span></div></div>
-        <div className="launch-actions">
-          <button className="button button-secondary path-button" onClick={() => setModal('path')} disabled={launchState === 'launching'}><FolderOpen size={15} />更改路径</button>
-          <button className={`button button-primary launch-button ${attachedPid > 0 ? 'is-running' : ''}`} onClick={handleLaunch} disabled={launchState === 'launching'}>
-            {launchState === 'launching' ? <LoaderCircle size={17} className="spin" /> : <Play size={16} fill="currentColor" />}
-            <span>{launchState === 'launching' ? '启动中' : attachedPid > 0 ? '再次启动' : '启动游戏'}</span>
-          </button>
+      <motion.section className="control-panel game-library" aria-label="游戏库" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
+        <div className="panel-heading"><h2><LayoutGrid size={17} strokeWidth={1.7} />游戏库</h2><span className="panel-note">为任意一个游戏设置路径并启动，切换游戏请用顶部按钮</span></div>
+        <div className="game-library-rows">
+          {GAME_IDS.map((id) => {
+            const item = config.games[id];
+            const isCurrent = id === activeGame;
+            const isSession = id === sessionGame;
+            const region = regionOf(id, item.gamePath);
+            const busy = isSession && launchState === 'launching';
+            const running = isSession && attachedPid > 0;
+            const state = !isSession ? '等待启动'
+              : launchState === 'launching' ? '正在启动…'
+              : attachedPid > 0 ? `已附加 · PID ${attachedPid}`
+              : launchState === 'running' ? (native ? statusText || '运行中' : '演示会话进行中')
+              : '等待启动';
+            return (
+              <div key={id} className={`game-row ${isCurrent ? 'is-active' : ''}`}>
+                <div className="game-art"><GameMark game={id} size={44} className="game-art-icon" /></div>
+                <div className="game-info">
+                  <div className="game-info-title">
+                    <h3>{GAME_META[id].name}</h3>
+                    {region && <span className="region-label">{region}</span>}
+                    <span className="region-label">{item.targetFps} FPS</span>
+                    <span className={`game-state ${running ? 'game-state-active' : ''}`}>{state}</span>
+                  </div>
+                  <div className="game-path"><Folder size={12} /><span title={item.gamePath ?? undefined}>{item.gamePath ?? '请先设置游戏主程序路径'}</span></div>
+                </div>
+                <div className="game-row-actions">
+                  <button className="button button-secondary path-button" onClick={() => openPathDialog(id)} disabled={busy}><FolderOpen size={15} />更改路径</button>
+                  <button className={`button button-primary launch-button ${running ? 'is-running' : ''}`} onClick={() => handleLaunch(id)} disabled={busy}>
+                    {busy ? <LoaderCircle size={17} className="spin" /> : <Play size={16} fill="currentColor" />}
+                    <span>{busy ? '启动中' : running ? '再次启动' : '启动游戏'}</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </motion.section>
       {native && needsAdmin && !config.suppressAdminHint && (

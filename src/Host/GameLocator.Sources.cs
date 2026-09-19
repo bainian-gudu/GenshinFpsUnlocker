@@ -12,10 +12,10 @@ internal static partial class GameLocator
     /// <summary>Unity 日志里最多尝试几个 *_Data 候选路径（日志可能很长）。</summary>
     private const int MaxUnityLogCandidates = 50;
 
-    /// <summary>从正在运行的 YuanShen / GenshinImpact 进程取映像路径。</summary>
-    public static GameLocateResult LocateFromRunningProcess()
+    /// <summary>从正在运行的游戏进程取映像路径（进程名来自该游戏的描述）。</summary>
+    public static GameLocateResult LocateFromRunningProcess(GameDescriptor game)
     {
-        foreach (var name in GameProcess.ProcessNames)
+        foreach (var name in game.ProcessNames)
         {
             Process[] list;
             try { list = Process.GetProcessesByName(name); }
@@ -29,7 +29,7 @@ internal static partial class GameLocator
                     {
                         var path = PathUtil.GetProcessImagePath(p.Id) ?? p.MainModule?.FileName;
                         path = PathUtil.Normalize(path);
-                        if (IsValidGameExe(path))
+                        if (IsValidGameExe(game, path))
                         {
                             return GameLocateResult.Success(path!, GameLocateSource.RunningProcess, $"运行中进程 PID {p.Id}");
                         }
@@ -46,29 +46,28 @@ internal static partial class GameLocator
             }
         }
 
-        return GameLocateResult.Fail("当前没有运行中的原神进程");
+        return GameLocateResult.Fail($"当前没有运行中的{game.DisplayName}进程");
     }
 
     /// <summary>
-    /// 解析 %LocalLow%\miHoYo\原神|Genshin Impact\output_log.txt 中的 _Data 路径。
+    /// 解析 <c>%LocalLow%\miHoYo\&lt;游戏目录&gt;\output_log.txt</c> 中的 _Data 路径。
+    /// 目录名按游戏的候选列表来（原神：Genshin Impact / 原神；星穹铁道：Star Rail …）。
     /// </summary>
-    public static GameLocateResult LocateFromUnityLog()
+    public static GameLocateResult LocateFromUnityLog(GameDescriptor game)
     {
         var localLow = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         // LocalLow 与 Local 同级，位于 UserProfile\AppData 下
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var candidates = new[]
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var roots = new List<string>();
+        foreach (var folder in game.UnityLogFolders)
         {
-            PathUtil.Normalize(Path.Combine(appData, @"..\LocalLow\miHoYo\Genshin Impact\output_log.txt")),
-            PathUtil.Normalize(Path.Combine(appData, @"..\LocalLow\miHoYo\原神\output_log.txt")),
-            PathUtil.Normalize(Path.Combine(localLow, @"..\LocalLow\miHoYo\Genshin Impact\output_log.txt")),
-            PathUtil.Normalize(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                @"AppData\LocalLow\miHoYo\Genshin Impact\output_log.txt")),
-            PathUtil.Normalize(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                @"AppData\LocalLow\miHoYo\原神\output_log.txt")),
-        };
+            roots.Add(PathUtil.Normalize(Path.Combine(appData, @"..\LocalLow\miHoYo", folder, "output_log.txt")));
+            roots.Add(PathUtil.Normalize(Path.Combine(localLow, @"..\LocalLow\miHoYo", folder, "output_log.txt")));
+            roots.Add(PathUtil.Normalize(Path.Combine(userProfile, @"AppData\LocalLow\miHoYo", folder, "output_log.txt")));
+        }
 
-        foreach (var logPath in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var logPath in roots.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!File.Exists(logPath)) continue;
 
@@ -79,46 +78,43 @@ internal static partial class GameLocator
             // 同一行/同一份日志里可能有多个 *_Data 路径（崩溃转储、缓存目录…），
             // 逐个试到真的存在主程序为止，而不是只看第一条。
             var tried = 0;
-            foreach (Match match in WarmupFileLine.Matches(content))
+            foreach (Match match in WarmupFileLine(game).Matches(content))
             {
                 if (++tried > MaxUnityLogCandidates) break;
                 var fullPath = PathUtil.Normalize(match.Value + ".exe");
-                if (IsValidGameExe(fullPath))
+                if (IsValidGameExe(game, fullPath))
                 {
                     return GameLocateResult.Success(fullPath, GameLocateSource.UnityLog, logPath);
                 }
             }
         }
 
-        return GameLocateResult.Fail("Unity 日志中未解析到有效路径（请先成功启动过一次游戏）");
+        return GameLocateResult.Fail($"Unity 日志中未解析到{game.DisplayName}的有效路径（请先成功启动过一次游戏）");
     }
 
     /// <summary>扫描常见安装根与启动器 config.ini 中的 game_install_path。</summary>
-    public static GameLocateResult LocateFromLauncherConfigs()
+    public static GameLocateResult LocateFromLauncherConfigs(GameDescriptor game)
     {
         var roots = new List<string>();
 
-        // 常见安装根目录（含中文「原神」）
+        // 常见安装根目录（含中文目录名）
         foreach (var drive in Environment.GetLogicalDrives())
         {
-            roots.Add(Path.Combine(drive, "Program Files", "Genshin Impact"));
-            roots.Add(Path.Combine(drive, "Program Files", "GenshinImpact"));
-            roots.Add(Path.Combine(drive, "Program Files", "Yuanshen"));
-            roots.Add(Path.Combine(drive, "Program Files", "原神"));
-            roots.Add(Path.Combine(drive, "Genshin Impact"));
-            roots.Add(Path.Combine(drive, "GenshinImpact"));
-            roots.Add(Path.Combine(drive, "Yuanshen"));
-            roots.Add(Path.Combine(drive, "原神"));
-            roots.Add(Path.Combine(drive, "miHoYo"));
-            roots.Add(Path.Combine(drive, "HoYoVerse"));
+            foreach (var name in game.InstallRootNames)
+            {
+                roots.Add(Path.Combine(drive, "Program Files", name));
+                roots.Add(Path.Combine(drive, name));
+            }
         }
 
         // LocalAppData / ProgramData 下的启动器目录
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        roots.Add(Path.Combine(local, "miHoYo"));
-        roots.Add(Path.Combine(local, "HoYoVerse"));
-        roots.Add(Path.Combine(programData, "miHoYo"));
+        foreach (var name in game.InstallRootNames)
+        {
+            roots.Add(Path.Combine(local, name));
+            roots.Add(Path.Combine(programData, name));
+        }
         roots.Add(Path.Combine(programData, "Hyphub"));
         roots.Add(Path.Combine(programData, "Hyp"));
 
@@ -134,10 +130,10 @@ internal static partial class GameLocator
             if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) continue;
             if (!visited.Add(root)) continue;
 
-            // 根目录或「Genshin Impact Game」子目录下的 exe
-            foreach (var exe in EnumerateCandidateExes(root))
+            // 根目录或游戏子目录下的 exe
+            foreach (var exe in EnumerateCandidateExes(game, root))
             {
-                if (IsValidGameExe(exe))
+                if (IsValidGameExe(game, exe))
                     return GameLocateResult.Success(exe, GameLocateSource.LauncherConfig, root);
             }
 
@@ -146,15 +142,15 @@ internal static partial class GameLocator
             {
                 var path = ReadGameInstallPathFromIni(ini);
                 if (path is null) continue;
-                foreach (var exe in EnumerateCandidateExes(path))
+                foreach (var exe in EnumerateCandidateExes(game, path))
                 {
-                    if (IsValidGameExe(exe))
+                    if (IsValidGameExe(game, exe))
                         return GameLocateResult.Success(exe, GameLocateSource.LauncherConfig, ini);
                 }
             }
         }
 
-        return GameLocateResult.Fail("启动器目录 / config.ini 中未找到游戏");
+        return GameLocateResult.Fail($"启动器目录 / config.ini 中未找到{game.DisplayName}");
     }
 
     /// <summary>快扫预算：整层来源的耗时上限。</summary>
@@ -172,25 +168,25 @@ internal static partial class GameLocator
     /// Program Files、注册表里也没记录的情况。目录名剪枝 + 深度上限 + 总耗时上限
     /// 保证最坏情况也只是几秒。
     /// </summary>
-    public static GameLocateResult LocateFromQuickScan()
+    public static GameLocateResult LocateFromQuickScan(GameDescriptor game)
     {
         var stopwatch = Stopwatch.StartNew();
         var (userRoots, driveRoots) = CollectQuickScanRoots();
 
         // 用户目录优先（命中率更高、扫描面更小），随后是整盘。
-        var fromUserDirs = ScanRoots(userRoots, UserDirScanDepth, stopwatch);
+        var fromUserDirs = ScanRoots(game, userRoots, UserDirScanDepth, stopwatch);
         if (fromUserDirs.Ok) return fromUserDirs;
 
-        var fromDrives = ScanRoots(driveRoots, DriveScanDepth, stopwatch);
+        var fromDrives = ScanRoots(game, driveRoots, DriveScanDepth, stopwatch);
         if (fromDrives.Ok) return fromDrives;
 
         return string.IsNullOrEmpty(fromDrives.Detail)
-            ? GameLocateResult.Fail("磁盘快扫未找到原神主程序")
+            ? GameLocateResult.Fail($"磁盘快扫未找到{game.DisplayName}主程序")
             : fromDrives;
     }
 
     /// <summary>在给定根目录集合上做一轮广度优先扫描（共用同一个耗时预算）。</summary>
-    public static GameLocateResult ScanRoots(IEnumerable<string> roots, int maxDepth, Stopwatch stopwatch)
+    public static GameLocateResult ScanRoots(GameDescriptor game, IEnumerable<string> roots, int maxDepth, Stopwatch stopwatch)
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var queue = new Queue<(string Dir, int Depth)>();
@@ -219,11 +215,11 @@ internal static partial class GameLocator
 
             foreach (var file in files)
             {
-                if (!IsCandidateExeName(Path.GetFileName(file))) continue;
+                if (!IsCandidateExeName(game, Path.GetFileName(file))) continue;
                 var normalized = PathUtil.Normalize(file);
                 if (!PathUtil.ExistsFile(normalized)) continue;
                 // 只认带 Unity 资源特征的目录，避免把同名的无关 exe 当游戏
-                if (!IsPlausibleGameRoot(normalized)) continue;
+                if (!IsPlausibleGameRoot(game, normalized)) continue;
                 return GameLocateResult.Success(
                     normalized, GameLocateSource.QuickScan,
                     $"磁盘扫描命中：{PathUtil.GetDirectoryNameSafe(normalized)}");
@@ -242,7 +238,7 @@ internal static partial class GameLocator
             }
         }
 
-        return GameLocateResult.Fail("这组目录里没有找到原神主程序");
+        return GameLocateResult.Fail($"这组目录里没有找到{game.DisplayName}主程序");
     }
 
     /// <summary>快扫根目录：用户目录（含 OneDrive）与所有本地/可移动驱动器。</summary>
@@ -294,8 +290,8 @@ internal static partial class GameLocator
         }
     }
 
-    /// <summary>从“应用和功能”卸载信息中查找原神 InstallLocation。</summary>
-    public static GameLocateResult LocateFromUninstallRegistry()
+    /// <summary>从“应用和功能”卸载信息中查找该游戏的 InstallLocation。</summary>
+    public static GameLocateResult LocateFromUninstallRegistry(GameDescriptor game)
     {
         string[] subKeys =
         [
@@ -320,12 +316,14 @@ internal static partial class GameLocator
                             using var app = baseKey.OpenSubKey(name);
                             if (app is null) continue;
                             var display = app.GetValue("DisplayName") as string ?? "";
-                            if (display.IndexOf("Genshin", StringComparison.OrdinalIgnoreCase) < 0
-                                && display.IndexOf("原神", StringComparison.OrdinalIgnoreCase) < 0
-                                && display.IndexOf("YuanShen", StringComparison.OrdinalIgnoreCase) < 0)
+                            var matched = false;
+                            foreach (var keyword in game.UninstallKeywords)
                             {
-                                continue;
+                                if (display.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                                matched = true;
+                                break;
                             }
+                            if (!matched) continue;
 
                             var location = app.GetValue("InstallLocation") as string
                                            ?? app.GetValue("DisplayIcon") as string;
@@ -333,14 +331,14 @@ internal static partial class GameLocator
 
                             // DisplayIcon 可能是 "path\to\exe,0"
                             location = location.Split(',')[0].Trim().Trim('"');
-                            if (File.Exists(location) && IsValidGameExe(location))
+                            if (File.Exists(location) && IsValidGameExe(game, location))
                                 return GameLocateResult.Success(location, GameLocateSource.RegistryUninstall, display);
 
                             if (Directory.Exists(location))
                             {
-                                foreach (var exe in EnumerateCandidateExes(location))
+                                foreach (var exe in EnumerateCandidateExes(game, location))
                                 {
-                                    if (IsValidGameExe(exe))
+                                    if (IsValidGameExe(game, exe))
                                         return GameLocateResult.Success(exe, GameLocateSource.RegistryUninstall, display);
                                 }
                             }
@@ -358,7 +356,7 @@ internal static partial class GameLocator
             }
         }
 
-        return GameLocateResult.Fail("卸载信息注册表中未找到原神");
+        return GameLocateResult.Fail($"卸载信息注册表中未找到{game.DisplayName}");
     }
 
 

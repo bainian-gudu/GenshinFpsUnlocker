@@ -108,6 +108,34 @@ if (-not $stub) {
 }
 Copy-Item $stub (Join-Path $dist "FpsUnlockerStub.dll") -Force
 
+Write-Host "==> Building StarRailStub.dll" -ForegroundColor Cyan
+# 星穹铁道模块与原神模块完全独立：只共用 src/Common 下的扫描器与 IPC 协议，
+# 业务代码各自维护；中间产物同样放 out/ 下的独立目录。
+$StarRailStubBuild = Join-Path $Root "out/stub-starrail"
+New-Item -ItemType Directory -Force -Path $StarRailStubBuild | Out-Null
+
+$starRailCmakeArgs = @("-S", "src/StubStarRail", "-B", $StarRailStubBuild)
+if ($Generator) {
+    $starRailCmakeArgs += @("-G", $Generator)
+}
+& cmake @starRailCmakeArgs
+if ($LASTEXITCODE -ne 0) { throw "star rail cmake configure failed" }
+
+& cmake --build $StarRailStubBuild --config $Configuration
+if ($LASTEXITCODE -ne 0) { throw "star rail cmake build failed" }
+
+$starRailCandidates = @(
+    (Join-Path $StarRailStubBuild "bin/StarRailStub.dll"),
+    (Join-Path $StarRailStubBuild "bin/$Configuration/StarRailStub.dll"),
+    (Join-Path $StarRailStubBuild "$Configuration/StarRailStub.dll"),
+    (Join-Path $StarRailStubBuild "StarRailStub.dll")
+)
+$starRailStub = $starRailCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $starRailStub) {
+    throw "StarRailStub.dll not found after build. Searched: $($starRailCandidates -join ', ')"
+}
+Copy-Item $starRailStub (Join-Path $dist "StarRailStub.dll") -Force
+
 # 确保 Web UI 在 publish 输出中（csproj Content 可能因路径/条件漏拷）
 $uiDistDir = Join-Path $uiDir "dist"
 $uiOut = Join-Path $dist "ui"
@@ -132,9 +160,10 @@ $iconSrc = Join-Path $Root "src/Host/Assets/app.ico"
 if (Test-Path $iconSrc) {
     Copy-Item $iconSrc (Join-Path $dist "app.ico") -Force
 }
-$iconPng = Join-Path $Root "src/Host/Assets/app.png"
-if (Test-Path $iconPng) {
-    Copy-Item $iconPng (Join-Path $dist "app.png") -Force
+# 位图版本统一用 WebP（安装器 / 文档里引用时按这个名字找）
+$iconWebp = Join-Path $Root "src/Host/Assets/app.webp"
+if (Test-Path $iconWebp) {
+    Copy-Item $iconWebp (Join-Path $dist "app.webp") -Force
 }
 
 $installExePath = $null

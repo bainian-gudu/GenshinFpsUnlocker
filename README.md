@@ -46,7 +46,7 @@
 | --- | --- | --- |
 | 宿主主程序 | C# / .NET 9（`net9.0-windows10.0.17763.0`）/ WinForms | `src/Host/`：WebView2 承载 Web UI、系统托盘、自绘标题栏、注入调度、游戏定位、配置与日志 |
 | Web UI | React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS 4 + framer-motion + lucide-react | `src/Ui/`：设计稿由 **gpt-6-astra-max** 设计、按稿 1:1 实现；`vite-plugin-singlefile` 打成单文件 `ui/index.html` |
-| 注入模块 | C++20（CMake）+ MinHook（BSD-2-Clause），CRT 静态链接（`/MT`） | `src/Stub/`：帧率解锁与反虚化的特征码自适配扫描 + Hook/Patch |
+| 注入模块 | C++20（CMake）+ MinHook（BSD-2-Clause），CRT 静态链接（`/MT`） | `src/Stub/`：原神的帧率解锁与反虚化；`src/StubStarRail/`：星铁的解除角色虚化与隐藏 UID（`StarRailStub.dll`，帧率仍走注册表）；两者只共用 `src/Common/` 的扫描器与 IPC 协议，业务代码相互独立 |
 | 安装 / 卸载 / 更新器 | Kachina：Rust + Tauri 2（nightly + `-Z build-std`）+ Vue 3.5 + Rsbuild | `installer/kachina/`：上游源码快照（tag `0.5.1`），本地修改清单见 `installer/kachina/LOCAL_PATCHES.md` |
 | exe 图标 / 版本资源写入 | vendored `rcedit-rs`（C++，MSVC 编译） | `installer/kachina/vendor/rcedit-rs/`，与上游差异见其 `LOCAL_PATCHES.md` |
 | 构建 / 打包 / 自检 | PowerShell 7 | `build.ps1`、`installer/pack.ps1`、`installer/build-kachina.ps1`、`tools/devcheck/` |
@@ -87,6 +87,7 @@
 ```text
 dist\GenshinFpsUnlocker.exe
 dist\FpsUnlockerStub.dll
+dist\StarRailStub.dll
 dist\ui\index.html
 
 artifacts\GenshinFpsUnlocker.Install.{ver}.exe        # Kachina 离线安装器
@@ -165,7 +166,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 | 依赖 | 处理方式 |
 |------|----------|
 | 应用托管程序集 / 资源 | 打进安装包 |
-| `FpsUnlockerStub.dll` + MinHook | 打进安装包；CRT **静态链接**（/MT） |
+| `FpsUnlockerStub.dll` / `StarRailStub.dll` + MinHook | 打进安装包；CRT **静态链接**（/MT） |
 | 安装器 / 卸载器 / 更新器 | **Kachina**（`Install` / `uninst` / `update`） |
 | .NET Desktop Runtime 9 x64 | 安装器 `runtimes`；亦可首次运行提示 |
 | VC++ 2015+ x64 | 安装器 `runtimes`（通常 Stub 已静态 CRT） |
@@ -212,6 +213,7 @@ pwsh tools/devcheck/devcheck.ps1 -SelfTest       # 注入错误，确认每层�
 {安装目录}\GenshinFpsUnlocker\     # 默认 Program Files 下
   GenshinFpsUnlocker.exe
   FpsUnlockerStub.dll
+  StarRailStub.dll
   ui\index.html                   # Web UI（WebView2 加载）
   GenshinFpsUnlocker.uninst.exe    # Kachina 卸载
   GenshinFpsUnlocker.update.exe    # Kachina 更新（可选）
@@ -319,12 +321,20 @@ Kachina **只从本仓库的 `installer/kachina/` 源码快照构建**：CI 与�
 | 文件 | 内容 | 来源（`md5sum` 逐字节核对） | 版权归属 |
 | --- | --- | --- | --- |
 | `src/Ui/public/images/game-icon.webp` | 《原神》官方应用图标（派蒙头像 + miHoYo 字标） | 米哈游官方素材 | © 米哈游 / HoYoverse |
-| `src/Host/Assets/app.png`、`src/Host/Assets/app.ico`、`src/Ui/public/favicon.ico` | 应用图标：绮良良抱纸箱 | [babalae/better-genshin-impact](https://github.com/babalae/better-genshin-impact) 的 `BetterGenshinImpact/Resources/Images/logo.png` / `logo.ico` | 素材随 BetterGI（**GPL-3.0**）；角色形象 © 米哈游 |
-| `src/Host/Assets/favicon.ico`、`src/Ui/public/favicon.png` | 同一形象的安装包 / 网页图标变体 | BetterGI 的 `Build/micasetup/Favicon.ico` / `Favicon.png` | 同上 |
+| `src/Host/Assets/app.webp`、`src/Ui/public/favicon.webp` | 应用图标（绮良良抱纸箱）的位图版本，源图同上 | [babalae/better-genshin-impact](https://github.com/babalae/better-genshin-impact) 的 `BetterGenshinImpact/Resources/Images/logo.png` / `Build/micasetup/Favicon.png`，由 `tools/to-webp.mjs` 转成 WebP | 素材随 BetterGI（**GPL-3.0**）；角色形象 © 米哈游 |
+| `src/Host/Assets/app.ico` | 应用图标（多尺寸 ICO）：窗体 / 托盘 / 快捷方式 / exe 资源 | BetterGI 的 `logo.ico`；**Windows 图标 API 只认 ICO，不能换成 WebP** | 同上 |
+| `src/Host/Assets/favicon.webp` | 同一形象的安装包图标位图变体 | BetterGI 的 `Build/micasetup/Favicon.ico` 转 WebP | 同上 |
 | `installer/kachina/src-tauri/icons/icon.ico` | 安装器 / 卸载器 exe 图标 | 上游 kachina-installer 自带（与 tag `0.5.1` 一致）；该文件本身又与 BetterGI `Build/micasetup/FaviconSetup.ico` 同字节 | 同上 |
 | `installer/kachina/src/left.webp` | 安装器左侧立绘：绮良良同款立绘 | 上游 kachina-installer 自带（与 tag `0.5.1` 逐字节一致，未改动） | 上游仓库素材（上游未提供 LICENSE） |
-| `src/Ui/public/images/teyvat-landscape.jpg` | 概览页 / 指南页的璃月风格山水横幅 | **gpt-6-astra-max 生成的原神风格插画**（个人自用前提下生成，非官方素材） | 风格致敬《原神》；场景本身非米哈游素材 |
-| `src/Ui/public/favicon.svg` | 星芒形单色 logo（纯几何路径，304 字节） | 本项目手写 SVG | 本项目（MIT） |
+| `src/Ui/public/images/teyvat-landscape.webp` | 概览页 / 指南页的璃月风格山水横幅 | **gpt-6-astra-max 生成的原神风格插画**（个人自用前提下生成，非官方素材），转 WebP | 风格致敬《原神》；场景本身非米哈游素材 |
+| `src/Ui/public/images/starrail-icon.webp` | 《崩坏：星穹铁道》游戏图标（游戏库与顶栏切换器用） | 用户提供素材，转 WebP | © 米哈游 / HoYoverse |
+| `src/Ui/public/favicon.svg` | 星芒形单色 logo（纯几何路径，304 字节） | 本项目手写 SVG（矢量，不转位图） | 本项目（MIT） |
+
+> 注 0：仓库里的位图素材统一为 **WebP**（`src/Ui/public/images/*.webp`、
+> `src/Ui/public/favicon.webp`、`src/Host/Assets/*.webp`）。只有两类例外：
+> Windows 图标文件必须保持 **ICO**（`src/Host/Assets/app.ico`、
+> `installer/kachina/src-tauri/icons/icon.ico`，exe / 托盘 / 快捷方式图标由系统 API 读取），
+> 手写 logo 保持 **SVG**（矢量，缩放不失真）。转换脚本：`tools/to-webp.mjs`。
 
 > 注 1：除 `favicon.svg`（本项目手写）与 gpt-6-astra-max 生成的横幅外，仓库内所有图片都与
 > 上游 kachina 快照或 BetterGI 仓库中的某个文件**逐字节相同**（核对方式：`md5sum`，

@@ -37,32 +37,68 @@ internal sealed partial class MainForm
         menu.Items.Add(_trayStatusItem);
         menu.Items.Add(MakeSep());
 
+        // —— 当前游戏：切换后下面的开关与帧率都作用于它 ——
+        _trayGameRoot = new ToolStripMenuItem($"当前游戏  ·  {ActiveGameDescriptor.ShortName}")
+        {
+            ToolTipText = "两款游戏各自一份配置，互不影响",
+            Padding = TrayItemPadding,
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+        _trayGameGenshinItem = MakeCheckItem(
+            GameCatalog.Genshin.DisplayName,
+            _config.ActiveGame == GameId.Genshin,
+            "切换到原神：菜单里的开关与帧率作用于原神");
+        _trayGameGenshinItem.CheckOnClick = false;
+        _trayGameGenshinItem.Click += (_, _) =>
+        {
+            if (_syncingUi) return;
+            _service.SetActiveGame(GameId.Genshin);
+            AfterTrayConfigChange("当前游戏 → 原神");
+        };
+        _trayGameRoot.DropDownItems.Add(_trayGameGenshinItem);
+
+        _trayGameStarRailItem = MakeCheckItem(
+            GameCatalog.StarRail.DisplayName,
+            _config.ActiveGame == GameId.StarRail,
+            "切换到崩坏：星穹铁道：帧率走注册表，只支持 120 FPS");
+        _trayGameStarRailItem.CheckOnClick = false;
+        _trayGameStarRailItem.Click += (_, _) =>
+        {
+            if (_syncingUi) return;
+            _service.SetActiveGame(GameId.StarRail);
+            AfterTrayConfigChange("当前游戏 → 崩坏：星穹铁道");
+        };
+        _trayGameRoot.DropDownItems.Add(_trayGameStarRailItem);
+        menu.Items.Add(_trayGameRoot);
+        menu.Items.Add(MakeSep());
+
         // —— 窗口与游戏操作 ——
         menu.Items.Add(MakeActionItem("显示主界面", (_, _) => RestoreFromTrayPublic()));
-        menu.Items.Add(MakeActionItem("启动游戏", (_, _) =>
+        _trayLaunchItem = MakeActionItem($"启动{ActiveGameDescriptor.DisplayName}", (_, _) =>
         {
             // 成败都只发一条信息类通知：文案本身已说明结果，不必再用警告图标
-            _ = _service.TryLaunchGame(out var msg);
+            _ = _service.TryLaunchGame(_config.ActiveGame, out var msg);
             ShowTrayBalloon("启动游戏", msg);
             PushUiAndRefreshTray();
-        }));
+        });
+        menu.Items.Add(_trayLaunchItem);
         menu.Items.Add(MakeSep());
 
         // —— 帧率解锁组 ——
         _trayEnabledItem = MakeCheckItem(
             "帧率解锁",
-            _config.Enabled,
+            ActiveGameProfile.Enabled,
             "开启后按目标帧率注入；关闭则暂停解锁");
         _trayEnabledItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetEnabled(_trayEnabledItem.Checked);
+            _service.SetEnabled(_config.ActiveGame, _trayEnabledItem.Checked);
             AfterTrayConfigChange("帧率解锁");
         };
         menu.Items.Add(_trayEnabledItem);
 
         // 修改帧率（预设 + 自定义）：紧随帧率解锁
-        _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {_config.TargetFps} FPS")
+        _trayFpsRoot = new ToolStripMenuItem($"修改帧率  ·  {ActiveGameProfile.TargetFps} FPS")
         {
             ToolTipText = "选择预设或自定义目标帧率",
             Padding = TrayItemPadding,
@@ -86,37 +122,39 @@ internal sealed partial class MainForm
 
         // —— 画面效果注入组（随游戏进程即时生效；联机/UGC 玩法勿开）——
         _trayHideUidItem = MakeCheckItem(
-            "隐藏 UID",
-            _config.HideUid,
+            ActiveGameDescriptor.SupportsDiveMosaic ? "隐藏 UID" : "隐藏 UID 水印",
+            ActiveGameProfile.HideUid,
             "隐藏水印与资料页上的 UID 文本（仅供单机体验）");
         _trayHideUidItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetHideUid(_trayHideUidItem.Checked);
+            _service.SetHideUid(_config.ActiveGame, _trayHideUidItem.Checked);
             AfterTrayConfigChange("隐藏 UID");
         };
         menu.Items.Add(_trayHideUidItem);
 
         _trayAntiBlurPerspectiveItem = MakeCheckItem(
-            "反角色虚化",
-            _config.AntiBlurPerspective,
+            ActiveGameDescriptor.SupportsDiveMosaic ? "反角色虚化" : "解除角色虚化",
+            ActiveGameProfile.AntiBlurPerspective,
             "镜头拉近时角色不再透明化（仅供单机体验）");
         _trayAntiBlurPerspectiveItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetAntiBlurPerspective(_trayAntiBlurPerspectiveItem.Checked);
+            _service.SetAntiBlurPerspective(_config.ActiveGame, _trayAntiBlurPerspectiveItem.Checked);
             AfterTrayConfigChange("反角色虚化");
         };
         menu.Items.Add(_trayAntiBlurPerspectiveItem);
 
         _trayAntiBlurDiveMosaicItem = MakeCheckItem(
             "移除水下马赛克",
-            _config.AntiBlurDiveMosaic,
+            ActiveGameProfile.AntiBlurDiveMosaic,
             "角色入水时不再显示马赛克虚化（仅供单机体验）");
+        // 星穹铁道的注入模块没有这项功能，菜单里不出现。
+        _trayAntiBlurDiveMosaicItem.Visible = ActiveGameDescriptor.SupportsDiveMosaic;
         _trayAntiBlurDiveMosaicItem.CheckedChanged += (_, _) =>
         {
             if (_syncingUi) return;
-            _service.SetAntiBlurDiveMosaic(_trayAntiBlurDiveMosaicItem.Checked);
+            _service.SetAntiBlurDiveMosaic(_config.ActiveGame, _trayAntiBlurDiveMosaicItem.Checked);
             AfterTrayConfigChange("移除水下马赛克");
         };
         menu.Items.Add(_trayAntiBlurDiveMosaicItem);
@@ -221,6 +259,15 @@ internal sealed partial class MainForm
             // 子菜单（帧率预设）是独立的弹出窗口，圆角要单独设一次；可重复调用
             TrayMenuCorners.Apply(_trayFpsRoot.DropDown);
         }
+        if (_trayGameRoot is not null)
+        {
+            foreach (ToolStripItem it in _trayGameRoot.DropDownItems)
+                StyleTrayItem(it, dark);
+            _trayGameRoot.DropDown.Renderer = new TrayMenuRenderer(dark);
+            _trayGameRoot.DropDown.BackColor = _trayMenu.BackColor;
+            _trayGameRoot.DropDown.ForeColor = _trayMenu.ForeColor;
+            TrayMenuCorners.Apply(_trayGameRoot.DropDown);
+        }
         TrayMenuCorners.Apply(_trayMenu);
     }
 
@@ -263,7 +310,7 @@ internal sealed partial class MainForm
         {
             Minimum = 1,
             Maximum = 540,
-            Value = Math.Clamp(_config.TargetFps, 1, 540),
+            Value = Math.Clamp(ActiveGameProfile.TargetFps, 1, 540),
             Left = 22,
             Top = 52,
             Width = 140,
@@ -304,25 +351,48 @@ internal sealed partial class MainForm
         dlg.CancelButton = cancel;
         if (dlg.ShowDialog(Visible ? this : null) == DialogResult.OK)
         {
-            _service.ApplyFps((int)num.Value);
-            _config.TrySave(out _);
+            _service.ApplyFps(_config.ActiveGame, (int)num.Value);
             PushUiAndRefreshTray();
-            ShowTrayBalloon("帧率", $"目标 FPS = {_config.TargetFps}");
+            ShowTrayBalloon("帧率", $"{ActiveGameDescriptor.ShortName} 目标 FPS = {ActiveGameProfile.TargetFps}");
         }
     }
 
     private void BuildTrayFpsItems()
     {
         if (_trayFpsRoot is null) return;
-        _trayFpsRoot.Text = $"修改帧率  ·  {_config.TargetFps} FPS";
+        var descriptor = ActiveGameDescriptor;
+        var profile = ActiveGameProfile;
+        _trayFpsBuiltFor = _config.ActiveGame;
+        _trayFpsRoot.Text = descriptor.FpsViaRegistry
+            ? $"帧率  ·  固定 {profile.TargetFps} FPS"
+            : $"修改帧率  ·  {profile.TargetFps} FPS";
         _trayFpsRoot.DropDownItems.Clear();
+
+        // 星穹铁道：帧率走注册表且只支持 120，没有可选档位，只把规则写清楚。
+        if (descriptor.FpsViaRegistry)
+        {
+            _trayFpsRoot.DropDownItems.Add(new ToolStripMenuItem($"{profile.TargetFps} FPS  ·  固定（注册表写入）")
+            {
+                Enabled = false,
+                Padding = TrayItemPadding,
+                TextAlign = ContentAlignment.MiddleLeft,
+            });
+            _trayFpsRoot.DropDownItems.Add(new ToolStripMenuItem("已是 120 不覆盖 · 关闭不回写")
+            {
+                Enabled = false,
+                Padding = TrayItemPadding,
+                TextAlign = ContentAlignment.MiddleLeft,
+            });
+            try { ApplyTrayMenuTheme(); } catch { /* ignore */ }
+            return;
+        }
 
         foreach (var preset in TrayFpsPresets)
         {
             var p = preset;
             var item = new ToolStripMenuItem($"{p} FPS")
             {
-                Checked = _config.TargetFps == p,
+                Checked = profile.TargetFps == p,
                 CheckOnClick = false,
                 ToolTipText = p == 120 ? "推荐" : null,
                 Padding = TrayItemPadding,
@@ -332,10 +402,9 @@ internal sealed partial class MainForm
                 item.Text = "120 FPS  · 推荐";
             item.Click += (_, _) =>
             {
-                _service.ApplyFps(p);
-                _config.TrySave(out _);
+                _service.ApplyFps(_config.ActiveGame, p);
                 PushUiAndRefreshTray();
-                ShowTrayBalloon("帧率", $"目标 FPS = {p}");
+                ShowTrayBalloon("帧率", $"{ActiveGameDescriptor.ShortName} 目标 FPS = {p}");
             };
             _trayFpsRoot.DropDownItems.Add(item);
         }

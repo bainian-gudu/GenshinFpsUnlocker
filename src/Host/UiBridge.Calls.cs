@@ -23,11 +23,11 @@ internal sealed partial class UiBridge
 
             case "setFps":
             {
-                var fps = p["value"]?.GetValue<int>() ?? _config.TargetFps;
-                _config.TargetFps = Math.Clamp(fps, 1, 540);
+                var game = ReadGameParam(p);
+                var fps = p["value"]?.GetValue<int>() ?? _config.Profile(game).TargetFps;
                 using (var batch = _config.BeginBatch())
                 {
-                    _service.ApplyFps(_config.TargetFps);  // 内部 TrySave 被合并进批量窗口
+                    _service.ApplyFps(game, fps);          // 内部 TrySave 被合并进批量窗口
                     batch.Flush();                         // 真正落盘一次
                     SaveConfig();                          // 内容未变 → 不再写盘，只维护保存状态
                 }
@@ -36,8 +36,9 @@ internal sealed partial class UiBridge
 
             case "browseGamePath":
             {
+                var game = ReadGameParam(p);
                 GameLocateResult r = default!;
-                _form.Invoke(() => { r = _service.SetGamePathManual(_form); });
+                _form.Invoke(() => { r = _service.SetGamePathManual(game, _form); });
                 if (r.Ok) SaveConfig();
                 return Task.FromResult<object?>(new
                 {
@@ -50,7 +51,7 @@ internal sealed partial class UiBridge
 
             case "autoLocateGamePath":
             {
-                var r = _service.AutoLocateGamePath();
+                var r = _service.AutoLocateGamePath(ReadGameParam(p));
                 if (r.Ok) SaveConfig();
                 return Task.FromResult<object?>(new
                 {
@@ -63,6 +64,8 @@ internal sealed partial class UiBridge
 
             case "setGamePath":
             {
+                var game = ReadGameParam(p);
+                var descriptor = GameCatalog.Get(game);
                 var path = p["path"]?.GetValue<string>()?.Trim();
                 if (string.IsNullOrWhiteSpace(path))
                     throw new InvalidOperationException("路径为空");
@@ -70,18 +73,17 @@ internal sealed partial class UiBridge
                 if (!File.Exists(path))
                     throw new InvalidOperationException("文件不存在：" + path);
                 var name = Path.GetFileName(path);
-                if (!name.Equals("YuanShen.exe", StringComparison.OrdinalIgnoreCase)
-                    && !name.Equals("GenshinImpact.exe", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("请选择 YuanShen.exe 或 GenshinImpact.exe");
-                _config.GamePath = path;
-                _service.RefreshGamePath(autoLocateIfMissing: false);
+                if (GameCatalog.FromExeName(name) != descriptor)
+                    throw new InvalidOperationException($"请选择 {GameCatalog.ExeNameList(descriptor)}");
+                var result = _service.SetGamePath(game, path);
+                if (!result.Ok) throw new InvalidOperationException(result.Detail ?? "游戏路径无效");
                 SaveConfig();
                 return Task.FromResult<object?>(BuildStateObject());
             }
 
             case "launchGame":
             {
-                var ok = _service.TryLaunchGame(out var msg);
+                var ok = _service.TryLaunchGame(ReadGameParam(p), out var msg);
                 return Task.FromResult<object?>(new { ok, message = msg, state = BuildStateObject() });
             }
 
@@ -139,14 +141,14 @@ internal sealed partial class UiBridge
             {
                 var lines = AppLog.GetRecentLines(500);
                 var sb = new StringBuilder();
-                sb.AppendLine("Genshin FPS Unlocker");
+                sb.AppendLine(AppPaths.ProductDisplayName);
                 sb.AppendLine("Exported: " + DateTime.UtcNow.ToString("O"));
                 sb.AppendLine();
                 foreach (var line in lines) sb.AppendLine(line);
                 return Task.FromResult<object?>(new
                 {
                     content = sb.ToString(),
-                    fileName = $"genshin-unlocker-{DateTime.Now:yyyy-MM-dd}.log",
+                    fileName = $"hoyo-enhance-{DateTime.Now:yyyy-MM-dd}.log",
                 });
             }
 
@@ -244,6 +246,16 @@ internal sealed partial class UiBridge
             default:
                 throw new InvalidOperationException("未知方法: " + method);
         }
+    }
+
+    /// <summary>
+    /// 读取调用参数里的 <c>game</c> 键（前端每个游戏相关调用都会带）；
+    /// 缺省或非法时用界面上当前选中的游戏，保持与旧前端兼容。
+    /// </summary>
+    private GameId ReadGameParam(JsonObject p)
+    {
+        var key = TryGetString(p["game"]);
+        return GameCatalog.TryParseKey(key, out var game) ? game : _config.ActiveGame;
     }
 
 }

@@ -39,9 +39,9 @@ export default function App() {
           <AnimatePresence mode="wait" initial={false}>
             <motion.main id="main-content" tabIndex={-1} className={`main-content page-${page}`} key={page} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
               {page === 'overview' && <OverviewPage app={app} />}
-              {page === 'settings' && <SettingsPage config={config} updateConfig={updateConfig} onPath={() => setModal('path')} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} autostart={app.autostart} />}
+              {page === 'settings' && <SettingsPage game={app.activeGame} gameConfig={app.gameConfig} updateGameConfig={app.updateGameConfig} config={config} updateConfig={updateConfig} onPath={() => app.openPathDialog(app.activeGame)} onExport={exportConfig} onImport={() => importRef.current?.click()} onReset={() => setModal('reset')} onUninstall={native ? () => setModal('uninstall') : undefined} busy={launchState === 'launching' || elevating} isNative={native} isElevated={isElevated} onRestartElevated={native && !isElevated ? () => void restartElevated() : undefined} elevating={elevating} autostart={app.autostart} />}
               {page === 'logs' && <LogsPage logs={logs} onClear={() => setModal('clearLogs')} onExport={exportLogs} isNative={native} onOpenFolder={native ? () => { void nativeInvoke('openLogFolder').catch(() => undefined); } : undefined} />}
-              {page === 'guide' && <GuidePage navigate={navigate} onSafety={() => setModal('safety')} isNative={native} />}
+              {page === 'guide' && <GuidePage game={app.activeGame} navigate={navigate} onSafety={() => setModal('safety')} isNative={native} />}
               {page === 'about' && <AboutPage onSafety={() => setModal('safety')} version={version} isNative={native} onUninstall={native ? () => setModal('uninstall') : undefined} />}
             </motion.main>
           </AnimatePresence>

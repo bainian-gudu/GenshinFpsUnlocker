@@ -1,6 +1,7 @@
 /** 运行状态卡：帧率 / 进程 / 解锁模块的实际反馈，以及三项画面效果注入的就绪状态。 */
 import { Activity, ChevronRight } from 'lucide-react';
 import type { AppState } from '../hooks/useAppState';
+import { GAME_META } from '../lib/config';
 
 type Tone = 'on' | 'wait' | 'off';
 
@@ -32,7 +33,8 @@ function stubText(status: number, lastError: number): string {
 }
 
 export function RuntimeStatus({ app }: { app: AppState }) {
-  const { config, currentFps, attachedPid, stubStatus, stubLastError, antiBlurState, hideUidState, navigate } = app;
+  const { config, gameConfig, activeGame, currentFps, attachedPid, stubStatus, stubLastError, antiBlurState, hideUidState, navigate } = app;
+  const injection = GAME_META[activeGame].injection;
 
   const attached = attachedPid > 0;
   const featuresActive = config.masterEnabled && config.autoWatch;
@@ -43,30 +45,21 @@ export function RuntimeStatus({ app }: { app: AppState }) {
       title: '当前帧率 → 目标帧率',
       value: !attached
         ? '等待游戏启动'
-        : currentFps > 0 ? `${currentFps} → ${config.targetFps} FPS` : `目标 ${config.targetFps} FPS`,
+        : currentFps > 0 ? `${currentFps} → ${gameConfig.targetFps} FPS` : `目标 ${gameConfig.targetFps} FPS`,
     },
     { label: '游戏进程', title: undefined, value: attached ? `已附加 · PID ${attachedPid}` : '未检测到游戏' },
-    { label: '解锁模块', title: undefined, value: stubText(stubStatus, stubLastError) },
+    { label: '解锁模块', title: injection.module, value: stubText(stubStatus, stubLastError) },
   ];
 
   // 位定义见 src/Common/IpcData.h：反虚化 bit0 反角色虚化 / bit1 马赛克就绪 / bit2 马赛克已生效，
   // UID 隐藏 bit0 就绪 / bit1 生效中。
-  const features = [
-    {
-      name: '反角色虚化',
-      state: featureState(config.antiBlurPerspective, featuresActive, attached, (antiBlurState & 1) !== 0 ? 2 : 0),
-    },
-    {
-      name: '移除水下马赛克',
-      state: featureState(config.antiBlurDiveMosaic, featuresActive, attached,
-        (antiBlurState & 4) !== 0 ? 2 : (antiBlurState & 2) !== 0 ? 1 : 0),
-    },
-    {
-      name: '隐藏 UID',
-      state: featureState(config.hideUid, featuresActive, attached,
-        (hideUidState & 2) !== 0 ? 2 : (hideUidState & 1) !== 0 ? 1 : 0),
-    },
-  ];
+  // 列表来自当前游戏自己的注入模块：原神与星穹铁道的效果名称、条目数都各自独立。
+  const features = injection.features.map(({ key, title }) => {
+    const level: ReadyLevel = key === 'antiBlurPerspective' ? ((antiBlurState & 1) !== 0 ? 2 : 0)
+      : key === 'antiBlurDiveMosaic' ? ((antiBlurState & 4) !== 0 ? 2 : (antiBlurState & 2) !== 0 ? 1 : 0)
+        : ((hideUidState & 2) !== 0 ? 2 : (hideUidState & 1) !== 0 ? 1 : 0);
+    return { name: title, state: featureState(gameConfig[key], featuresActive, attached, level) };
+  });
 
   return (
     <section className="control-panel runtime-panel" aria-label="运行状态">
@@ -83,7 +76,7 @@ export function RuntimeStatus({ app }: { app: AppState }) {
         ))}
       </dl>
       <div className="runtime-divider" />
-      <h3 className="runtime-subheading">画面效果注入</h3>
+      <div className="runtime-subheading"><span>画面效果注入</span><span className="module-chip" title="该游戏独立的注入模块">{injection.module}</span></div>
       <ul className="runtime-features">
         {features.map(({ name, state }) => (
           <li key={name}>

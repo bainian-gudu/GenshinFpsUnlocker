@@ -169,7 +169,7 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 应用本体：Web UI + FpsUnlockerStub.dll + Host
+  # 应用本体：Web UI + FpsUnlockerStub.dll / StarRailStub.dll + Host
   # ---------------------------------------------------------------------------
   build-app:
     name: App (UI + stub + host)
@@ -210,6 +210,7 @@ jobs:
           & .\build.ps1 @buildParams
           if (-not (Test-Path "dist\GenshinFpsUnlocker.exe")) { throw "Host exe missing" }
           if (-not (Test-Path "dist\FpsUnlockerStub.dll")) { throw "Stub dll missing" }
+          if (-not (Test-Path "dist\StarRailStub.dll")) { throw "StarRail stub dll missing" }
           if (-not (Test-Path "dist\ui\index.html")) { throw "Web UI missing under dist\ui\" }
           $hasCore = (Test-Path "dist\coreclr.dll") -or (Test-Path "dist\hostfxr.dll")
           if ($env:HOST_MODE -eq "self-contained") {

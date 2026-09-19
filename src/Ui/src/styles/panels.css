@@ -177,6 +177,7 @@
 .about-brand-mark { color: var(--accent); height: 145px; width: 145px; flex-shrink: 0; }
 .about-intro h2 { font-size: 48px; font-weight: 550; letter-spacing: -2px; line-height: 1.1; margin: 13px 0 21px; }
 .about-version { display: inline-block; vertical-align: middle; margin-left: 15px; padding: 4px 7px; font-size: 9px; letter-spacing: .3px; font-weight: 400; color: var(--secondary); border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+.about-name-cn { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 4px 8px; font-size: 9px; letter-spacing: .3px; font-weight: 400; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 4px; background: var(--accent-soft); }
 .about-intro p { color: var(--secondary); font-size: 11.5px; line-height: 2.1; }
 .about-actions { display: flex; gap: 12px; margin-top: 24px; }
 .about-details { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 64px; padding: 34px 0; }
@@ -199,3 +200,49 @@
 .about-uninstall { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 0 4px; }
 .about-uninstall p { font-size: 10.5px; line-height: 1.9; color: var(--muted); margin-top: 4px; max-width: 640px; }
 .about-uninstall .button { flex-shrink: 0; }
+
+/* 游戏库：两个游戏各占一行，显示各自的路径、目标帧率与运行状态。 */
+.game-library { margin-top: 20px; padding-bottom: 10px; }
+.panel-note { color: var(--muted); font-size: 10px; line-height: 1.7; text-align: right; }
+.game-library-rows { display: flex; flex-direction: column; margin-top: 4px; }
+.game-row { display: flex; align-items: center; gap: 15px; padding: 15px 0; border-top: 1px solid var(--border-soft); }
+.game-row:first-child { border-top: 0; }
+.game-row .game-art-icon { width: 100%; height: 100%; border-radius: 12px; }
+.game-info-title > h3 { font-size: 15px; font-weight: 550; }
+.game-row.is-active .game-info-title > h3 { color: var(--accent); }
+.game-row-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* 标签页范围标记，以及标出当前游戏注入模块的角标。 */
+.tabs .tab-chip { padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); background: var(--panel-raised); font-size: 8.5px; letter-spacing: .2px; }
+.module-chip { padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; color: var(--secondary); background: var(--panel-raised); font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace; font-size: 9px; line-height: 1.7; white-space: nowrap; }
+
+/* 日志来源：表格里的来源标签与工具栏上的来源筛选。 */
+.log-source { display: inline-flex; align-items: center; gap: 6px; color: var(--secondary); font-size: 10px; line-height: 1.7; white-space: nowrap; }
+.log-source.is-app { color: var(--muted); }
+.log-source .game-mark { border-radius: 3px; }
+.log-source-filter { display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--input); flex-shrink: 0; }
+.log-source-filter button { display: inline-flex; align-items: center; gap: 6px; height: 29px; padding: 0 10px; border-radius: 5px; color: var(--muted); background: transparent; font-size: 10.5px; white-space: nowrap; transition: color .18s, background .18s; }
+.log-source-filter button:hover { color: var(--text); background: var(--hover); }
+.log-source-filter button.is-active { color: var(--accent); background: var(--accent-soft); }
+.log-source-filter .game-mark { border-radius: 3px; opacity: .62; }
+.log-source-filter button.is-active .game-mark, .log-source-filter button:hover .game-mark { opacity: 1; }
+.log-table th:nth-child(3) { width: 132px; }
+
+/* 使用指南主视觉：星穹铁道沿用星域 + 星轨的 CSS 占位。 */
+.guide-art.is-starRail { background: #0b1220; }
+/* 使用指南配图同理：星穹铁道当前复用原神那张图，下面这套星域样式留作备选占位。 */
+.guide-starfield { position: absolute; inset: 0; background:
+  radial-gradient(90% 110% at 76% 12%, #2c5b8f73 0%, #16233c00 58%),
+  radial-gradient(85% 110% at 32% 92%, #6a4bb05c 0%, #16233c00 60%),
+  linear-gradient(160deg, #0a1020 0%, #101c33 46%, #17243f 74%, #0c1424 100%); }
+.guide-starfield::before { content: ''; position: absolute; inset: -8%; opacity: .9; background-image:
+  radial-gradient(#ffffff9c 1px, transparent 1.5px),
+  radial-gradient(#cfe4ff70 1px, transparent 1.4px);
+  background-size: 168px 132px, 92px 74px;
+  background-position: 0 0, 41px 26px; }
+.guide-starfield::after { content: ''; position: absolute; left: -14%; right: -14%; top: 58%; height: 240px; border-top: 1px solid #8fd4ff42; border-radius: 50% 50% 0 0 / 100% 100% 0 0; transform: rotate(-6deg); box-shadow: 0 -28px 0 -27px #b79bed33; }
+.guide-art.is-starRail::after { background: linear-gradient(0deg, #070d1bf0, #16233c17 72%); }
+
+/* 启动确认框新增「游戏」一列后，三段摘要均匀分布。 */
+.launch-summary { gap: 14px; }
+.launch-summary > div:nth-child(2) { text-align: center; }

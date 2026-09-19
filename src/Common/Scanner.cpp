@@ -83,77 +83,114 @@ namespace Scanner
         return invalid ? std::vector<int>{} : pattern;
     }
 
-    /// <summary>
-    /// 在模块映像的已提交、可读/可执行内存区域中滑动匹配特征码。
-    /// 跳过 PAGE_GUARD 页；跨 Region 边界不跨区匹配。
-    /// </summary>
-    void* ScanModule(HMODULE module, const std::string& signature)
+    namespace
     {
-        if (!module || signature.empty())
+        /// <summary>
+        /// 在模块映像的已提交、可读/可执行内存区域中滑动匹配特征码。
+        /// 跳过 PAGE_GUARD 页；跨 Region 边界不跨区匹配。
+        /// onMatch 返回 false 时立即停止扫描（首个命中场景）。
+        /// </summary>
+        template <typename OnMatch>
+        void ScanModuleImpl(HMODULE module, const std::string& signature, OnMatch onMatch)
         {
-            return nullptr;
-        }
-
-        const auto pattern = ParsePattern(signature);
-        if (pattern.empty())
-        {
-            return nullptr;
-        }
-
-        MODULEINFO modInfo{};
-        if (!GetModuleInformation(GetCurrentProcess(), module, &modInfo, sizeof(modInfo)))
-        {
-            return nullptr;
-        }
-
-        const uintptr_t startAddr = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
-        const uintptr_t endAddr = startAddr + modInfo.SizeOfImage;
-        const size_t pSize = pattern.size();
-        const auto compiled = PatternMatch::Compile(pattern);
-
-        uintptr_t current = startAddr;
-        while (current < endAddr)
-        {
-            MEMORY_BASIC_INFORMATION mbi{};
-            if (!VirtualQuery(reinterpret_cast<LPCVOID>(current), &mbi, sizeof(mbi)))
+            if (!module || signature.empty())
             {
-                break;
+                return;
             }
 
-            // 仅扫描已提交且可读（含可执行）的区域
-            const bool isGood =
-                (mbi.State == MEM_COMMIT) &&
-                ((mbi.Protect & PAGE_GUARD) == 0) &&
-                (mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_READWRITE | PAGE_READONLY));
-
-            if (isGood)
+            const auto pattern = ParsePattern(signature);
+            if (pattern.empty())
             {
-                size_t regionSize = mbi.RegionSize;
-                if (reinterpret_cast<uintptr_t>(mbi.BaseAddress) + regionSize > endAddr)
+                return;
+            }
+
+            MODULEINFO modInfo{};
+            if (!GetModuleInformation(GetCurrentProcess(), module, &modInfo, sizeof(modInfo)))
+            {
+                return;
+            }
+
+            const uintptr_t startAddr = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
+            const uintptr_t endAddr = startAddr + modInfo.SizeOfImage;
+            const size_t pSize = pattern.size();
+            const auto compiled = PatternMatch::Compile(pattern);
+
+            uintptr_t current = startAddr;
+            while (current < endAddr)
+            {
+                MEMORY_BASIC_INFORMATION mbi{};
+                if (!VirtualQuery(reinterpret_cast<LPCVOID>(current), &mbi, sizeof(mbi)))
                 {
-                    regionSize = endAddr - reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    break;
                 }
 
-                if (regionSize >= pSize)
+                // 仅扫描已提交且可读（含可执行）的区域
+                const bool isGood =
+                    (mbi.State == MEM_COMMIT) &&
+                    ((mbi.Protect & PAGE_GUARD) == 0) &&
+                    (mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_READWRITE | PAGE_READONLY));
+
+                if (isGood)
                 {
-                    const uint8_t* pStart = static_cast<const uint8_t*>(mbi.BaseAddress);
-                    // memchr 跳到下一个「首固定字节」再整条校验，见 PatternMatch.h
-                    if (const uint8_t* hit = PatternMatch::Find(pStart, regionSize, compiled))
+                    size_t regionSize = mbi.RegionSize;
+                    if (reinterpret_cast<uintptr_t>(mbi.BaseAddress) + regionSize > endAddr)
                     {
-                        return const_cast<uint8_t*>(hit);
+                        regionSize = endAddr - reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    }
+
+                    if (regionSize >= pSize)
+                    {
+                        const uint8_t* cursor = static_cast<const uint8_t*>(mbi.BaseAddress);
+                        size_t remaining = regionSize;
+                        while (remaining >= pSize)
+                        {
+                            // memchr 跳到下一个「首固定字节」再整条校验，见 PatternMatch.h
+                            const uint8_t* hit = PatternMatch::Find(cursor, remaining, compiled);
+                            if (!hit)
+                            {
+                                break;
+                            }
+                            if (!onMatch(hit))
+                            {
+                                return;
+                            }
+                            const size_t advance = static_cast<size_t>(hit - cursor) + 1;
+                            cursor += advance;
+                            remaining -= advance;
+                        }
                     }
                 }
-            }
 
-            const uintptr_t nextAddr = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
-            if (nextAddr <= current)
-            {
-                break; // 防止死循环
+                const uintptr_t nextAddr = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+                if (nextAddr <= current)
+                {
+                    break; // 防止死循环
+                }
+                current = nextAddr;
             }
-            current = nextAddr;
         }
+    }
 
-        return nullptr;
+    void* ScanModule(HMODULE module, const std::string& signature)
+    {
+        void* found = nullptr;
+        ScanModuleImpl(module, signature, [&found](const uint8_t* hit)
+        {
+            found = const_cast<uint8_t*>(hit);
+            return false;
+        });
+        return found;
+    }
+
+    std::vector<void*> ScanModuleAll(HMODULE module, const std::string& signature)
+    {
+        std::vector<void*> results;
+        ScanModuleImpl(module, signature, [&results](const uint8_t* hit)
+        {
+            results.push_back(const_cast<uint8_t*>(hit));
+            return true;
+        });
+        return results;
     }
 
     /// <summary>
