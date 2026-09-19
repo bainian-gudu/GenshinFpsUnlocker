@@ -28,6 +28,8 @@ internal sealed partial class MainForm
     private GameId? _trayFpsBuiltFor;
     /// <summary>托盘因游戏启动而自动跟到的那款游戏（null = 当前没有跟随）。</summary>
     private GameId? _trayFollowedGame;
+    /// <summary>上一轮看到的运行中游戏：只在「没有 → 有 / 有 → 没有」的跳变时刻跟随。</summary>
+    private GameId? _trayLastRunningGame;
     /// <summary>自动跟随之前用户选中的游戏：游戏退出后回到这里（默认原神）。</summary>
     private GameId _trayRestoreGame = GameId.Genshin;
     /// <summary>主窗是否已藏入托盘（气泡/提示文案用）。</summary>
@@ -58,32 +60,41 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
-    /// 托盘热切换：游戏启动就自动切到它（菜单、提示、界面一起换），游戏退出后回到
-    /// 启动前选中的那款（默认原神）。跟随只是本次运行的临时选择，不覆盖用户存下来的
-    /// 选择；用户在菜单里手动切过游戏就以手动选择为准。
+    /// 托盘热切换：游戏启动的那一下自动切到它（菜单、提示、界面一起换），游戏退出后
+    /// 回到启动前选中的那款（默认原神）。跟随只在「启动 / 退出」的跳变时刻发生，
+    /// 用户在托盘或界面手动换过游戏就以手动选择为准，绝不把界面拽回正在注入的那款。
+    /// 跟随只是本次运行的临时选择，不覆盖用户存下来的「当前游戏」。
     /// </summary>
     private void SyncTrayGameFollow()
     {
         if (IsDisposed) return;
         var running = _service.RunningGame ?? _service.AttachedGame;
 
-        if (running is GameId game)
+        // 手动切换（托盘菜单或 Web 界面改 activeGame）优先：一旦发现当前选择
+        // 已经不是在跟随的那款，就把跟随作废，退出时也不再回退。
+        if (_trayFollowedGame is GameId followed && _config.ActiveGame != followed)
+            _trayFollowedGame = null;
+
+        if (running == _trayLastRunningGame) return;
+        var previous = _trayLastRunningGame;
+        _trayLastRunningGame = running;
+
+        // 游戏刚启动：用户当前选的不是它，才跟随一次
+        if (running is GameId game && previous is null && _config.ActiveGame != game)
         {
-            if (_trayFollowedGame is null && _config.ActiveGame != game)
-            {
-                _trayFollowedGame = game;
-                _trayRestoreGame = _config.ActiveGame;
-                _service.SetActiveGame(game, persist: false);
-                AppLog.Info($"托盘跟随运行中的游戏 → {GameCatalog.Get(game).Key}");
-                PushUiAndRefreshTray();
-            }
+            _trayFollowedGame = game;
+            _trayRestoreGame = _config.ActiveGame;
+            _service.SetActiveGame(game, persist: false);
+            AppLog.Info($"托盘跟随运行中的游戏 → {GameCatalog.Get(game).Key}");
+            PushUiAndRefreshTray();
             return;
         }
 
-        if (_trayFollowedGame is not GameId followed) return;
+        // 游戏退出：只有还停留在自动跟随的那款上，才回退到启动前的选择
+        if (running is not null || previous is not GameId exited) return;
+        if (_trayFollowedGame != exited) return;
         _trayFollowedGame = null;
-        // 跟随期间用户手动换过游戏就不再回退，尊重手动选择。
-        if (_config.ActiveGame != followed || _trayRestoreGame == followed) return;
+        if (_config.ActiveGame != exited || _trayRestoreGame == exited) return;
         _service.SetActiveGame(_trayRestoreGame, persist: false);
         AppLog.Info($"游戏已退出 — 托盘恢复到 {GameCatalog.Get(_trayRestoreGame).Key}");
         PushUiAndRefreshTray();
