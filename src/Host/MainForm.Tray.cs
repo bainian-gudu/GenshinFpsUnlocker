@@ -26,6 +26,10 @@ internal sealed partial class MainForm
     private bool _trayTipShownThisSession;
     /// <summary>帧率子菜单当前是按哪款游戏构建的（切换游戏时要重建）。</summary>
     private GameId? _trayFpsBuiltFor;
+    /// <summary>托盘因游戏启动而自动跟到的那款游戏（null = 当前没有跟随）。</summary>
+    private GameId? _trayFollowedGame;
+    /// <summary>自动跟随之前用户选中的游戏：游戏退出后回到这里（默认原神）。</summary>
+    private GameId _trayRestoreGame = GameId.Genshin;
     /// <summary>主窗是否已藏入托盘（气泡/提示文案用）。</summary>
     private bool _inTray;
 
@@ -39,11 +43,50 @@ internal sealed partial class MainForm
         try
         {
             if (IsHandleCreated)
-                BeginInvoke(UpdateTrayTip);
+                BeginInvoke(() =>
+                {
+                    SyncTrayGameFollow();
+                    UpdateTrayTip();
+                });
             else
+            {
+                SyncTrayGameFollow();
                 UpdateTrayTip();
+            }
         }
         catch { /* ignore */ }
+    }
+
+    /// <summary>
+    /// 托盘热切换：游戏启动就自动切到它（菜单、提示、界面一起换），游戏退出后回到
+    /// 启动前选中的那款（默认原神）。跟随只是本次运行的临时选择，不覆盖用户存下来的
+    /// 选择；用户在菜单里手动切过游戏就以手动选择为准。
+    /// </summary>
+    private void SyncTrayGameFollow()
+    {
+        if (IsDisposed) return;
+        var running = _service.RunningGame ?? _service.AttachedGame;
+
+        if (running is GameId game)
+        {
+            if (_trayFollowedGame is null && _config.ActiveGame != game)
+            {
+                _trayFollowedGame = game;
+                _trayRestoreGame = _config.ActiveGame;
+                _service.SetActiveGame(game, persist: false);
+                AppLog.Info($"托盘跟随运行中的游戏 → {GameCatalog.Get(game).Key}");
+                PushUiAndRefreshTray();
+            }
+            return;
+        }
+
+        if (_trayFollowedGame is not GameId followed) return;
+        _trayFollowedGame = null;
+        // 跟随期间用户手动换过游戏就不再回退，尊重手动选择。
+        if (_config.ActiveGame != followed || _trayRestoreGame == followed) return;
+        _service.SetActiveGame(_trayRestoreGame, persist: false);
+        AppLog.Info($"游戏已退出 — 托盘恢复到 {GameCatalog.Get(_trayRestoreGame).Key}");
+        PushUiAndRefreshTray();
     }
 
     private void AfterTrayConfigChange(string what)

@@ -58,6 +58,7 @@ internal sealed partial class UnlockService
                 using var process = FindRunningGame(out var runningGame);
                 if (process is null || runningGame is null)
                 {
+                    _runningGame = null;
                     // 没有游戏进程：清掉待核对标记，避免退出后才补写注册表。
                     _sessions[GameId.StarRail].RegistryCheckPending = false;
                     _sessions[GameId.StarRail].RegistryCheckedPid = 0;
@@ -80,6 +81,8 @@ internal sealed partial class UnlockService
                 }
 
                 var game = runningGame.Value;
+                // 运行状态按游戏归属：界面只让这一款显示「运行中」，另一款保持等待启动。
+                _runningGame = game;
                 var descriptor = GameCatalog.Get(game);
                 var profile = _config.Profile(game);
                 var session = _sessions[game];
@@ -93,6 +96,7 @@ internal sealed partial class UnlockService
                         session.RegistryCheckPending = false;
                         session.RegistryCheckedPid = 0;
                         session.InjectAttemptedPid = 0;
+                        _runningGame = null;
                         SetAttached(null, 0);
                         await Task.Delay(activePoll, token);
                         continue;
@@ -103,6 +107,7 @@ internal sealed partial class UnlockService
                     session.RegistryCheckPending = false;
                     session.RegistryCheckedPid = 0;
                     session.InjectAttemptedPid = 0;
+                    _runningGame = null;
                     SetAttached(null, 0);
                     await Task.Delay(activePoll, token);
                     continue;
@@ -199,6 +204,17 @@ internal sealed partial class UnlockService
                     continue;
                 }
 
+                // 注入前的最后一道防线：目标进程必须就是这款游戏，绝不把 A 游戏的
+                // Stub 注进 B 游戏进程（路径读不到时按进程名放行，保持原可用性）。
+                if (!ProcessMatchesGame(descriptor, process, out var mismatch))
+                {
+                    SetStatus($"{descriptor.ShortName}：进程与游戏不匹配，已跳过注入");
+                    AppLog.Warn($"inject skipped game={descriptor.Key} pid={process.Id}: {mismatch}");
+                    session.NextInjectAttemptUtc = DateTime.UtcNow.AddSeconds(30);
+                    await Task.Delay(activePoll, token);
+                    continue;
+                }
+
                 // 注入前校验模块可信度：已提权时安装目录必须受保护（Program Files），
                 // 否则用户可写目录里的同名 DLL 会被我们的管理员令牌注入游戏，
                 // 或在备用 Hook 注入路径下被映射进 Host 自己。与卸载器同一套检查。
@@ -248,6 +264,7 @@ internal sealed partial class UnlockService
                     {
                         session.RegistryCheckPending = false;
                         session.RegistryCheckedPid = 0;
+                        _runningGame = null;
                         continue;
                     }
                 }
@@ -255,6 +272,7 @@ internal sealed partial class UnlockService
                 {
                     session.RegistryCheckPending = false;
                     session.RegistryCheckedPid = 0;
+                    _runningGame = null;
                     continue;
                 }
 
@@ -347,8 +365,12 @@ internal sealed partial class UnlockService
                 // 否则会在游戏退出后才去写注册表并弹出「请先启动一次游戏」。
                 session.RegistryCheckPending = false;
                 session.RegistryCheckedPid = 0;
-                if (processExited && descriptor.FpsViaRegistry)
-                    session.RegistryStatus = "游戏未运行 — 启动后会自动核对注册表";
+                if (processExited)
+                {
+                    _runningGame = null;
+                    if (descriptor.FpsViaRegistry)
+                        session.RegistryStatus = "游戏未运行 — 启动后会自动核对注册表";
+                }
                 // 暂停时保留已经加载的 DLL 连接；重新开启不应重置其 Ready 状态。
                 if (_config.MasterEnabled && _config.AutoWatch)
                     session.InjectAttemptedPid = 0;
@@ -505,6 +527,30 @@ internal sealed partial class UnlockService
         catch (Exception ex)
         {
             AppLog.Debug("TryCapturePathFromProcess: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 目标进程是否确实是这款游戏。进程路径能读到就必须是本游戏主程序；
+    /// 读不到（反作弊保护、权限不足）时按进程名放行，不因为拿不到路径就放弃注入。
+    /// </summary>
+    private static bool ProcessMatchesGame(GameDescriptor descriptor, Process process, out string detail)
+    {
+        detail = string.Empty;
+        try
+        {
+            var raw = PathUtil.GetProcessImagePath(process.Id);
+            if (string.IsNullOrEmpty(raw)) raw = process.MainModule?.FileName;
+            var path = PathUtil.Normalize(raw);
+            if (string.IsNullOrEmpty(path)) return true;
+            if (GameLocator.IsValidGameExe(descriptor, path)) return true;
+            detail = path;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            detail = ex.Message;
+            return true;
         }
     }
 

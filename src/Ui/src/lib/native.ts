@@ -1,10 +1,14 @@
-import type { LogEntry, LogLevel, Page, UnlockerConfig } from './config';
+import type { GameId, LogEntry, LogLevel, Page, UnlockerConfig } from './config';
 import { asPage, isGameId, parseConfig } from './config';
 
 export type NativeState = {
   config: UnlockerConfig;
   statusText: string;
   gamePathStatus: string;
+  /** 当前检测到正在运行的游戏；没有游戏进程时为 null */
+  runningGame: GameId | null;
+  /** 当前已注入（附着）的游戏；未附着时为 null */
+  attachedGame: GameId | null;
   attachedPid: number;
   currentFps: number;
   /** Stub 生命周期状态：0 未注入 / 1 解析中 / 2 就绪 / 3 失败 / 4 退出中 */
@@ -137,6 +141,8 @@ function normalizeState(raw: any): NativeState {
     config,
     statusText: String(raw.statusText ?? ''),
     gamePathStatus: String(raw.gamePathStatus ?? ''),
+    runningGame: isGameId(raw.runningGame) ? raw.runningGame : null,
+    attachedGame: isGameId(raw.attachedGame) ? raw.attachedGame : null,
     attachedPid: Number(raw.attachedPid ?? 0),
     currentFps: Number(raw.currentFps ?? 0),
     stubStatus: Number(raw.stubStatus ?? 0),

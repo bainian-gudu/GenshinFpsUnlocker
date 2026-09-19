@@ -49,6 +49,11 @@ export function useAppState() {
   const launchStateRef = useRef<LaunchState>(launchState);
   launchStateRef.current = launchState;
   const [statusText, setStatusText] = useState('准备中');
+  // 运行状态按游戏归属：宿主只有一个共享内存槽位，同时只服务一款游戏。
+  // runningGame 是当前检测到在跑的游戏，attachedGame 是真正注入了 Stub 的那款；
+  // 界面只让对应游戏显示运行/注入状态，另一款必须显示等待启动。
+  const [runningGame, setRunningGame] = useState<GameId | null>(null);
+  const [attachedGame, setAttachedGame] = useState<GameId | null>(null);
   const [attachedPid, setAttachedPid] = useState(0);
   const [currentFps, setCurrentFps] = useState(0);
   // Stub 反馈：生命周期状态、错误码与两项注入功能的就绪位掩码（概览页运行状态卡用）
@@ -90,6 +95,8 @@ export function useAppState() {
     setConfig(state.config);
     setSaveState(state.saveState);
     setStatusText(state.statusText || '就绪');
+    setRunningGame(state.runningGame ?? null);
+    setAttachedGame(state.attachedGame ?? null);
     setAttachedPid(state.attachedPid);
     setCurrentFps(state.currentFps);
     setStubStatus(state.stubStatus ?? 0);
@@ -542,18 +549,24 @@ export function useAppState() {
   }
 
   const effectiveEnabled = config.masterEnabled && gameConfig.enabled;
+  // 当前游戏是否真的在跑 / 真的被注入：另一款游戏的状态一律不借用。
+  const activeRunning = runningGame === activeGame;
+  const activeAttached = activeRunning && attachedGame === activeGame;
   const readiness = launchState === 'launching' ? '正在启动…'
-    : launchState === 'running' || attachedPid > 0
+    : !native && launchState === 'running' && sessionGame === activeGame ? '演示会话进行中'
+    : activeAttached
       ? (effectiveEnabled ? `运行中 · PID ${attachedPid || '—'}${currentFps > 0 ? ` · ${currentFps} FPS` : ''}` : '已附加 · 解锁暂停')
+    : activeRunning ? (statusText || '运行中')
     : !gameConfig.gamePath ? '请先设置游戏路径'
     : !config.masterEnabled ? '解锁服务已暂停'
     : !gameConfig.enabled ? '帧率解锁已关闭'
-    : statusText || '准备就绪';
+    : '等待游戏启动';
 
   return {
     native, booting, config, setConfig, gameConfig, activeGame, setGame, page, theme, setTheme, sidebarOpen, setSidebarOpen,
     modal, setModal, modalGame, sessionGame, saveState, toasts, dismissToast, logs, setLogs, launchState, statusText,
-    attachedPid, currentFps, isElevated, needsAdmin, elevating, autostart, version, effectiveEnabled, readiness,
+    attachedPid, runningGame, attachedGame, activeRunning, activeAttached,
+    currentFps, isElevated, needsAdmin, elevating, autostart, version, effectiveEnabled, readiness,
     stubStatus, stubLastError, antiBlurState, hideUidState,
     importRef, sidebarRef, addLog, notify, navigate, applyNativeState, updateConfig, updateGameConfig, openPathDialog, beginLaunch,
     restartElevated, startUninstall, handleLaunch, exportConfig, importConfig, exportLogs,

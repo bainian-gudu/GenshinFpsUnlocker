@@ -48,6 +48,11 @@ internal sealed partial class UnlockService : IDisposable
     /// <summary>当前认为已成功附着的游戏与 PID（IPC 只有一个槽位，同时只附着一款）。</summary>
     private GameId? _attachedGame;
     /// <summary>
+    /// 当前检测到正在运行的游戏（星铁只走注册表、无需注入时也算）。
+    /// 两款游戏共用一份运行状态，界面靠它把状态归属到对应游戏，避免互相串台。
+    /// </summary>
+    private GameId? _runningGame;
+    /// <summary>
     /// 共享内存当前属于哪款游戏的 Stub（注入时确定）。映射只有一个槽位，
     /// 属于 A 游戏时不能再拿 B 游戏的档案去写它，否则会把 A 的目标帧率 / 开关冲掉。
     /// </summary>
@@ -79,6 +84,8 @@ internal sealed partial class UnlockService : IDisposable
     public int AttachedPid => Volatile.Read(ref _attachedPid);
     /// <summary>当前附着的是哪款游戏（未附着时为 null）。</summary>
     public GameId? AttachedGame => _attachedGame;
+    /// <summary>当前检测到正在运行的游戏（没有游戏进程时为 null）。</summary>
+    public GameId? RunningGame => _runningGame;
     public IpcStatus StubStatus => _ipc.Read().Status;
     public int CurrentFpsFeedback => _ipc.Read().CurrentFps;
 
@@ -155,13 +162,17 @@ internal sealed partial class UnlockService : IDisposable
         _loop = Task.Run(() => WatchLoopAsync(_cts.Token));
     }
 
-    /// <summary>切换当前正在配置的游戏（界面三个游戏页跟着换）。</summary>
-    public void SetActiveGame(GameId game)
+    /// <summary>
+    /// 切换当前正在配置的游戏（界面三个游戏页跟着换）。
+    /// <paramref name="persist"/> 为 false 时只改本次运行的选择：托盘跟随运行中的
+    /// 游戏属于临时切换，不该把用户存下来的选择覆盖掉。
+    /// </summary>
+    public void SetActiveGame(GameId game, bool persist = true)
     {
         if (_config.ActiveGame == game) return;
         _config.ActiveGame = game;
         AppLog.Info($"active game → {GameCatalog.Get(game).Key}");
-        _config.TrySave(out _);
+        if (persist) _config.TrySave(out _);
         Raise(forceUi: true);
     }
 

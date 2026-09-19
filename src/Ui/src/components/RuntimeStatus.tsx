@@ -33,22 +33,31 @@ function stubText(status: number, lastError: number): string {
 }
 
 export function RuntimeStatus({ app }: { app: AppState }) {
-  const { config, gameConfig, activeGame, currentFps, attachedPid, stubStatus, stubLastError, antiBlurState, hideUidState, navigate } = app;
+  const { config, gameConfig, activeGame, runningGame, attachedGame, currentFps, attachedPid, stubStatus, stubLastError, antiBlurState, hideUidState, navigate } = app;
   const injection = GAME_META[activeGame].injection;
+  const registryFps = GAME_META[activeGame].fpsLock?.value;
 
-  const attached = attachedPid > 0;
+  // 宿主只有一份运行状态：只认「本页这款游戏」，另一款游戏正在跑也一律显示等待启动。
+  const running = runningGame === activeGame;
+  const attached = attachedGame === activeGame;
   const featuresActive = config.masterEnabled && config.autoWatch;
 
   const rows = [
     {
       label: '当前帧率',
       title: '当前帧率 → 目标帧率',
-      value: !attached
+      value: !running
         ? '等待游戏启动'
-        : currentFps > 0 ? `${currentFps} → ${gameConfig.targetFps} FPS` : `目标 ${gameConfig.targetFps} FPS`,
+        : !attached
+          ? (registryFps ? `由注册表解锁 ${registryFps} FPS` : '未注入')
+          : currentFps > 0 ? `${currentFps} → ${gameConfig.targetFps} FPS` : `目标 ${gameConfig.targetFps} FPS`,
     },
-    { label: '游戏进程', title: undefined, value: attached ? `已附加 · PID ${attachedPid}` : '未检测到游戏' },
-    { label: '解锁模块', title: injection.module, value: stubText(stubStatus, stubLastError) },
+    { label: '游戏进程', title: undefined, value: !running ? '未检测到游戏' : attached ? `已附加 · PID ${attachedPid}` : '运行中（未注入）' },
+    {
+      label: '解锁模块',
+      title: injection.module,
+      value: !running ? '未注入' : attached ? stubText(stubStatus, stubLastError) : (registryFps ? '无需注入（帧率走注册表）' : '未注入'),
+    },
   ];
 
   // 位定义见 src/Common/IpcData.h：反虚化 bit0 反角色虚化 / bit1 马赛克就绪 / bit2 马赛克已生效，

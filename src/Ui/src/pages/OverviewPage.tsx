@@ -20,7 +20,7 @@ function regionOf(game: GameId, path: string | null): string | null {
  */
 export function OverviewPage({ app }: { app: AppState }) {
   const {
-    native, config, gameConfig, activeGame, sessionGame, setModal, launchState, statusText, attachedPid,
+    native, config, gameConfig, activeGame, sessionGame, setModal, launchState, statusText, runningGame, attachedGame, attachedPid,
     isElevated, needsAdmin, elevating, effectiveEnabled, readiness, navigate, updateConfig,
     updateGameConfig, restartElevated, handleLaunch, openPathDialog,
   } = app;
@@ -28,7 +28,7 @@ export function OverviewPage({ app }: { app: AppState }) {
 
   return (
     <>
-      <PageHeading title="游戏概览" description={`准备好，以更流畅的方式游玩${meta.name}。`}><div className={`readiness ${!effectiveEnabled || !gameConfig.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedPid > 0 && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
+      <PageHeading title="游戏概览" description={`准备好，以更流畅的方式游玩${meta.name}。`}><div className={`readiness ${!effectiveEnabled || !gameConfig.gamePath ? 'is-paused' : ''}`} aria-live="polite">{launchState === 'launching' ? <LoaderCircle size={13} className="spin" /> : <span className={`status-dot ${attachedGame === activeGame && effectiveEnabled ? 'pulse' : ''}`} />}{readiness}</div></PageHeading>
       <section className={`overview-hero is-${activeGame}`} aria-label={`${APP_NAME} · ${meta.name}`}>
         {/* 星穹铁道主视觉素材未定，先复用原神那张风景图占位；换素材时改这里的 src 即可。 */}
         <motion.img className="hero-image" src="/images/teyvat-landscape.webp" alt={activeGame === 'genshin' ? '阳光下的璃月风格山峦、亭台与碧水' : '主视觉占位图（星穹铁道素材待替换）'} initial={{ scale: 1.045 }} animate={{ scale: 1 }} transition={{ duration: 1.8, ease: 'easeOut' }} />
@@ -61,11 +61,12 @@ export function OverviewPage({ app }: { app: AppState }) {
             const isSession = id === sessionGame;
             const region = regionOf(id, item.gamePath);
             const busy = isSession && launchState === 'launching';
-            const running = isSession && attachedPid > 0;
-            const state = !isSession ? '等待启动'
-              : launchState === 'launching' ? '正在启动…'
-              : attachedPid > 0 ? `已附加 · PID ${attachedPid}`
-              : launchState === 'running' ? (native ? statusText || '运行中' : '演示会话进行中')
+            // 运行状态按游戏归属：只有真正在跑的那款显示运行/附加，另一款一律「等待启动」。
+            const running = attachedGame === id;
+            const state = running ? `已附加 · PID ${attachedPid}`
+              : busy ? '正在启动…'
+              : runningGame === id ? (native ? statusText || '运行中' : '运行中')
+              : !native && isSession && launchState === 'running' ? '演示会话进行中'
               : '等待启动';
             return (
               <div key={id} className={`game-row ${isCurrent ? 'is-active' : ''}`}>

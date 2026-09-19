@@ -218,6 +218,9 @@ internal sealed partial class UiBridge : IDisposable
             statusText = _service.StatusText,
             gamePathStatus = _service.GamePathStatus,
             attachedPid = _service.AttachedPid,
+            // 运行状态按游戏归属：正在运行的游戏与当前附着的游戏各自上报，
+            // 界面只让对应游戏显示「运行中 / 已注入」，另一款保持等待启动。
+            runningGame = _service.RunningGame is GameId running ? GameCatalog.Get(running).Key : null,
             // 当前附着的是哪款游戏（未附着时为 null）与星穹铁道注册表解锁的最近结果。
             attachedGame = _service.AttachedGame is GameId attached ? GameCatalog.Get(attached).Key : null,
             starRailRegistryStatus = _service.StarRailRegistryStatus,

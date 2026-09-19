@@ -52,6 +52,9 @@ internal sealed partial class MainForm
         _trayGameGenshinItem.Click += (_, _) =>
         {
             if (_syncingUi) return;
+            // 手动切换优先：取消自动跟随，退出时不再回退到别的游戏
+            _trayFollowedGame = null;
+            _trayRestoreGame = GameId.Genshin;
             _service.SetActiveGame(GameId.Genshin);
             AfterTrayConfigChange("当前游戏 → 原神");
         };
@@ -65,6 +68,8 @@ internal sealed partial class MainForm
         _trayGameStarRailItem.Click += (_, _) =>
         {
             if (_syncingUi) return;
+            _trayFollowedGame = null;
+            _trayRestoreGame = GameId.StarRail;
             _service.SetActiveGame(GameId.StarRail);
             AfterTrayConfigChange("当前游戏 → 崩坏：星穹铁道");
         };
